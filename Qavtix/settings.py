@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
+import environ
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -23,7 +25,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-qt46#&n*5%r0_zt#q5aa+-v87*l16pqub0g^r=6bgolzmw7)63'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+env = environ.Env(DEBUG=(bool, False))
+environ.Env.read_env()
+
+DEBUG = env("DEBUG")
+DATABASES = {
+    "default": env.db(),
+}
 
 ALLOWED_HOSTS = []
 

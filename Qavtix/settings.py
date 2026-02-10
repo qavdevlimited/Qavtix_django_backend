@@ -55,6 +55,7 @@ INSTALLED_APPS = [
      # Third-party apps
     "corsheaders",
     'rest_framework',
+    "drf_yasg",
     'allauth',
     'allauth.account',
     'allauth.socialaccount',

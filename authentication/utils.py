@@ -1,5 +1,6 @@
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
+from rest_framework.utils.serializer_helpers import ReturnList, ReturnDict
 
 def flatten_errors(errors):
     """
@@ -32,3 +33,23 @@ def api_response(message="", status_code=200, data=None):
         },
         status=status_code
     )
+
+
+def flatten_errors_login(errors):
+    """
+    Recursively flatten DRF ValidationError or ErrorDetail objects
+    into a clean, readable string.
+    """
+    if isinstance(errors, dict) or isinstance(errors, ReturnDict):
+        messages = []
+        for value in errors.values():
+            messages.append(flatten_errors(value))
+        return "; ".join(messages)
+    elif isinstance(errors, list) or isinstance(errors, ReturnList):
+        messages = []
+        for item in errors:
+            messages.append(flatten_errors(item))
+        return "; ".join(messages)
+    else:
+        # ErrorDetail or simple string
+        return str(errors)

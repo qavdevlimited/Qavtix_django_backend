@@ -10,7 +10,7 @@ from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .serializers import HostRegisterSerializer, AttendeeRegisterSerializer,CustomLoginSerializer
+from .serializers import HostRegisterSerializer, AttendeeRegisterSerializer,CustomLoginSerializer,ForgotPasswordSerializer,VerifyPasswordResetOTPSerializer,PasswordResetConfirmSerializer
 from rest_framework_simplejwt.tokens import RefreshToken,TokenError,AccessToken
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import serializers
@@ -185,6 +185,7 @@ class CustomTokenVerifyView(APIView):
 class PasswordResetOTPRequestView(APIView):
     permission_classes = []
 
+    @swagger_auto_schema(request_body=ForgotPasswordSerializer)
     def post(self, request):
         email = request.data.get("email")
 
@@ -222,6 +223,8 @@ class PasswordResetOTPRequestView(APIView):
 class VerifyPasswordResetOTPView(APIView):
     permission_classes = []
 
+
+    @swagger_auto_schema(request_body=VerifyPasswordResetOTPSerializer)
     def post(self, request):
         email = request.data.get("email")
         otp = request.data.get("otp")
@@ -271,6 +274,7 @@ class VerifyPasswordResetOTPView(APIView):
 class PasswordResetConfirmView(APIView):
     permission_classes = []
 
+    @swagger_auto_schema(request_body=PasswordResetConfirmSerializer)
     def post(self, request):
         token = request.data.get("token")
         new_password = request.data.get("new_password")

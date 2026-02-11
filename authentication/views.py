@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import HostRegisterSerializer, AttendeeRegisterSerializer,CustomLoginSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken,TokenError,AccessToken
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import serializers
 
@@ -86,7 +86,7 @@ class GoogleLogin(SocialLoginView):
 
 class HostRegisterView(APIView):
 
-    @swagger_auto_schema(request_body=AttendeeRegisterSerializer)
+    @swagger_auto_schema(request_body=HostRegisterSerializer)
     def post(self, request):
         serializer = HostRegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -116,3 +116,60 @@ class AttendeeRegisterView(APIView):
             "refresh": str(refresh),
             "email": user.email
         }, status=201)
+    
+
+
+class CustomTokenRefreshView(APIView):
+    """
+    Refresh access token using a valid refresh token
+    """
+    def post(self, request):
+        refresh_token = request.data.get("refresh")
+
+        if not refresh_token:
+            return api_response(
+                message="Refresh token is required",
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            refresh = RefreshToken(refresh_token)
+            new_access = str(refresh.access_token)
+        except TokenError:
+            return api_response(
+                message="Invalid or expired refresh token",
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
+
+        return api_response(
+            message="Token refreshed successfully",
+            status_code=status.HTTP_200_OK,
+            data={"access": new_access}
+        )
+    
+
+class CustomTokenVerifyView(APIView):
+    """
+    Verify if access token is valid
+    """
+    def post(self, request):
+        token = request.data.get("token")
+
+        if not token:
+            return api_response(
+                message="Token is required",
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            AccessToken(token)
+        except TokenError:
+            return api_response(
+                message="Invalid or expired token",
+                status_code=status.HTTP_401_UNAUTHORIZED
+            )
+
+        return api_response(
+            message="Token is valid",
+            status_code=status.HTTP_200_OK
+        )

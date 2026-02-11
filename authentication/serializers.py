@@ -38,6 +38,13 @@ class HostRegisterSerializer(serializers.Serializer):
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )
+    relevant_links = serializers.ListField(
+        child=serializers.DictField(
+            child=serializers.CharField()
+        ),
+        required=False,
+        allow_empty=True
+    )
     agree_to_terms = serializers.BooleanField()
 
     def create(self, validated_data):

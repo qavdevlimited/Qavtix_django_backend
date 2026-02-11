@@ -25,5 +25,6 @@ urlpatterns = [
 
 urlpatterns += [
     path('social/google/', GoogleLogin.as_view(), name='google_login'),
+    path("social/facebook/", FacebookLogin.as_view(), name="facebook_login"),
     
 ]

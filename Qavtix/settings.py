@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'allauth.account',
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
+    'allauth.socialaccount.providers.facebook',
     'rest_framework_simplejwt', 
     'dj_rest_auth',
     'dj_rest_auth.registration',
@@ -207,6 +208,22 @@ SOCIALACCOUNT_PROVIDERS = {
         },
         "SCOPE": ["profile", "email"],
         "AUTH_PARAMS": {"access_type": "online"},
+    },
+    "facebook": {
+        "METHOD": "oauth2",
+        "SCOPE": ["email", "public_profile"],
+        "FIELDS": [
+            "id",
+            "email",
+            "name",
+            "first_name",
+            "last_name",
+        ],
+        "APP": {
+            "client_id": config("FACEBOOK_APP_ID"),
+            "secret": config("FACEBOOK_APP_SECRET"),
+            "key": ""
+        }
     }
 }
 

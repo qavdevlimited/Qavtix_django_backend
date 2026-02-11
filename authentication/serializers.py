@@ -4,6 +4,7 @@ from public.models import Category
 from host.models import Host
 from attendee.models import Attendee
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
 
 User = get_user_model()
 
@@ -109,3 +110,21 @@ class EmailLoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid credentials")
         attrs['user'] = user
         return attrs
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class VerifyPasswordResetOTPSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    otp = serializers.CharField(max_length=6)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    token = serializers.UUIDField()
+    new_password = serializers.CharField(min_length=8)
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value

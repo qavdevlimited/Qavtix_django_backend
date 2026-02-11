@@ -2,7 +2,7 @@ from dj_rest_auth.registration.views import SocialLoginView
 from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 from rest_framework import status
-from .utils import api_response
+from .utils import api_response,generate_otp
 from rest_framework.exceptions import ValidationError
 from django.conf import settings
 
@@ -14,7 +14,12 @@ from .serializers import HostRegisterSerializer, AttendeeRegisterSerializer,Cust
 from rest_framework_simplejwt.tokens import RefreshToken,TokenError,AccessToken
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import serializers
-
+from django.utils import timezone
+from datetime import timedelta
+from .models import PasswordResetOTP, PasswordResetToken
+from notification.utils import send_password_reset_otp
+from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
 
 
 class CustomLoginView(APIView):
@@ -173,3 +178,127 @@ class CustomTokenVerifyView(APIView):
             message="Token is valid",
             status_code=status.HTTP_200_OK
         )
+
+
+
+
+class PasswordResetOTPRequestView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        email = request.data.get("email")
+
+        response = {
+            "message": "If an account with this email exists, an OTP will be sent."
+        }
+
+        try:
+            user = User.objects.get(email=email)
+
+            # Invalidate old OTPs
+            PasswordResetOTP.objects.filter(
+                user=user,
+                used=False
+            ).update(used=True)
+
+            otp = generate_otp(settings.PASSWORD_RESET_OTP_LENGTH)
+
+            PasswordResetOTP.objects.create(
+                user=user,
+                code=otp,
+                expires_at=timezone.now()
+                + timedelta(minutes=settings.PASSWORD_RESET_OTP_TTL_MINUTES)
+            )
+
+            send_password_reset_otp(user.email, otp)
+
+        except User.DoesNotExist:
+            pass
+
+        return Response(response)
+
+
+
+class VerifyPasswordResetOTPView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        email = request.data.get("email")
+        otp = request.data.get("otp")
+
+        try:
+            user = User.objects.get(email=email)
+
+            otp_obj = PasswordResetOTP.objects.get(
+                user=user,
+                code=otp,
+                used=False
+            )
+
+            if otp_obj.is_expired():
+                return Response({"message": "OTP expired"}, status=400)
+
+            # Mark OTP as used
+            otp_obj.used = True
+            otp_obj.save()
+
+            # Invalidate previous tokens
+            PasswordResetToken.objects.filter(
+                user=user,
+                used=False
+            ).update(used=True)
+
+            # Create reset token
+            reset_token = PasswordResetToken.objects.create(
+                user=user,
+                expires_at=timezone.now()
+                + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_TTL_MINUTES)
+            )
+
+            return Response({
+                "reset_token": str(reset_token.token),
+                "expires_in": settings.PASSWORD_RESET_TOKEN_TTL_MINUTES * 60
+            })
+
+        except (User.DoesNotExist, PasswordResetOTP.DoesNotExist):
+            return Response(
+                {"message": "Invalid OTP"},
+                status=400
+            )
+
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        token = request.data.get("token")
+        new_password = request.data.get("new_password")
+
+        try:
+            reset_token = PasswordResetToken.objects.get(
+                token=token,
+                used=False
+            )
+
+            if reset_token.is_expired():
+                return Response(
+                    {"message": "Reset token expired"},
+                    status=400
+                )
+
+            user = reset_token.user
+
+            user.set_password(new_password)
+            user.save()
+
+            reset_token.used = True
+            reset_token.save()
+
+            return Response({"message": "Password reset successful"})
+
+        except PasswordResetToken.DoesNotExist:
+            return Response(
+                {"message": "Invalid reset token"},
+                status=400
+            )

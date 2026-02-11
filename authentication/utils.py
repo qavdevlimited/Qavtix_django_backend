@@ -1,6 +1,7 @@
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from rest_framework.utils.serializer_helpers import ReturnList, ReturnDict
+import random
 
 def flatten_errors(errors):
     """
@@ -53,3 +54,8 @@ def flatten_errors_login(errors):
     else:
         # ErrorDetail or simple string
         return str(errors)
+
+
+
+def generate_otp(length=6):
+    return "".join(str(random.randint(0, 9)) for _ in range(length))

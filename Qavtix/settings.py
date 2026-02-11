@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'public',
     'attendee',
     'users',    
+    'notification',
 
      # Third-party apps
     "corsheaders",
@@ -68,6 +69,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt', 
     'dj_rest_auth',
     'dj_rest_auth.registration',
+    'anymail',
 ]
 
 MIDDLEWARE = [
@@ -218,8 +220,21 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
     "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
 }
+PASSWORD_RESET_TOKEN_TTL_MINUTES = config("PASSWORD_RESET_TOKEN_TTL_MINUTES", cast=int)
+PASSWORD_RESET_OTP_TTL_MINUTES = 10
+PASSWORD_RESET_OTP_LENGTH = 6
 
 
 USERNAME_FIELD = "email"
 # AUTH_USER_MODEL = "users.User"
 REST_AUTH_LOGIN_SERIALIZER = "authentication.serializers.EmailLoginSerializer"
+
+
+EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
+
+ANYMAIL = {
+    "BREVO_API_KEY": config("BREVO_API_KEY"),  
+}
+
+
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")

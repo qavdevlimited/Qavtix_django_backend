@@ -1,6 +1,6 @@
 from django.urls import path,include
 from .views import GoogleLogin
-from .views import HostRegisterView, AttendeeRegisterView,CustomLoginView,CustomTokenRefreshView,CustomTokenVerifyView
+from .views import *
 
 
 urlpatterns = [
@@ -10,6 +10,10 @@ urlpatterns = [
     path("login/", CustomLoginView.as_view(), name="custom_login"),
     path("token/refresh/", CustomTokenRefreshView.as_view(), name="token_refresh"),
     path("token/verify/", CustomTokenVerifyView.as_view(), name="token_verify"),
+
+    path("password-reset/request/", PasswordResetOTPRequestView.as_view()),
+    path("password-reset/verify-otp/", VerifyPasswordResetOTPView.as_view()),
+    path("password-reset/confirm/", PasswordResetConfirmView.as_view()),
 
     # Social auth
     path("social/", include("allauth.socialaccount.urls")),  # Google login

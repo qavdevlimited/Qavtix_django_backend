@@ -150,6 +150,8 @@ class Ticket(models.Model):
     quantity = models.PositiveIntegerField()
     per_person_max = models.PositiveIntegerField()
 
+    sold_count=models.PositiveIntegerField(default=0)
+
     sales_start = models.DateTimeField()
     sales_end = models.DateTimeField()
 

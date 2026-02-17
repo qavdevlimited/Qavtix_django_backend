@@ -27,6 +27,7 @@ class Host(models.Model):
     registration_date=models.DateTimeField(auto_now_add=True)
     agree_to_terms=models.BooleanField(default=False)
     role=models.CharField(max_length=20, default="host")
+    followers=models.IntegerField(default=0)
 
     def __str__(self):
         return self.full_name

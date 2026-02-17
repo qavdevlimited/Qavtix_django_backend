@@ -24,7 +24,7 @@ class EventCreateView(generics.CreateAPIView):
    
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=False)  # don't let DRF auto-raise
+        serializer.is_valid(raise_exception=False)  
         if not serializer.is_valid():
             return api_response(message=serializer.errors, status_code=400)
         self.perform_create(serializer)

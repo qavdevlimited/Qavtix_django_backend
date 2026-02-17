@@ -54,10 +54,10 @@ INSTALLED_APPS = [
     'authentication',
     'host',
     'public',
-    'attendee',
-    'users',    
+    'attendee',  
     'notification',
     'events',
+    'transactions',
 
      # Third-party apps
     "corsheaders",

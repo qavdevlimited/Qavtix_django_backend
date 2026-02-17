@@ -183,3 +183,36 @@ class EventCardSerializer(serializers.Serializer):
     draft = serializers.IntegerField()
     ended = serializers.IntegerField()
     cancelled = serializers.IntegerField()
+
+
+
+
+class EventDetailsSerializer(serializers.ModelSerializer):
+    tickets = TicketNestedSerializer(many=True)
+    location = EventLocationNestedSerializer(required=True)
+    social_links = OrganizerSocialLinkNestedSerializer(many=True, required=False)
+    tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
+    media = EventMediaNestedSerializer(many=True, required=False)
+    attendees_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'title', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
+            'location_type', 'short_description', 'full_description',
+            'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
+            'location', 'social_links', 'tickets','status','media','attendees_count'
+        ]
+    
+    def get_attendees_count(self, obj):
+        """
+        Count unique users who purchased any ticket for this event.
+        Only count completed orders.
+        """
+        return (
+            obj.order_set
+            .filter(status="completed")   # Only completed orders
+            .values("user")               # Group by user
+            .distinct()                   # Unique users
+            .count()                      # Count of unique attendees
+        )

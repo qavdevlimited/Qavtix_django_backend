@@ -65,6 +65,13 @@ class EventSerializer(serializers.ModelSerializer):
             'affiliate_start', 'affiliate_end',
             'location', 'social_links', 'tickets','permissions','status','media'
         ]
+    
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)  # only exists on update
+        if instance and str(instance.status).lower() == "banned":
+            from .exceptions import EventBannedException
+            raise EventBannedException()  # <- this triggers your handler
+        return attrs
 
     def create(self, validated_data):
         request = self.context.get("request")
@@ -112,3 +119,67 @@ class EventSerializer(serializers.ModelSerializer):
     
 
         return event
+    
+
+
+
+
+
+class EventTableSerializer(serializers.ModelSerializer):
+    location = serializers.SerializerMethodField()
+    tickets_sold_percentage = serializers.SerializerMethodField()
+    tickets_total_revenue = serializers.SerializerMethodField()
+    category_name = serializers.CharField(source="category.name", read_only=True)
+    media=serializers.SerializerMethodField()
+
+    class Meta:
+        model = Event
+        fields = [
+            "id",
+            "status",
+            "title",
+            "category_name",
+            "media",
+            "start_datetime",
+            "location",
+            "tickets_sold_percentage",
+            "tickets_total_revenue",
+            
+            "views_count",
+            "saves_count",
+        ]
+
+    def get_media(self, obj):
+        # Get only the featured media
+        featured_media = obj.media.filter(is_featured=True).first()
+        if featured_media:
+            return {
+                "image_url": featured_media.image_url,
+                "video_url": featured_media.video_url
+            }
+        return None
+
+    def get_location(self, obj):
+        if obj.location:
+            return f"{obj.location.address}, {obj.location.city}, {obj.location.state}, {obj.location.country}"
+        return ""
+
+    def get_tickets_sold_percentage(self, obj):
+        # tickets = obj.tickets.all()
+        # total_qty = sum(t.quantity for t in tickets)
+        # sold_qty = sum(t.sold_quantity for t in tickets)
+        # if total_qty:
+        #     return round((sold_qty / total_qty) * 100)
+        return 100
+
+    def get_tickets_total_revenue(self, obj):
+        tickets = obj.tickets.all()
+        return 100
+
+
+# Card data serializer (counts per status)
+class EventCardSerializer(serializers.Serializer):
+    live = serializers.IntegerField()
+    draft = serializers.IntegerField()
+    ended = serializers.IntegerField()
+    cancelled = serializers.IntegerField()

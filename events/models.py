@@ -88,12 +88,17 @@ class Event(models.Model):
         ("draft", "Draft"),
         ("active", "Active"),
         ("sold-out", "Sold-Out"),
+        ("ended", "Ended"),
+        ("cancelled", "Cancelled"),
         ("banned", "Banned"),
     )
 
     status= models.CharField(max_length=20, choices=STATUS_CHOICES,default="active")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at =models.DateTimeField(auto_now=True)
+
+    views_count = models.PositiveIntegerField(default=0)
+    saves_count = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return self.title

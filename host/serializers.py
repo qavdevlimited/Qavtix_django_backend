@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag
+from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
 
 # Ticket promo codes
 class PromoCodeNestedSerializer(serializers.ModelSerializer):
@@ -13,16 +13,23 @@ class EventMediaNestedSerializer(serializers.ModelSerializer):
         model = EventMedia
         fields = ['image_url', 'video_url', 'is_featured']
 
+
+#Event Permission
+class EventPermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=EventPermission
+        fields = ['id','email','role','status', 
+        ]
+
 # Ticket serializer
 class TicketNestedSerializer(serializers.ModelSerializer):
     promo_codes = PromoCodeNestedSerializer(many=True, required=False)
-    media = EventMediaNestedSerializer(many=True, required=False)
 
     class Meta:
         model = Ticket
         fields = [
             'ticket_type', 'description', 'price', 'quantity', 'per_person_max',
-            'sales_start', 'sales_end', 'promo_codes', 'media'
+            'sales_start', 'sales_end', 'promo_codes',
         ]
 
 # Event location
@@ -42,7 +49,9 @@ class EventSerializer(serializers.ModelSerializer):
     tickets = TicketNestedSerializer(many=True)
     location = EventLocationNestedSerializer(required=True)
     social_links = OrganizerSocialLinkNestedSerializer(many=True, required=False)
+    permissions=EventPermissionSerializer(many=True,required=False)
     tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
+    media = EventMediaNestedSerializer(many=True, required=False)
 
     class Meta:
         model = Event
@@ -54,7 +63,7 @@ class EventSerializer(serializers.ModelSerializer):
             'order_confirmation', 'ticket_delivery', 'reminders', 'post_event_emails',
             'customize_sender_name', 'affiliate_enabled', 'commission_percentage',
             'affiliate_start', 'affiliate_end',
-            'location', 'social_links', 'tickets'
+            'location', 'social_links', 'tickets','permissions','status','media'
         ]
 
     def create(self, validated_data):
@@ -66,8 +75,10 @@ class EventSerializer(serializers.ModelSerializer):
 
         tickets_data = validated_data.pop('tickets')
         location_data = validated_data.pop('location')
+        permission_data=validated_data.pop('permissions', [])
         social_links_data = validated_data.pop('social_links', [])
         tags_data = validated_data.pop('tags', [])
+        media_data = validated_data.pop('media', [])
 
         from django.db import transaction
 
@@ -78,20 +89,26 @@ class EventSerializer(serializers.ModelSerializer):
             # create location
             EventLocation.objects.create(event=event, **location_data)
 
+            #create permissions
+            for permission in permission_data:
+                EventPermission.objects.create(event=event, **permission)
+
             # create social links
             for link_data in social_links_data:
                 OrganizerSocialLink.objects.create(event=event, **link_data)
 
+            # create event media
+            for media_item in media_data:
+                EventMedia.objects.create(event=event, **media_item)
+
             # create tickets + nested promo codes and media
             for ticket_data in tickets_data:
                 promo_codes_data = ticket_data.pop('promo_codes', [])
-                media_data = ticket_data.pop('media', [])
                 ticket = Ticket.objects.create(event=event, **ticket_data)
 
                 for promo_data in promo_codes_data:
                     PromoCode.objects.create(ticket=ticket, **promo_data)
 
-                for media_item in media_data:
-                    EventMedia.objects.create(event=event, **media_item)
+    
 
         return event

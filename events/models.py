@@ -84,6 +84,14 @@ class Event(models.Model):
         related_name="hoster"
     )
 
+    STATUS_CHOICES = (
+        ("draft", "Draft"),
+        ("active", "Active"),
+        ("sold-out", "Sold-Out"),
+        ("banned", "Banned"),
+    )
+
+    status= models.CharField(max_length=20, choices=STATUS_CHOICES,default="active")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at =models.DateTimeField(auto_now=True)
 
@@ -171,10 +179,10 @@ class EventPermission(models.Model):
     )
 
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="permissions")
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    email = models.EmailField()
 
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES,default='pending')
 
     def __str__(self):
-        return f"{self.user} - {self.role}"
+        return f"{self.email} - {self.role}"

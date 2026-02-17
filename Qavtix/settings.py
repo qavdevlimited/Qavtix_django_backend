@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'attendee',
     'users',    
     'notification',
+    'events',
 
      # Third-party apps
     "corsheaders",
@@ -161,9 +162,13 @@ STATIC_URL = 'static/'
 
 # REST Framework settings
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
+    'DEFAULT_AUTHENTICATION_CLASSES': [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
-    ),
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    "EXCEPTION_HANDLER": "public.exceptions.custom_exception_handler",
 }
 
 

@@ -1,0 +1,180 @@
+from django.db import models
+from public.models import Category
+import uuid
+from django.contrib.auth.models import User
+from host.models import Host
+
+
+class Tag(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+
+    def __str__(self):
+        return self.name
+
+
+
+class Event(models.Model):
+
+    EVENT_TYPE_CHOICES = (
+        ("single", "Single Event"),
+        ("recurring", "Recurring Event"),
+    )
+
+    LOCATION_TYPE_CHOICES = (
+        ("physical", "Physical Venue"),
+        ("online", "Online Event"),
+        ("tba", "To Be Announced"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Basics
+    title = models.CharField(max_length=255)
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True)
+    tags = models.ManyToManyField("Tag", blank=True)
+
+    event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
+    start_datetime = models.DateTimeField()
+    end_datetime = models.DateTimeField()
+
+    # Location Type
+    location_type = models.CharField(max_length=20, choices=LOCATION_TYPE_CHOICES)
+
+    # Description
+    short_description = models.CharField(max_length=160)
+    full_description = models.TextField(max_length=5000)
+
+    # Organizer Info Snapshot
+    organizer_display_name = models.CharField(max_length=255)
+    organizer_description = models.TextField(max_length=500, blank=True)
+    public_email = models.EmailField()
+    phone_number = models.CharField(max_length=20, blank=True)
+
+    # Refund
+    REFUND_CHOICES = (
+        ("no", "No Refund"),
+        ("partial", "Partial"),
+        ("full", "Full"),
+        ("custom", "Custom"),
+    )
+
+    refund_policy = models.CharField(max_length=20, choices=REFUND_CHOICES)
+    refund_percentage = models.PositiveIntegerField(null=True, blank=True)
+
+    # Check-in
+    qr_enabled = models.BooleanField(default=True)
+    age_restriction = models.BooleanField(default=False)
+
+    # Email Notifications
+    order_confirmation = models.BooleanField(default=True)
+    ticket_delivery = models.BooleanField(default=True)
+    reminders = models.BooleanField(default=False)
+    post_event_emails = models.BooleanField(default=False)
+    customize_sender_name = models.BooleanField(default=False)
+
+    # Affiliate
+    affiliate_enabled = models.BooleanField(default=False)
+    commission_percentage = models.PositiveIntegerField(null=True, blank=True)
+    affiliate_start = models.DateTimeField(null=True, blank=True)
+    affiliate_end = models.DateTimeField(null=True, blank=True)
+
+    host= models.ForeignKey(
+        Host,
+        on_delete=models.CASCADE,
+        related_name="hoster"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at =models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title
+
+
+
+class EventLocation(models.Model):
+    event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name="location")
+
+    venue_name = models.CharField(max_length=255)
+    address = models.TextField()
+    country = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    city = models.CharField(max_length=100)
+    postal_code = models.CharField(max_length=20, blank=True)
+
+    def __str__(self):
+        return f"{self.event.title} Location"
+
+
+class EventMedia(models.Model):
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="media")
+
+    image_url = models.URLField(null=True, blank=True)
+    video_url = models.URLField(null=True, blank=True)
+
+    is_featured = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.event.title} Media"
+
+
+
+class OrganizerSocialLink(models.Model):
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="social_links")
+    url = models.URLField()
+
+    def __str__(self):
+        return self.url
+
+
+class Ticket(models.Model):
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="tickets")
+
+    ticket_type = models.CharField(max_length=150)
+    description = models.TextField(blank=True)
+
+    price = models.DecimalField(max_digits=12, decimal_places=2)
+    quantity = models.PositiveIntegerField()
+    per_person_max = models.PositiveIntegerField()
+
+    sales_start = models.DateTimeField()
+    sales_end = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.event.title} - {self.ticket_type}"
+
+
+class PromoCode(models.Model):
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="promo_codes")
+
+    code = models.CharField(max_length=50)
+    discount_percentage = models.PositiveIntegerField()
+    maximum_users = models.PositiveIntegerField()
+    valid_till = models.DateField()
+
+    def __str__(self):
+        return self.code
+
+
+class EventPermission(models.Model):
+
+    ROLE_CHOICES = (
+        ("host", "Host"),
+        ("collaborator", "Collaborator"),
+        ("financial", "Financial"),
+    )
+
+    STATUS_CHOICES = (
+        ("active", "Active"),
+        ("disabled", "Disabled"),
+        ("pending", "Pending Invitation"),
+    )
+
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="permissions")
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+
+    def __str__(self):
+        return f"{self.user} - {self.role}"

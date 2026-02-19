@@ -30,6 +30,7 @@ class HostRegisterSerializer(serializers.Serializer):
     business_type = serializers.CharField()
     registration_number = serializers.CharField()
     tax_id = serializers.CharField()
+    description = serializers.CharField(max_length=5000)
     phone_number = serializers.CharField()
     companies_email = serializers.EmailField()
     country = serializers.CharField()

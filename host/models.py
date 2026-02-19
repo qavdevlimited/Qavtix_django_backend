@@ -12,6 +12,7 @@ class Host(models.Model):
         related_name="host_profile"
     )
     full_name=models.CharField(max_length=50)
+    description=models.TextField(max_length=5000,default="No Description")
     business_name=models.CharField(max_length=100)
     business_type=models.CharField(max_length=50)
     registration_number=models.CharField(max_length=50)

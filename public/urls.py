@@ -11,6 +11,15 @@ urlpatterns = [
    path('event/trending/',TrendingEventsView.as_view(),name="trending_events"),
    path('event/trending-hosts/',TrendingHostsView.as_view(),name="trending_host"),
    path("event/<uuid:id>/", EventDetailView.as_view(), name="event-detail"),
+
+   path("hosts/<int:host_id>/follow/", FollowHostCreateView.as_view()),
+   path("hosts/<int:host_id>/unfollow/", FollowHostDestroyView.as_view()),
+   path("hosts/<int:id>/", HostPublicDetailView.as_view(),name="host_details"),
+
+   path('message/',MessageCreateView.as_view(),name="create_message"),
+
+
+
     
 ]
 

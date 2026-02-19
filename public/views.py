@@ -1,9 +1,9 @@
 from django.shortcuts import render
 from events.models import Event,EventLocation
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions,status
 from django.utils import timezone
 from django.db.models import Q
-from .serializers import EventListSerializer,TrendingHostSerializer
+from .serializers import EventListSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Count
@@ -11,13 +11,15 @@ from .response import api_response
 from rest_framework import generics, permissions
 from django.utils import timezone
 from django.db.models import Sum, F, FloatField, ExpressionWrapper, Q,When,Case,Value
-from .serializers import EventListSerializer
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models.functions import NullIf,Coalesce
 from host.utils import EventDashboardFilter
 from host.models import Host
 from host.serializers import EventDetailsSerializer
+from django.shortcuts import get_object_or_404
+from .models import Follow,Message
+
 
 
 class NearbyEventsView(generics.ListAPIView):
@@ -247,4 +249,128 @@ class EventDetailView(generics.RetrieveAPIView):
             message="Details retrieved successfully",
             status_code=200,
             data=serializer.data,
+        )
+    
+
+
+class FollowHostCreateView(generics.CreateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = FollowActionSerializer
+
+    def create(self, request, host_id=None, *args, **kwargs):
+        attendee = request.user
+        host = get_object_or_404(Host, id=host_id)
+
+        follow_obj, created = Follow.objects.get_or_create(
+            user=attendee,
+            host=host
+        )
+
+        serializer = self.get_serializer(follow_obj)
+
+        if created:
+            return api_response(
+                message="Host followed successfully",
+                status_code=status.HTTP_201_CREATED,
+                data=serializer.data
+            )
+
+        return api_response(
+            message="You are already following this host",
+            status_code=status.HTTP_200_OK,
+            data=serializer.data
+        )
+
+    
+
+class FollowHostDestroyView(generics.DestroyAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = FollowActionSerializer
+
+    def get_object(self):
+        attendee = self.request.user
+        host_id = self.kwargs.get("host_id")
+
+        return get_object_or_404(
+            Follow,
+            user=attendee,
+            host__id=host_id
+        )
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+
+        self.perform_destroy(instance)
+
+        return api_response(
+            message="Successfully unfollowed host",
+            status_code=status.HTTP_200_OK,
+            data=serializer.data
+        )
+        
+
+
+class HostPublicDetailView(generics.RetrieveAPIView):
+    queryset = Host.objects.all()
+    serializer_class = HostPublicDetailSerializer
+    lookup_field = "id"
+
+    def get_queryset(self):
+        return Host.objects.annotate(
+            followers_count=Count("following")  # ← THIS
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+
+        return api_response(
+            message="Details retrieved successfully",
+            status_code=200,
+            data=serializer.data,
+        )
+
+
+class MessageCreateView(generics.CreateAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class = MessageSerializer
+
+    def create(self, request, *args, **kwargs):
+
+        # Get message data from the request
+        full_name = request.data.get("full_name") 
+        email = request.data.get("email")
+        message_text = request.data.get("message")
+
+        host_id= request.data.get("host")
+
+        # Get the host
+        host = get_object_or_404(Host, id=host_id)
+
+        if not message_text:
+            return api_response(
+                message="Message content is required",
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create the message
+        message = Message.objects.create(
+            host=host,
+            full_name=full_name,
+            email=email,
+            message=message_text
+        )
+
+        # Serialize and return
+        serializer = self.get_serializer(message)
+        return api_response(
+            message="Message sent successfully",
+            status_code=status.HTTP_201_CREATED,
+            data=serializer.data
         )

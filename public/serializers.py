@@ -4,6 +4,7 @@ from host.models import Host
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count
+from .models import Follow,Message
 
 
 class EventLocationSerializer(serializers.ModelSerializer):
@@ -82,4 +83,81 @@ class TrendingHostSerializer(serializers.ModelSerializer):
 
 
 
+class FollowActionSerializer(serializers.ModelSerializer):
+    host_id = serializers.UUIDField(source="host.id", read_only=True)
+
+    class Meta:
+        model = Follow
+        fields = ["id", "host_id", "created_at"]  # adjust to your model
+        read_only_fields = fields
+
+
+class HostPublicDetailSerializer(serializers.ModelSerializer):
+    followers_count = serializers.IntegerField(read_only=True)
+    events_count = serializers.SerializerMethodField()
+    upcoming_events = serializers.SerializerMethodField()
+    past_events = serializers.SerializerMethodField()
+    is_following = serializers.SerializerMethodField()
+    relevant_links=serializers.SerializerMethodField()
+
+
+    class Meta:
+        model = Host
+        fields = [
+            "id",
+            "business_name",
+            "business_type",
+            "city",
+            "state",
+            "country",
+            "followers_count",
+            "events_count",
+            "upcoming_events",
+            "past_events",
+            "is_following",
+            "relevant_links",
+            "description",
+        ]
+
+    def get_relevant_links(self, obj):
+        return obj.relevant_links
+
+
+    def get_events_count(self, obj):
+        return obj.hoster.count()
+
+    def get_upcoming_events(self, obj):
+        now = timezone.now()
+        events = obj.hoster.filter(
+            start_datetime__gte=now,
+            status="active"
+        ).order_by("start_datetime")[:10]
+
+        return EventListSerializer(events, many=True).data
+
+    def get_past_events(self, obj):
+        now = timezone.now()
+        events = obj.hoster.filter(
+            start_datetime__lt=now
+        ).order_by("-start_datetime")[:10]
+
+        return EventListSerializer(events, many=True).data
+
+    def get_is_following(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            attendee = getattr(request.user, "attendee", None)
+            if attendee:
+                return Follow.objects.filter(
+                    attendee=attendee,
+                    host=obj
+                ).exists()
+        return False
+
+
+class MessageSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Message
+        fields = "__all__"
         

@@ -40,7 +40,9 @@ class Order(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    full_name=models.CharField(max_length=300, blank=True)
+    phone_number=models.CharField(default="09000001111")
+    user = models.ForeignKey(User, on_delete=models.CASCADE,null=True)
     email=models.EmailField(blank=True)
     event = models.ForeignKey(Event, on_delete=models.CASCADE)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -50,13 +52,15 @@ class Order(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    metadata = models.JSONField(blank=True, null=True)  
+    metadata = models.JSONField(blank=True, null=True) 
+    is_split=models.BooleanField(default=False) 
+
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Order {self.id} for {self.event.title} by {self.user.username}"
+        return f"Order {self.id} for {self.event.title}"
     
 
 class OrderTicket(models.Model):

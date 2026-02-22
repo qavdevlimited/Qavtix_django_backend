@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'notification',
     'events',
     'transactions',
+    'payments',
 
      # Third-party apps
     "corsheaders",
@@ -266,3 +267,10 @@ ANYMAIL = {
 
 
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
+
+
+
+#PAYMENT SETTINGS
+STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY')
+STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY')
+PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY')

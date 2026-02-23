@@ -23,6 +23,12 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
         source="event.start_datetime",
         read_only=True
     )
+    original_price = serializers.DecimalField(
+            source="order_ticket.price",
+            max_digits=10,
+            decimal_places=2,
+            read_only=True
+        )
 
     event_image = serializers.SerializerMethodField()
 
@@ -44,6 +50,7 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
             "ticket_status",
             "ticket_type",
             "event_datetime",
+            "original_price",
         ]
 
     def get_sn(self, obj):

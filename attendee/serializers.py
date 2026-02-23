@@ -2,7 +2,13 @@
 
 from rest_framework import serializers
 from transactions.models import IssuedTicket
-
+from rest_framework import serializers
+from .models import FavoriteEvent
+from rest_framework import serializers
+from events.models import Event
+from public.serializers import EventLocationSerializer
+from django.utils import timezone
+from datetime import timedelta
 
 class TicketDashboardSerializer(serializers.ModelSerializer):
     sn = serializers.SerializerMethodField()
@@ -58,3 +64,49 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
 
         first_media = obj.event.media.first()
         return first_media.image_url if first_media else None
+    
+
+
+
+
+class FavoriteEventSerializer(serializers.ModelSerializer):
+    location = EventLocationSerializer(read_only=True)
+    media = serializers.SerializerMethodField()
+    business_name = serializers.SerializerMethodField()
+    dynamic_status = serializers.SerializerMethodField()
+    attendees_count = serializers.SerializerMethodField()
+    category = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Event
+        fields = [
+            "id", "title", "category", "start_datetime", "end_datetime",
+            "location", "media", "business_name", "dynamic_status", "attendees_count"
+        ]
+    
+    def get_category(self, obj):
+        return obj.category.name if obj.category else None
+
+    def get_media(self, obj):
+        return [
+            {"image_url": m.image_url, "video_url": m.video_url, "is_featured": m.is_featured}
+            for m in obj.media.all()
+        ]
+
+    def get_business_name(self, obj):
+        return getattr(obj.host, "business_name", None)
+
+    def get_dynamic_status(self, obj):
+        total_quantity = sum(t.quantity for t in obj.tickets.all())
+        sold_quantity = sum(getattr(t, "sold_count", 0) for t in obj.tickets.all())
+
+        if sold_quantity >= total_quantity:
+            return "sold-out"
+        elif total_quantity > 0 and sold_quantity / total_quantity >= 0.75:
+            return "fast-selling"
+        elif obj.created_at >= timezone.now() - timedelta(days=7):
+            return "new"
+        return "normal"
+
+    def get_attendees_count(self, obj):
+        return obj.order_set.filter(status="completed").values("user").distinct().count()

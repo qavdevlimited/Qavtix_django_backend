@@ -4,11 +4,13 @@ from django.utils import timezone
 from django.db.models import Sum, Count,Prefetch
 from django.http import Http404
 from transactions.models import Order,IssuedTicket
-from .filters import TicketDashboardFilter
-from .serializers import TicketDashboardSerializer
+from .filters import TicketDashboardFilter,FavoriteEventFilter
+from .serializers import TicketDashboardSerializer,FavoriteEventSerializer
 from attendee.models import AffliateEarnings
-from events.models import EventMedia
-
+from events.models import EventMedia,Event
+from .models import FavoriteEvent
+from public.response import api_response
+from django.shortcuts import get_object_or_404
 
 class TicketDashboardView(generics.ListAPIView):
     serializer_class = TicketDashboardSerializer
@@ -142,4 +144,109 @@ class TicketDashboardView(generics.ListAPIView):
                 "cards": card_data,
                 "table": serializer.data
             }
+        )
+    
+
+
+class AddFavoriteEventView(generics.CreateAPIView):
+    serializer_class = FavoriteEventSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        event_id = request.data.get("event_id")
+        if not event_id:
+            return api_response(
+                message="Event ID is required",
+                status_code=400,
+                data={}
+            )
+
+        try:
+            event = Event.objects.get(id=event_id)
+        except Event.DoesNotExist:
+            return api_response(
+                message="Event not found",
+                status_code=404,
+                data={}
+            )
+
+        favorite, created = FavoriteEvent.objects.get_or_create(
+            user=request.user,
+            event=event
+        )
+
+        if not created:
+            return api_response(
+                message="Event already in favorites",
+                status_code=400,
+                data={}
+            )
+
+        # Serialize the related event
+        serializer = self.get_serializer(event)
+        return api_response(
+            message="Event added to favorites successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
+class FavoriteEventListView(generics.ListAPIView):
+    serializer_class = FavoriteEventSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+    ordering_fields = ["created_at", "event__start_datetime"]
+    search_fields = ["title"]
+    filterset_fields = {
+        "event__category": ["exact"],
+        "event__start_datetime": ["gte", "lte"],
+        "tickets__price": ["gte", "lte"],
+    }
+
+    def get_queryset(self):
+        # get all event IDs the user has favorited
+        favorite_event_ids = FavoriteEvent.objects.filter(user=self.request.user).values_list("event_id", flat=True)
+        # fetch those events
+        return Event.objects.filter(id__in=favorite_event_ids).distinct()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return api_response(
+            message="User favourite events retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
+class RemoveFavoriteEventView(generics.DestroyAPIView):
+    serializer_class = FavoriteEventSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        event_id = self.kwargs.get("event_id")
+        try:
+            return FavoriteEvent.objects.get(user=self.request.user, event_id=event_id)
+        except FavoriteEvent.DoesNotExist:
+            return None
+
+    def delete(self, request, *args, **kwargs):
+        favorite = self.get_object()
+        if not favorite:
+            return api_response(
+                message="Favorite not found",
+                status_code=404,
+                data={}
+            )
+
+        # Serialize the related event before deleting
+        serializer = self.get_serializer(favorite.event)
+        favorite.delete()
+
+        return api_response(
+            message="Event removed from favorites",
+            status_code=200,
+            data=serializer.data
         )

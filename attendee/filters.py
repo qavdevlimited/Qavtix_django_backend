@@ -4,6 +4,12 @@ import django_filters
 from transactions.models import IssuedTicket
 from public.models import Category
 from django.utils import timezone
+from django_filters import rest_framework as filters
+from attendee.models import FavoriteEvent
+from events.models import Event
+from rest_framework import generics, permissions
+from public.response import api_response
+from .serializers import FavoriteEventSerializer
 
 
 class TicketDashboardFilter(django_filters.FilterSet):
@@ -59,3 +65,18 @@ class TicketDashboardFilter(django_filters.FilterSet):
     class Meta:
         model = IssuedTicket
         fields = ["category", "payment", "event_status", "past", "cancelled"]
+
+
+
+
+# FilterSet for Favorite Events
+class FavoriteEventFilter(filters.FilterSet):
+    category = filters.NumberFilter(field_name="event__category__id", lookup_expr="exact")
+    start_date = filters.DateFilter(field_name="event__start_datetime", lookup_expr="gte")
+    end_date = filters.DateFilter(field_name="event__start_datetime", lookup_expr="lte")
+    min_price = filters.NumberFilter(field_name="event__tickets__price", lookup_expr="gte")
+    max_price = filters.NumberFilter(field_name="event__tickets__price", lookup_expr="lte")
+
+    class Meta:
+        model = FavoriteEvent
+        fields = ["category", "start_date", "end_date", "min_price", "max_price"]

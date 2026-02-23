@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'events',
     'transactions',
     'payments',
+    'marketplace',
 
      # Third-party apps
     "corsheaders",

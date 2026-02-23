@@ -72,12 +72,6 @@ class OrderTicket(models.Model):
     def subtotal(self):
         return self.quantity * self.price
 
-class SplitPayment(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    percentage = models.FloatField()
-    status = models.BooleanField(default=False)
 
 class IssuedTicket(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE)

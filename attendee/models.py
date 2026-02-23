@@ -2,6 +2,7 @@ from django.db import models
 from public.models import Category
 from django.conf import settings
 from host.models import Affliate
+import uuid
 
 class Attendee(models.Model):
     user = models.OneToOneField(
@@ -30,3 +31,18 @@ class AffliateEarnings(models.Model):
     attendee=models.ForeignKey(Attendee,on_delete=models.DO_NOTHING)
     earning=models.PositiveIntegerField()
     created_at=models.DateField(auto_now=True)
+
+
+
+class FavoriteEvent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="favorite_events")
+    event = models.ForeignKey("events.Event", on_delete=models.CASCADE, related_name="favorited_by")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'event')
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.username} favorited {self.event.title}"

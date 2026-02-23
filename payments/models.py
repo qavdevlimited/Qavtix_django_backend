@@ -45,3 +45,11 @@ class Payment(models.Model):
     content_object = GenericForeignKey('content_type', 'object_id')
 
     metadata = models.JSONField(null=True, blank=True)
+
+
+class SplitPayment(models.Model):
+    order = models.ForeignKey("transactions.Order", on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    percentage = models.FloatField()
+    status = models.BooleanField(default=False)

@@ -3,6 +3,7 @@
 import django_filters
 from transactions.models import IssuedTicket
 from public.models import Category
+from django.utils import timezone
 
 
 class TicketDashboardFilter(django_filters.FilterSet):
@@ -35,7 +36,26 @@ class TicketDashboardFilter(django_filters.FilterSet):
         field_name="event__start_datetime",
         lookup_expr="date__lte"
     )
+    # Custom filters (not model fields)
+    past = django_filters.BooleanFilter(
+        method="filter_past_events",
+        label="Past Events"
+    )
+
+    cancelled = django_filters.BooleanFilter(
+        method="filter_cancelled_tickets",
+        label="Cancelled Tickets"
+    )
+    def filter_past_events(self, queryset, name, value):
+        if value:
+            return queryset.filter(event__start_datetime__lt=timezone.now())
+        return queryset
+
+    def filter_cancelled_tickets(self, queryset, name, value):
+        if value:
+            return queryset.filter(status="cancelled")
+        return queryset
 
     class Meta:
         model = IssuedTicket
-        fields = ["category", "payment", "event_status"]
+        fields = ["category", "payment", "event_status", "past", "cancelled"]

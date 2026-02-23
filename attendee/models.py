@@ -29,3 +29,4 @@ class AffliateEarnings(models.Model):
     affliate=models.ForeignKey(Affliate,on_delete=models.DO_NOTHING)
     attendee=models.ForeignKey(Attendee,on_delete=models.DO_NOTHING)
     earning=models.PositiveIntegerField()
+    created_at=models.DateField(auto_now=True)

@@ -48,6 +48,9 @@ class TicketDashboardView(generics.ListAPIView):
         user = request.user
         now = timezone.now()
 
+        start_week = now - timezone.timedelta(days=now.weekday())  # Monday
+        start_month = now.replace(day=1)
+
         if not hasattr(user, "attendee_profile"):
             raise Http404("You are not an attendee.")
 
@@ -58,10 +61,16 @@ class TicketDashboardView(generics.ListAPIView):
             user=user,
             status="completed"
         )
-
+        
         total_spent = completed_orders.aggregate(
             total=Sum("total_amount")
         )["total"] or 0
+
+        spent_this_month = Order.objects.filter(
+            user=user,
+            status="completed",
+            created_at__gte=start_month
+        ).aggregate(total=Sum("total_amount"))["total"] or 0
 
 
         # TOTAL TICKETS PURCHASED-
@@ -69,13 +78,27 @@ class TicketDashboardView(generics.ListAPIView):
             total=Sum("tickets__quantity")
         )["total"] or 0
 
+        tickets_today = IssuedTicket.objects.filter(
+            owner=user,
+            created_at__date=now.date()
+        ).count()
+
 
         
         # UPCOMING EVENTS
       
-        upcoming_events = completed_orders.filter(
+        # Get upcoming events queryset
+        upcoming_events_qs = IssuedTicket.objects.filter(
+            owner=request.user,
             event__start_datetime__gte=now
-        ).values("event").distinct().count()
+        ).order_by("event__start_datetime")  # keep it ordered by start time
+
+        # Count
+        upcoming_count = upcoming_events_qs.values("event").distinct().count()
+
+        # First upcoming event
+        next_event = upcoming_events_qs.first()
+        next_event_datetime = next_event.event.start_datetime if next_event else None
 
 
         # TOTAL AFFILIATE EARNINGS
@@ -85,12 +108,21 @@ class TicketDashboardView(generics.ListAPIView):
             total=Sum("earning")
         )["total"] or 0
 
+        earnings_this_week = AffliateEarnings.objects.filter(
+            attendee__user=user,
+            created_at__gte=start_week
+        ).aggregate(total=Sum("earning"))["total"] or 0
+
 
         card_data = {
             "total_earnings": total_earnings,
+            "earnings_this_week": earnings_this_week,
             "total_spent": total_spent,
+            "spent_this_month": spent_this_month,
             "tickets_purchased": total_tickets,
-            "upcoming_events": upcoming_events,
+            "tickets_today": tickets_today,
+            "upcoming_events": upcoming_count,
+            "next_event_datetime": next_event_datetime,
         }
 
         queryset = self.filter_queryset(self.get_queryset())

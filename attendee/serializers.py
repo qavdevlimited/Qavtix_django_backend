@@ -110,3 +110,11 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
 
     def get_attendees_count(self, obj):
         return obj.order_set.filter(status="completed").values("user").distinct().count()
+    
+
+
+
+
+class TicketTransferSerializer(serializers.Serializer):
+    ticket_id = serializers.UUIDField()
+    recipient_email = serializers.EmailField()

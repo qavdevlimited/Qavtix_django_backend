@@ -5,12 +5,18 @@ from django.db.models import Sum, Count,Prefetch
 from django.http import Http404
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
-from .serializers import TicketDashboardSerializer,FavoriteEventSerializer
+from .serializers import TicketDashboardSerializer,FavoriteEventSerializer,TicketTransferSerializer
 from attendee.models import AffliateEarnings
 from events.models import EventMedia,Event
 from .models import FavoriteEvent
 from public.response import api_response
 from django.shortcuts import get_object_or_404
+from django.db import transaction
+from django.utils import timezone
+from rest_framework.views import APIView
+from django.contrib.auth.models import User
+from transactions.models import TicketTransferHistory
+from marketplace.models import MarketListing
 
 class TicketDashboardView(generics.ListAPIView):
     serializer_class = TicketDashboardSerializer
@@ -249,4 +255,88 @@ class RemoveFavoriteEventView(generics.DestroyAPIView):
             message="Event removed from favorites",
             status_code=200,
             data=serializer.data
+        )
+    
+
+
+class TransferTicketView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = TicketTransferSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        ticket_id = serializer.validated_data["ticket_id"]
+        recipient_email = serializer.validated_data["recipient_email"]
+
+        with transaction.atomic():
+
+            # Lock the ticket row to prevent race conditions
+            ticket = get_object_or_404(
+                IssuedTicket.objects.select_for_update(),
+                id=ticket_id,
+                owner=request.user,
+                status="active"
+            )
+
+            is_listed = MarketListing.objects.filter(
+                ticket=ticket,
+                status="active"
+            ).exists()
+
+            if is_listed:
+                return api_response(
+                    message="You cannot transfer a ticket that is listed in the marketplace",
+                    status_code=400,
+                    data={}
+                )
+
+
+            # Find recipient
+            try:
+                recipient = User.objects.get(email=recipient_email)
+            except User.DoesNotExist:
+                return api_response(
+                    message="Recipient does not have an account",
+                    status_code=404,
+                    data={}
+                )
+
+            if recipient == request.user:
+                return api_response(
+                    message="You cannot transfer ticket to yourself",
+                    status_code=400,
+                    data={}
+                )
+
+            # Store previous owner
+            previous_owner = ticket.owner
+
+            # Update ticket
+            ticket.owner = recipient
+            ticket.status = "transferred"
+            ticket.transferred_at = timezone.now()
+
+            # Preserve original owner if first transfer
+            if not ticket.original_owner:
+                ticket.original_owner = previous_owner
+
+            ticket.save()
+
+            # Create transfer history
+            TicketTransferHistory.objects.create(
+                ticket=ticket,
+                from_user=previous_owner,
+                to_user=recipient,
+                price=ticket.order_ticket.price  # or however you store price
+            )
+
+        return api_response(
+            message="Ticket transferred successfully",
+            status_code=200,
+            data={
+                "ticket_id": str(ticket.id),
+                "new_owner": recipient.email,
+                "status": ticket.status
+            }
         )

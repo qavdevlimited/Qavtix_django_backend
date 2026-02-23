@@ -107,3 +107,13 @@ class IssuedTicket(models.Model):
     transferred_at = models.DateTimeField(null=True, blank=True)
     metadata=models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+
+class TicketTransferHistory(models.Model):
+    ticket = models.ForeignKey(IssuedTicket, on_delete=models.CASCADE, related_name="transfer_history")
+    from_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="transfers_from")
+    to_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="transfers_to")
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    transferred_at = models.DateTimeField(auto_now_add=True)

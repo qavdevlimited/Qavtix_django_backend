@@ -24,6 +24,7 @@ urlpatterns = [
     path("host/",include('host.urls')),
     path("public/",include('public.urls')),
     path("payments/",include('payments.urls')),
+    path("attendee/",include('attendee.urls')),
 
     # Swagger docs
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),

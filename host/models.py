@@ -46,3 +46,9 @@ class HostLink(models.Model):
     url = models.URLField(max_length=200)
     label = models.CharField(max_length=50, blank=True)  # e.g. Twitter, Website
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+class Affliate(models.Model):
+    event=models.ForeignKey("events.Event",on_delete=models.DO_NOTHING)
+    commision=models.PositiveIntegerField()

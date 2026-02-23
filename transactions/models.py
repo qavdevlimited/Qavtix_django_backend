@@ -72,3 +72,44 @@ class OrderTicket(models.Model):
     def subtotal(self):
         return self.quantity * self.price
 
+class SplitPayment(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    percentage = models.FloatField()
+    status = models.BooleanField(default=False)
+
+class IssuedTicket(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE)
+    STATUS_CHOICES = [
+        ("active", "Active"),
+        ("transferred", "Transferred"),
+        ("resold", "Resold"),
+        ("used", "Used"),
+        ("cancelled", "Cancelled"),
+    ]
+
+    order_ticket = models.ForeignKey(
+        OrderTicket,
+        on_delete=models.CASCADE,
+        related_name="issued_tickets"
+    )
+    event = models.ForeignKey(Event, on_delete=models.CASCADE)
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="owned_tickets"
+    )
+
+    original_owner = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="original_tickets"
+    )
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+
+    transferred_at = models.DateTimeField(null=True, blank=True)
+    metadata=models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)

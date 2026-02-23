@@ -1,6 +1,7 @@
 from django.db import models
 from public.models import Category
 from django.conf import settings
+from host.models import Affliate
 
 class Attendee(models.Model):
     user = models.OneToOneField(
@@ -21,3 +22,10 @@ class Attendee(models.Model):
 
     def __str__(self):
         return self.full_name
+
+
+
+class AffliateEarnings(models.Model):
+    affliate=models.ForeignKey(Affliate,on_delete=models.DO_NOTHING)
+    attendee=models.ForeignKey(Attendee,on_delete=models.DO_NOTHING)
+    earning=models.PositiveIntegerField()

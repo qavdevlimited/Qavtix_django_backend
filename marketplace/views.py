@@ -89,6 +89,7 @@ class MarketListingListView(generics.ListAPIView):
 class MarketListingDeleteView(generics.DestroyAPIView):
     serializer_class = MarketListingSerializer
     permission_classes = [permissions.IsAuthenticated]
+    queryset = MarketListing.objects.all()
 
     def get_object(self):
         listing_id = self.kwargs.get("pk")
@@ -117,6 +118,7 @@ class MarketListingDeleteView(generics.DestroyAPIView):
 
 class MarketListingDetailView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
+    serializer_class = MarketEventDetailsSerializer
 
     def get_queryset(self):
         return (

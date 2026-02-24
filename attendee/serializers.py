@@ -1,14 +1,12 @@
-# serializers.py
-
 from rest_framework import serializers
 from transactions.models import IssuedTicket,Withdrawal
-from rest_framework import serializers
-from .models import AffliateEarnings,AffiliateLink,PayoutInformation
-from rest_framework import serializers
+from .models import AffliateEarnings,AffiliateLink,PayoutInformation,Attendee,TwoFactorAuths,GroupMember,TicketGroup,AccountDeletionRequest
 from events.models import Event
 from public.serializers import EventLocationSerializer
 from django.utils import timezone
 from datetime import timedelta
+from django.contrib.auth.password_validation import validate_password
+from notification.models import NotificationSettings
 
 class TicketDashboardSerializer(serializers.ModelSerializer):
     sn = serializers.SerializerMethodField()
@@ -213,3 +211,75 @@ class PayoutInformationSerializer(serializers.ModelSerializer):
             "account_number",
             "is_default",
         ]
+
+
+
+class AttendeeProfileSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source="user.email", read_only=True)
+
+    class Meta:
+        model = Attendee
+        fields = [
+            "full_name",
+            "email",
+            "email_verified",
+            "phone_number",
+            "dob",
+            "gender",
+            "country",
+            "state",
+            "city",
+            "profile_picture",
+        ]
+        read_only_fields = ["email", "email_verified"]
+
+    
+
+class TwoFactorToggleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TwoFactorAuths
+        fields = ["google", "facebook"]
+
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value
+    
+
+class NotificationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationSettings
+        exclude = ["user", "created_at", "updated_at"]
+
+
+class GroupMemberSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(source="user.email", read_only=True)
+
+    class Meta:
+        model = GroupMember
+        fields = ["email"]
+
+
+class TicketGroupSerializer(serializers.ModelSerializer):
+    members = GroupMemberSerializer(source="group_members", many=True, read_only=True)
+    member_count = serializers.SerializerMethodField()
+  
+
+    class Meta:
+        model = TicketGroup
+        fields = ["id", "name", "member_count","members"]
+
+    def get_member_count(self, obj):
+        return obj.group_members.count()
+
+
+class AccountDeletionRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccountDeletionRequest
+        fields = ["id", "user", "status", "requested_at", "reviewed_at", "admin_notes"]
+        read_only_fields = ["id", "status", "requested_at", "reviewed_at", "admin_notes", "user"]

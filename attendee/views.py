@@ -5,9 +5,12 @@ from django.db.models import Sum, Count,Prefetch
 from django.http import Http404
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
-from .serializers import TicketDashboardSerializer,FavoriteEventSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,AffiliateLinkSerializer,WithdrawalHistorySerializer,WithdrawalRequestSerializer,PayoutInformationSerializer
+from .serializers import (TicketDashboardSerializer,FavoriteEventSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
+                          AffiliateLinkSerializer,WithdrawalHistorySerializer,WithdrawalRequestSerializer,PayoutInformationSerializer,
+                          AttendeeProfileSerializer,TwoFactorToggleSerializer,ChangePasswordSerializer,NotificationSettingsSerializer,
+                          GroupMemberSerializer,TicketGroupSerializer)
 from events.models import EventMedia,Event
-from .models import FavoriteEvent,AffliateEarnings,AffiliateLink
+from .models import FavoriteEvent,AffliateEarnings,AffiliateLink,Attendee,TwoFactorAuths,TicketGroup,GroupMember,AccountDeletionRequest
 from public.response import api_response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
@@ -23,6 +26,7 @@ from django.utils.dateparse import parse_date
 import uuid
 from attendee.models import PayoutInformation
 from decimal import Decimal
+from notification.models import NotificationSettings
 
 class TicketDashboardView(generics.ListAPIView):
     serializer_class = TicketDashboardSerializer
@@ -806,4 +810,459 @@ class PayoutInformationListView(generics.ListAPIView):
             message="Payment Methods Retrieved",
             status_code=200,
             data=serializer.data
+        )
+    
+
+# views.py
+
+class AttendeeProfileView(generics.ListAPIView):
+    serializer_class = AttendeeProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Attendee.objects.filter(user=self.request.user)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset().first()
+
+        if not queryset:
+            return api_response(
+                message="Profile not found",
+                status_code=404,
+                data={}
+            )
+
+        serializer = self.get_serializer(queryset)
+
+        return api_response(
+            message="Profile retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+    
+
+
+class UpdateAttendeeProfileView(generics.UpdateAPIView):
+    serializer_class = AttendeeProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        try:
+            return Attendee.objects.get(user=self.request.user)
+        except Attendee.DoesNotExist:
+            raise Http404("Profile not found")
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", True)  # allow PATCH
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return api_response(
+            message="Profile updated successfully",
+            status_code=200,
+            data=serializer.data
+        )
+    
+
+class ToggleTwoFactorView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        two_factor, created = TwoFactorAuths.objects.get_or_create(
+            user=request.user
+        )
+
+        serializer = TwoFactorToggleSerializer(
+            two_factor,
+            data=request.data,
+            partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return api_response(
+            message="Two-factor settings updated successfully",
+            status_code=200,
+            data=serializer.data
+        )
+    
+
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+
+        if not user.check_password(serializer.validated_data["old_password"]):
+            return api_response(
+                message="Old password is incorrect",
+                status_code=400,
+                data={}
+            )
+
+        user.set_password(serializer.validated_data["new_password"])
+        user.save()
+
+        return api_response(
+            message="Password changed successfully",
+            status_code=200,
+            data={}
+        )
+    
+
+
+class NotificationSettingsView(generics.RetrieveUpdateAPIView):
+    serializer_class = NotificationSettingsSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        settings_obj, created = NotificationSettings.objects.get_or_create(
+            user=self.request.user
+        )
+        return settings_obj
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+
+        return api_response(
+            message="Notification settings retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", True)  # allow PATCH
+        instance = self.get_object()
+
+        serializer = self.get_serializer(
+            instance,
+            data=request.data,
+            partial=partial
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return api_response(
+            message="Notification settings updated successfully",
+            status_code=200,
+            data=serializer.data
+        )
+    
+
+class CreateGroupView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        name = request.data.get("name")
+        members_data = request.data.get("members", [])
+
+        if not name:
+            return api_response(
+                message="Group name is required",
+                status_code=400,
+                data={}
+            )
+
+        if not isinstance(members_data, list):
+            return api_response(
+                message="Members must be a list",
+                status_code=400,
+                data={}
+            )
+
+        emails = []
+        for member in members_data:
+            email = member.get("email")
+            if not email:
+                return api_response(
+                    message="Each member must have an email",
+                    status_code=400,
+                    data={}
+                )
+            emails.append(email.lower())
+
+        # Remove duplicates
+        emails = list(set(emails))
+
+        # Prevent adding yourself again
+        if request.user.email.lower() in emails:
+            return api_response(
+                message="You are automatically added as group owner",
+                status_code=400,
+                data={}
+            )
+
+        # Check if all users exist BEFORE creating group
+        existing_users = User.objects.filter(email__in=emails)
+        existing_emails = set(existing_users.values_list("email", flat=True))
+
+        missing_emails = set(emails) - existing_emails
+
+        if missing_emails:
+            return api_response(
+                message="Some users do not have an account",
+                status_code=400,
+                data={
+                    "non_existing_users": list(missing_emails)
+                }
+            )
+
+        with transaction.atomic():
+            group = TicketGroup.objects.create(
+                name=name,
+                owner=request.user
+            )
+
+            # Add owner automatically
+            GroupMember.objects.create(
+                group=group,
+                user=request.user,
+            )
+
+            # Add other members
+            for user in existing_users:
+                GroupMember.objects.create(
+                    group=group,
+                    user=user,
+                )
+
+        serializer = TicketGroupSerializer(group)
+
+        return api_response(
+            message="Group created successfully",
+            status_code=201,
+            data=serializer.data
+        )
+
+class MyGroupsView(generics.ListAPIView):
+    serializer_class = TicketGroupSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            TicketGroup.objects
+            .filter(members=self.request.user)
+            .prefetch_related("group_members__user")
+            .distinct()
+            .order_by("-created_at")
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        serializer = self.get_serializer(queryset, many=True)
+
+        return api_response(
+            message="Groups retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+    
+class UpdateGroupView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, group_id):
+        group = get_object_or_404(TicketGroup, id=group_id)
+
+        if group.owner != request.user:
+            return api_response("Not allowed", 403, {})
+
+        updated = False
+
+        # Update group name
+        name = request.data.get("name")
+        if name:
+            group.name = name
+            group.save()
+            updated = True
+
+        # Add new members (optional)
+        members_data = request.data.get("members", [])
+        if members_data:
+            emails = [m.get("email").lower() for m in members_data if m.get("email")]
+            existing_users = User.objects.filter(email__in=emails)
+            existing_emails = set(existing_users.values_list("email", flat=True))
+            missing = set(emails) - existing_emails
+            if missing:
+                return api_response(
+                    "Some users do not exist",
+                    400,
+                    {"non_existing_users": list(missing)}
+                )
+
+            # Add only users not already members
+            for user in existing_users:
+                if not GroupMember.objects.filter(group=group, user=user).exists():
+                    GroupMember.objects.create(group=group, user=user)
+                    updated = True
+
+        serializer = TicketGroupSerializer(group)
+
+        if updated:
+            return api_response("Group updated", 200, serializer.data)
+        else:
+            return api_response("No changes applied", 200, serializer.data)
+
+
+class DeleteGroupView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, group_id):
+        group = get_object_or_404(TicketGroup, id=group_id)
+
+        if group.owner != request.user:
+            return api_response("Not allowed", 403, {})
+
+        group.delete()
+
+        return api_response("Group deleted successfully", 200, {})
+    
+
+
+
+class RemoveGroupMemberView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, group_id):
+        email = request.data.get("email")
+
+        if not email:
+            return api_response(
+                message="Member email is required",
+                status_code=400,
+                data={}
+            )
+
+        group = get_object_or_404(TicketGroup, id=group_id)
+
+        # Only owner can remove
+        if group.owner != request.user:
+            return api_response(
+                message="Only the group owner can remove members",
+                status_code=403,
+                data={}
+            )
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return api_response(
+                message="User does not have an account",
+                status_code=404,
+                data={}
+            )
+
+        # Prevent owner removal
+        if user == group.owner:
+            return api_response(
+                message="Owner cannot be removed from the group",
+                status_code=400,
+                data={}
+            )
+
+        member = GroupMember.objects.filter(group=group, user=user).first()
+
+        if not member:
+            return api_response(
+                message="User is not a member of this group",
+                status_code=404,
+                data={}
+            )
+
+        member.delete()
+
+        return api_response(
+            message="Member removed successfully",
+            status_code=200,
+            data={}
+        )
+    
+
+class ActivitySharingView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        show_events = request.data.get("show_events")
+        show_favorites = request.data.get("show_favorites")
+
+        profile = request.user.attendee_profile
+
+        if show_events is not None:
+            profile.show_events_attending = bool(show_events)
+        if show_favorites is not None:
+            profile.show_favorites = bool(show_favorites)
+
+        profile.save()
+        return api_response(
+            "Activity sharing updated",
+            200,
+            {
+                "show_events_attending": profile.show_events_attending,
+                "show_favorites": profile.show_favorites
+            }
+        )
+    
+
+class DownloadMyDataView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+
+        # Collect data (simplified, you can serialize all related models)
+        data = {
+            "user": {
+                "email": user.email,
+                "username": user.username,
+            },
+            "profile": {
+                "full_name": user.attendee_profile.full_name,
+                "phone_number": user.attendee_profile.phone_number,
+                "dob": user.attendee_profile.dob,
+                "gender": user.attendee_profile.gender,
+                "country": user.attendee_profile.country,
+                "state": user.attendee_profile.state,
+                "city": user.attendee_profile.city,
+            },
+            # Add favorites, orders, tickets, groups, etc.
+        }
+
+        # Here you can attach this data to email or generate a file
+        # send_mail(
+        #     subject="Your Data Download",
+        #     message=str(data),  # ideally JSON attachment
+        #     from_email="no-reply@yourdomain.com",
+        #     recipient_list=[user.email]
+        # )
+
+        return api_response("Your data has been sent to your email", 200, {})
+    
+
+
+class RequestAccountDeletionView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        password = request.data.get("password")
+
+        user = request.user
+        if not user.check_password(password):
+            return api_response("Incorrect password", 400, {})
+
+        deletion_request = AccountDeletionRequest.objects.create(
+            user=user,
+        )
+
+        return api_response(
+            "Account deletion request submitted. Admin will review it.",
+            201,
+            {"request_id": str(deletion_request.id)}
         )

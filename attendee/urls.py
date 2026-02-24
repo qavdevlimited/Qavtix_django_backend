@@ -17,6 +17,23 @@ urlpatterns = [
     path('withdrawal/history/',WithdrawalHistoryView.as_view(),name="withdrawal_history"),
     path('payment/list/',PayoutInformationListView.as_view(),name="payment_list"),
 
+    path("profile/", AttendeeProfileView.as_view(), name="attendee-profile"),
+    path("profile/update/", UpdateAttendeeProfileView.as_view(), name="update-attendee-profile"),
+    path("profile/twofactor/",ToggleTwoFactorView.as_view(),name="toggle_twofactor"),
+    path("profile/change-password/", ChangePasswordView.as_view(),name="change_password"),
+    path("profile/notifications/", NotificationSettingsView.as_view(), name="notification-settings"),
+
+
+    path("groups/", MyGroupsView.as_view()),
+    path("groups/create/", CreateGroupView.as_view()),
+    path("groups/<uuid:group_id>/update/", UpdateGroupView.as_view()),
+    path("groups/<uuid:group_id>/delete/", DeleteGroupView.as_view()),
+    path("groups/<uuid:group_id>/remove-member/", RemoveGroupMemberView.as_view()),
+
+    path('privacy/activity/sharing/',ActivitySharingView.as_view(),name="actsharing"),
+    path('privacy/data/download/',DownloadMyDataView.as_view(),name="download_data"),
+    path('privacy/account/delete/',RequestAccountDeletionView.as_view(),name="account_deletion"),
+
 
 ]
 

@@ -20,12 +20,74 @@ class Attendee(models.Model):
     agree_to_terms=models.BooleanField(default=False)
     role=models.CharField(max_length=20, default="attendee")
     stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
+    email_verified=models.BooleanField(default=False)
+    dob=models.DateField(null=True,blank=True)
+    gender=models.CharField(max_length=100,blank=True)
+    profile_picture=models.URLField(blank=True,null=True)
+    show_events_attending = models.BooleanField(default=True)
+    show_favorites = models.BooleanField(default=True)
+
 
     def __str__(self):
         return self.full_name
 
 
+class TwoFactorAuths(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="two_factor_auth"
+    )
+    google = models.BooleanField(default=False)
+    facebook = models.BooleanField(default=False)
 
+    def __str__(self):
+        return f"{self.user.email} 2FA"
+    
+
+class TicketGroup(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    name = models.CharField(max_length=100)
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="owned_groups"
+    )
+
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        through="GroupMember",
+        related_name="ticket_groups"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+    
+
+class GroupMember(models.Model):
+    group = models.ForeignKey(
+        TicketGroup,
+        on_delete=models.CASCADE,
+        related_name="group_members"
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("group", "user")
+
+    def __str__(self):
+        return f"{self.user.email} - {self.group.name}"
+    
 
 class AffiliateLink(models.Model):
     event = models.ForeignKey("events.Event", on_delete=models.CASCADE, related_name="affiliate_links")
@@ -90,3 +152,27 @@ class PayoutInformation(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.bank_name}"
+    
+
+
+class AccountDeletionRequest(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("reviewed", "Reviewed"),
+        ("deleted", "Deleted"),
+        ("rejected", "Rejected"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="deletion_requests")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    requested_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    admin_notes = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.user.email} deletion request ({self.status})"
+    
+
+
+

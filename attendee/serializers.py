@@ -1,9 +1,9 @@
 # serializers.py
 
 from rest_framework import serializers
-from transactions.models import IssuedTicket
+from transactions.models import IssuedTicket,Withdrawal
 from rest_framework import serializers
-from .models import FavoriteEvent
+from .models import AffliateEarnings,AffiliateLink,PayoutInformation
 from rest_framework import serializers
 from events.models import Event
 from public.serializers import EventLocationSerializer
@@ -125,3 +125,91 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
 class TicketTransferSerializer(serializers.Serializer):
     ticket_id = serializers.UUIDField()
     recipient_email = serializers.EmailField()
+
+
+
+class AffiliateEarningHistorySerializer(serializers.ModelSerializer):
+    event_name = serializers.CharField(source="link.event.title", read_only=True)
+    tickets_sold = serializers.SerializerMethodField()
+    total_sale = serializers.SerializerMethodField()
+    your_commission = serializers.DecimalField(source="earning", max_digits=12, decimal_places=2)
+    category = serializers.CharField(source="link.event.category.name", read_only=True)
+    event_image = serializers.SerializerMethodField()
+    
+
+    class Meta:
+        model = AffliateEarnings
+        fields = ["id", "created_at", "event_name","event_image" ,"category","tickets_sold", "total_sale", "your_commission", "status"]
+
+    def get_tickets_sold(self, obj):
+        # Number of tickets sold for this earning (assumes you stored quantity somewhere)
+        return getattr(obj, "tickets_sold", 0)
+
+    def get_total_sale(self, obj):
+        return getattr(obj, "total_sale", 0)
+    
+    def get_event_image(self, obj):
+        """
+        Return featured image if exists,
+        otherwise return first image,
+        otherwise None
+        """
+        event = obj.link.event
+        featured = event.media.filter(is_featured=True).first()
+        if featured:
+            return featured.image_url
+
+        first_image = event.media.first()
+        return first_image.image_url if first_image else None
+
+
+    
+
+
+class AffiliateLinkSerializer(serializers.ModelSerializer):
+    link = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AffiliateLink
+        fields = ["id", "event", "code", "link", "clicks", "sales"]
+
+    def get_link(self, obj):
+        request = self.context.get("request")
+        domain = request.build_absolute_uri("/")[:-1]  # remove traili
+
+
+
+
+class WithdrawalHistorySerializer(serializers.ModelSerializer):
+    bank_account = serializers.CharField(source="payout_account.account_number")
+    bank_name = serializers.CharField(source="payout_account.bank_name")
+    account_name=serializers.CharField(source="payout_account.account_name")
+    status = serializers.CharField(source="get_status_display")
+
+    class Meta:
+        model = Withdrawal
+        fields = [
+            "id",
+            "created_at",
+            "amount",
+            "bank_name",
+            "bank_account",
+            "account_name",
+            "status",
+        ]
+
+class WithdrawalRequestSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    payout_account_id = serializers.UUIDField()
+
+
+class PayoutInformationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PayoutInformation
+        fields = [
+            "id",
+            "bank_name",
+            "account_name",
+            "account_number",
+            "is_default",
+        ]

@@ -5,18 +5,24 @@ from django.db.models import Sum, Count,Prefetch
 from django.http import Http404
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
-from .serializers import TicketDashboardSerializer,FavoriteEventSerializer,TicketTransferSerializer
-from attendee.models import AffliateEarnings
+from .serializers import TicketDashboardSerializer,FavoriteEventSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,AffiliateLinkSerializer,WithdrawalHistorySerializer,WithdrawalRequestSerializer,PayoutInformationSerializer
 from events.models import EventMedia,Event
-from .models import FavoriteEvent
+from .models import FavoriteEvent,AffliateEarnings,AffiliateLink
 from public.response import api_response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.views import APIView
 from django.contrib.auth.models import User
-from transactions.models import TicketTransferHistory
+from transactions.models import TicketTransferHistory,Withdrawal
 from marketplace.models import MarketListing
+from public.serializers import EventListSerializer
+from django.db.models.functions import ExtractMonth
+from django.utils.timezone import now
+from django.utils.dateparse import parse_date
+import uuid
+from attendee.models import PayoutInformation
+from decimal import Decimal
 
 class TicketDashboardView(generics.ListAPIView):
     serializer_class = TicketDashboardSerializer
@@ -339,4 +345,465 @@ class TransferTicketView(APIView):
                 "new_owner": recipient.email,
                 "status": ticket.status
             }
+        )
+
+
+
+
+#AFFLIATE FEATURES 
+
+class AffiliateDashboardView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # All links for this affiliate
+        links = AffiliateLink.objects.filter(user=user)
+
+        # All earnings
+        all_earnings = AffliateEarnings.objects.filter(link__in=links)
+
+        # Total earnings
+        total_earnings = all_earnings.aggregate(total=Sum("earning"))["total"] or 0
+
+        now = timezone.now()
+        start_of_week = now - timezone.timedelta(days=now.weekday())  # Monday
+        start_of_month = now.replace(day=1)
+
+        # Earnings this week
+        earnings_this_week = all_earnings.filter(created_at__gte=start_of_week).aggregate(total=Sum("earning"))["total"] or 0
+
+        # Earnings this month
+        earnings_this_month = all_earnings.filter(created_at__gte=start_of_month).aggregate(total=Sum("earning"))["total"] or 0
+
+        # Pending withdrawals & available to withdraw
+        # For simplicity, let's assume withdrawals are tracked elsewhere
+        pending_withdrawals = 0
+        available_to_withdraw = total_earnings - pending_withdrawals
+
+    
+        return api_response(
+            message="Ticket transferred successfully",
+            status_code=200,
+            data={
+                "total_earnings": total_earnings,
+                "earnings_this_week": earnings_this_week,
+                "earnings_this_month": earnings_this_month,
+                "pending_withdrawals": pending_withdrawals,
+                "available_to_withdraw": available_to_withdraw
+            }
+        )
+    
+
+
+class AffiliateEventsView(generics.ListAPIView):
+    serializer_class = EventListSerializer
+    permission_classes = [permissions.AllowAny]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+
+    search_fields = ["title"]
+
+    def get_queryset(self):
+        queryset = Event.objects.filter(status="active", affiliate_enabled=True).distinct().order_by('-created_at')
+
+        # Optional filters from query params
+
+        category = self.request.query_params.get("category")
+        start_date = self.request.query_params.get("start_date")
+        end_date = self.request.query_params.get("end_date")
+
+        if category:
+            queryset = queryset.filter(category_id=category)  
+        if start_date and end_date:
+            queryset = queryset.filter(
+                start_datetime__date__gte=start_date,
+                end_datetime__date__lte=end_date
+            )
+
+        return queryset.distinct()
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        # Apply DRF pagination
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)  # <--- handles pagination
+
+        # Fallback if pagination is not applied
+        serializer = self.get_serializer(queryset, many=True)
+        return api_response(
+            message="Affiliate events retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+    
+
+class AffiliateGraphView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        today = now()
+        current_year = today.year
+        current_month = today.month
+
+        
+        monthly_data = (
+            AffliateEarnings.objects
+            .filter(link__user=user, created_at__year=current_year)
+            .annotate(month=ExtractMonth("created_at"))
+            .values("month")
+            .annotate(total_earning=Sum("earning"))
+            .order_by("month")
+        )
+
+        # Fill all months and calculate % change vs previous month
+        earnings_list = []
+        prev = None
+        for m in range(1, 13):
+            month_earning = next((x["total_earning"] for x in monthly_data if x["month"] == m), 0)
+            change_pct = ((month_earning - prev) / prev * 100) if prev and prev > 0 else 0
+            earnings_list.append({
+                "month": m,
+                "earning": month_earning,
+                "change_pct": round(change_pct, 2)
+            })
+            prev = month_earning
+
+        # Determine previous month/year
+        if current_month == 1:
+            prev_month = 12
+            prev_year = current_year - 1
+        else:
+            prev_month = current_month - 1
+            prev_year = current_year
+
+        # Current month aggregates
+        current_clicks = AffiliateLink.objects.filter(
+            user=user, created_at__year=current_year, created_at__month=current_month
+        ).aggregate(total=Sum("clicks"))["total"] or 0
+
+        current_sales = AffiliateLink.objects.filter(
+            user=user, created_at__year=current_year, created_at__month=current_month
+        ).aggregate(total=Sum("sales"))["total"] or 0
+
+        current_earnings = AffliateEarnings.objects.filter(
+            link__user=user, created_at__year=current_year, created_at__month=current_month
+        ).aggregate(total=Sum("earning"))["total"] or 0
+
+        current_conversion_rate = (current_sales / current_clicks * 100) if current_clicks > 0 else 0
+
+        # Previous month aggregates
+        prev_clicks = AffiliateLink.objects.filter(
+            user=user, created_at__year=prev_year, created_at__month=prev_month
+        ).aggregate(total=Sum("clicks"))["total"] or 0
+
+        prev_sales = AffiliateLink.objects.filter(
+            user=user, created_at__year=prev_year, created_at__month=prev_month
+        ).aggregate(total=Sum("sales"))["total"] or 0
+
+        prev_earnings = AffliateEarnings.objects.filter(
+            link__user=user, created_at__year=prev_year, created_at__month=prev_month
+        ).aggregate(total=Sum("earning"))["total"] or 0
+
+        prev_conversion_rate = (prev_sales / prev_clicks * 100) if prev_clicks > 0 else 0
+
+        # Helper to calculate % change
+        def pct_change(current, previous):
+            if previous > 0:
+                return round((current - previous) / previous * 100, 2)
+            return 0
+
+
+        # Prepare dashboard data
+        dashboard_data = {
+            "monthly_earnings": earnings_list,
+            "total_clicks": current_clicks,
+            "total_clicks_change_pct": pct_change(current_clicks, prev_clicks),
+            "total_sales": current_sales,
+            "total_sales_change_pct": pct_change(current_sales, prev_sales),
+            "conversion_rate": round(current_conversion_rate, 2),
+            "conversion_rate_change_pct": pct_change(current_conversion_rate, prev_conversion_rate),
+            "total_earnings": current_earnings,
+            "total_earnings_change_pct": pct_change(current_earnings, prev_earnings),
+        }
+
+        return api_response(
+            message="Affiliate dashboard retrieved successfully",
+            status_code=200,
+            data=dashboard_data
+        )
+    
+
+
+class AffiliateEarningHistoryView(generics.ListAPIView):
+    serializer_class = AffiliateEarningHistorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["link__event__title", "link__event__category__name"] 
+    ordering_fields = ["created_at", "earning"]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = AffliateEarnings.objects.filter(link__user=user)
+
+        # Optional date range filter: ?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+        start_date = self.request.query_params.get("start_date")
+        end_date = self.request.query_params.get("end_date")
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=parse_date(start_date))
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=parse_date(end_date))
+
+        return queryset.order_by("-created_at")  # newest first
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Affiliate earning history retrieved successfully",
+                status_code=200,
+                data={
+                    "count": self.paginator.page.paginator.count,
+                    "next": self.paginator.get_next_link(),
+                    "previous": self.paginator.get_previous_link(),
+                    "results": serializer.data
+                }
+            )
+
+        serializer = self.get_serializer(queryset, many=True)
+
+        return api_response(
+            message="Affiliate earning history retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
+
+class GenerateAffiliateLinkView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = AffiliateLinkSerializer 
+    
+    def post(self, request):
+        user = request.user
+        event_id = request.data.get("event_id")
+
+        if not event_id:
+            return  api_response(
+            message="event_id is required",
+            status_code=400,
+            data={}
+        )
+
+        try:
+            event = Event.objects.get(id=event_id, affiliate_enabled=True)
+        except Event.DoesNotExist:
+            return api_response(
+            message="Event not found or affiliate not enabled",
+            status_code=404,
+            data={}
+        )
+
+        if event.host.user == user:
+            return api_response(
+                message="You cannot generate an affiliate link for your own event",
+                status_code=403,
+                data={}
+            )
+
+        # Check if user already has a link for this event
+        link, created = AffiliateLink.objects.get_or_create(
+            user=user,
+            event=event,
+            defaults={"code": uuid.uuid4()}  
+        )
+
+        serializer = AffiliateLinkSerializer(link, context={"request": request})
+        return  api_response(
+            message="Link Generated",
+            status_code=200,
+            data=serializer.data
+        )
+  
+
+
+class RequestWithdrawalView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = WithdrawalRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        amount = serializer.validated_data["amount"]
+        payout_account_id = serializer.validated_data["payout_account_id"]
+
+        if amount <= Decimal("0.00"):
+            return api_response(
+                message="Withdrawal amount must be greater than zero",
+                status_code=400,
+                data={}
+            )
+
+        # ✅ Idempotency Key (Required)
+        idempotency_key = request.headers.get("Idempotency-Key")
+
+        if not idempotency_key:
+            return api_response(
+                message="Idempotency-Key header is required",
+                status_code=400,
+                data={}
+            )
+
+        # Check if request was already processed
+        existing_withdrawal = Withdrawal.objects.filter(
+            idempotency_key=idempotency_key,
+            user=request.user
+        ).first()
+
+        if existing_withdrawal:
+            return api_response(
+                message="Withdrawal already submitted",
+                status_code=200,
+                data={"withdrawal_id": existing_withdrawal.id}
+            )
+
+        try:
+            payout_account = PayoutInformation.objects.get(
+                id=payout_account_id,
+                user=request.user
+            )
+        except PayoutInformation.DoesNotExist:
+            return api_response(
+                message="Invalid payout account",
+                status_code=400,
+                data={}
+            )
+
+        with transaction.atomic():
+
+            # 🔒 Lock earnings rows for safety
+            total_earnings = (
+                AffliateEarnings.objects
+                .select_for_update()
+                .filter(link__user=request.user, status="succeeded")
+                .aggregate(total=Sum("earning"))["total"]
+                or Decimal("0.00")
+            )
+
+            total_withdrawn = (
+                Withdrawal.objects
+                .select_for_update()
+                .filter(user=request.user)
+                .exclude(status="rejected")
+                .aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
+            )
+
+            available_balance = total_earnings - total_withdrawn
+
+            if amount > available_balance:
+                return api_response(
+                    message="Insufficient balance",
+                    status_code=400,
+                    data={
+                        "available_balance": str(available_balance)
+                    }
+                )
+
+            withdrawal = Withdrawal.objects.create(
+                user=request.user,
+                payout_account=payout_account,
+                amount=amount,
+                idempotency_key=uuid.UUID(idempotency_key)
+            )
+
+        return api_response(
+            message="Withdrawal request submitted successfully",
+            status_code=201,
+            data={
+                "withdrawal_id": withdrawal.id,
+                "available_balance": str(available_balance - amount)
+            }
+        )
+    
+
+class WithdrawalHistoryView(generics.ListAPIView):
+    serializer_class = WithdrawalHistorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            Withdrawal.objects
+            .filter(user=self.request.user)
+            .select_related("payout_account")
+            .order_by("-created_at")
+        )
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Affiliate earning history retrieved successfully",
+                status_code=200,
+                data={
+                    "count": self.paginator.page.paginator.count,
+                    "next": self.paginator.get_next_link(),
+                    "previous": self.paginator.get_previous_link(),
+                    "results": serializer.data
+                }
+            )
+
+        serializer = self.get_serializer(queryset, many=True)
+
+        return api_response(
+            message="Withdrawal history Retrieved",
+            status_code=200,
+            data=serializer.data
+        )
+    
+
+class PayoutInformationListView(generics.ListAPIView):
+    serializer_class = PayoutInformationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return PayoutInformation.objects.filter(user=self.request.user)
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Affiliate earning history retrieved successfully",
+                status_code=200,
+                data={
+                    "count": self.paginator.page.paginator.count,
+                    "next": self.paginator.get_next_link(),
+                    "previous": self.paginator.get_previous_link(),
+                    "results": serializer.data
+                }
+            )
+
+        serializer = self.get_serializer(queryset, many=True)
+
+        return api_response(
+            message="Payment Methods Retrieved",
+            status_code=200,
+            data=serializer.data
         )

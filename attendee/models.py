@@ -1,8 +1,8 @@
 from django.db import models
 from public.models import Category
 from django.conf import settings
-from host.models import Affliate
 import uuid
+from django.contrib.auth.models import User
 
 class Attendee(models.Model):
     user = models.OneToOneField(
@@ -26,9 +26,30 @@ class Attendee(models.Model):
 
 
 
+
+class AffiliateLink(models.Model):
+    event = models.ForeignKey("events.Event", on_delete=models.CASCADE, related_name="affiliate_links")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="affiliate_links")
+    code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    clicks = models.PositiveIntegerField(default=0)
+    sales = models.PositiveIntegerField(default=0)
+
+    def get_url(self):
+        return f"https://yourdomain.com/events/{self.event.id}?ref={self.code}"
+
+    def __str__(self):
+        return f"{self.user.username} - {self.event.title}"
+
 class AffliateEarnings(models.Model):
-    affliate=models.ForeignKey(Affliate,on_delete=models.DO_NOTHING)
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("succeeded", "Succeeded"),
+        ("failed", "Failed"),
+    ]
+    link = models.ForeignKey(AffiliateLink, on_delete=models.CASCADE, related_name="earnings",null=True)
     attendee=models.ForeignKey(Attendee,on_delete=models.DO_NOTHING)
+    status=models.CharField(choices=STATUS_CHOICES,default="pending")
     earning=models.PositiveIntegerField()
     created_at=models.DateField(auto_now=True)
 
@@ -46,3 +67,26 @@ class FavoriteEvent(models.Model):
 
     def __str__(self):
         return f"{self.user.username} favorited {self.event.title}"
+
+
+
+
+class PayoutInformation(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="payout_accounts"
+    )
+
+    bank_name = models.CharField(max_length=150)
+    account_name = models.CharField(max_length=255)
+    account_number = models.CharField(max_length=20)
+
+    is_default = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.bank_name}"

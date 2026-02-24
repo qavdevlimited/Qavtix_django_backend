@@ -19,6 +19,7 @@ from host.models import Host
 from host.serializers import EventDetailsSerializer
 from django.shortcuts import get_object_or_404
 from .models import Follow,Message
+from attendee.models import AffiliateLink
 
 
 
@@ -244,6 +245,16 @@ class EventDetailView(generics.RetrieveAPIView):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
+
+        ref_code = request.GET.get("ref")
+        if ref_code:
+            try:
+                link = AffiliateLink.objects.get(code=ref_code, event=instance)
+                link.clicks += 1
+                link.save()
+            except AffiliateLink.DoesNotExist:
+                # Ignore if link is invalid
+                pass
 
         return api_response(
             message="Details retrieved successfully",

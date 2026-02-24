@@ -31,15 +31,13 @@ class CheckoutPaymentView(APIView):
         email = user.email if user else data.get("email")
 
         if not email:
-            return Response(
-                {"error": "email is required for guest checkout"}, status=400
-            )
+            return api_response(message=f"Email Needed: {str(e)}",status_code=400)
 
         try:
             result = CheckoutService(user=user, email=email, data=data).run()
         except CheckoutError as e:
             transaction.set_rollback(True)
-            return api_response(message=e.message,status_code=500)
+            return api_response(message=e.message,status_code=e.status)
         except Exception as e:
             transaction.set_rollback(True)
             return api_response(message=f"Payment failed: {str(e)}",status_code=500)

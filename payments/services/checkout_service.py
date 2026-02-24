@@ -4,6 +4,10 @@ from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 from payments.models import PaymentCard, Payment
 from payments.services.factory import get_gateway
+from marketplace.models import MarketListing
+from django.db import transaction
+    
+
 
 
 class CheckoutService:
@@ -16,11 +20,17 @@ class CheckoutService:
         self.full_name = data.get("full_name", "")
         self.phone_number = data.get("phone_number", "")
         self.is_split = data.get("is_split", False)
+        self.marketplace_listing_id = data.get("marketplace_listing_id")
+        self.is_marketplace = bool(self.marketplace_listing_id)
 
     # ------------------------------------------------------------------ #
     # Public entry point                                                   #
     # ------------------------------------------------------------------ #
     def run(self):
+
+        if self.is_marketplace:
+            return self._handle_marketplace_checkout()
+        
         event = self._get_event()
         line_items = self._validate_tickets(event)
         discount = self._apply_promo(line_items)
@@ -31,6 +41,8 @@ class CheckoutService:
         payment_result = self._charge(card, total_amount)
         payment = self._persist_payment(card, card_is_temporary, order, payment_result, total_amount)
         self._finalise(payment, order, card, line_items)
+
+        
 
         return {
             "payment": payment,
@@ -166,27 +178,120 @@ class CheckoutService:
         if not card:
             raise CheckoutError("No default card found", 400)
         return card, False
+    
 
-    def _create_order(self, event, line_items, total_amount, discount):
+    @transaction.atomic
+    def _handle_marketplace_checkout(self):
+        try:
+            listing = (
+                MarketListing.objects
+                .select_for_update()
+                .select_related(
+                    "ticket",
+                    "ticket__event",
+                    "ticket__order_ticket",
+                    "seller"
+                )
+                .get(id=self.marketplace_listing_id)
+            )
+        
+        except MarketListing.DoesNotExist:
+            raise CheckoutError("Marketplace listing not found.", 404)
+
+        # Validate listing
+        if listing.status != "active":
+            raise CheckoutError("This listing is no longer available.",400)
+
+        if listing.seller == self.user:
+            raise CheckoutError("You cannot purchase your own listing.",400)
+        
+        if self.user and listing.seller_id == self.user.id:
+            raise CheckoutError("You cannot buy your own marketplace listing.", 400)
+        
+        if listing.status != "active":
+            raise CheckoutError("This ticket has already been sold.")
+        
+        listing.status = "reserved"
+        listing.save()
+
+    
+
+        event = listing.ticket.event
+
+        subtotal = listing.price
+        discount = 0
+        total_amount = listing.price
+
+        # Create Order
+        order = self._create_order(
+            event=event,
+            discount=discount,
+            total_amount=total_amount,
+            marketplace_listing=listing,
+        )
+
+        # Create Payment (reuse your existing method)
+        card, card_is_temporary = self._resolve_card()
+        payment_result = self._charge(card, total_amount)
+        payment = self._persist_payment(card, card_is_temporary, order, payment_result, total_amount)
+       
+
+        # ⚠️ DO NOT transfer ticket yet
+        # Transfer only after payment success callback
+
+        # return {
+        #     "order": order,
+        #     "payment": payment,
+        #     "subtotal": subtotal,
+        #     "discount": discount,
+        #     "total_amount": total_amount,
+        #     "listing": listing,
+        # }
+    
+        return {
+            "payment": payment,
+            "order": order,
+            "card": card,
+            "card_is_temporary": card_is_temporary,
+            "subtotal": subtotal,
+            "discount": discount,
+            "total_amount": total_amount,
+        }
+
+    def _create_order(self, event=None, line_items=None, total_amount=None, discount=None, marketplace_listing=None):
         from transactions.models import Order, OrderTicket
+
         order = Order.objects.create(
             user=self.user,
             email=self.email,
-            full_name=self.full_name,       
-            phone_number=self.phone_number,  
-            is_split=self.is_split,  
+            full_name=self.full_name,
+            phone_number=self.phone_number,
+            is_split=self.is_split,
             event=event,
             total_amount=total_amount,
             discount=discount,
             status="pending",
+            marketplace_listing=marketplace_listing,
         )
-        for ticket, qty, unit_price in line_items:
+
+        # Create OrderTickets only if line_items exist
+        if line_items:
+            for ticket, qty, unit_price in line_items:
+                OrderTicket.objects.create(
+                    order=order,
+                    ticket=ticket,
+                    quantity=qty,
+                    price=unit_price,
+                )
+        # Create OrderTicket for marketplace listing
+        elif marketplace_listing:
             OrderTicket.objects.create(
                 order=order,
-                ticket=ticket,
-                quantity=qty,
-                price=unit_price,
+                ticket=marketplace_listing.ticket.order_ticket.ticket,
+                quantity=1,
+                price=marketplace_listing.price,
             )
+
         return order
 
     def _charge(self, card, total_amount):

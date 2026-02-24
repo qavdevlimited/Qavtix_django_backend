@@ -54,6 +54,12 @@ class Order(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     metadata = models.JSONField(blank=True, null=True) 
     is_split=models.BooleanField(default=False) 
+    marketplace_listing = models.ForeignKey(
+        "marketplace.MarketListing",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL
+    )
 
 
     class Meta:

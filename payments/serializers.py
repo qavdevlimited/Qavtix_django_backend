@@ -18,10 +18,11 @@ class CheckoutPaymentSerializer(serializers.Serializer):
     is_split=serializers.BooleanField(default=False)
 
     # Target is now always an event — Order is created server-side
-    event_id = serializers.UUIDField()
+    event_id = serializers.UUIDField(required=False)
+    marketplace_listing_id = serializers.IntegerField(required=False)
 
     # One or more ticket types with quantities
-    tickets = TicketLineItemSerializer(many=True)
+    tickets = TicketLineItemSerializer(many=True,required=False)
 
     # Optional promo code applied to the whole order
     promo_code = serializers.CharField(required=False, allow_blank=True)
@@ -34,10 +35,6 @@ class CheckoutPaymentSerializer(serializers.Serializer):
     # Required for anonymous (unauthenticated) checkout
     email = serializers.EmailField(required=False)
 
-    def validate_tickets(self, value):
-        if not value:
-            raise serializers.ValidationError("At least one ticket line item is required.")
-        return value
 
     def validate(self, data):
         # Must supply a payment instrument
@@ -45,6 +42,21 @@ class CheckoutPaymentSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 "Provide either card_id (saved card) or payment_method_id (new card)."
             )
+        event_id = data.get("event_id")
+        tickets = data.get("tickets")
+        marketplace_id = data.get("marketplace_listing_id")
+
+        # Must choose one flow
+        if marketplace_id and (event_id or tickets):
+            raise serializers.ValidationError(
+                "Provide either marketplace_listing_id OR event_id with tickets, not both."
+            )
+
+        if not marketplace_id and not (event_id and tickets):
+            raise serializers.ValidationError(
+                "You must provide either marketplace_listing_id OR event_id with tickets."
+            )
+
         return data
 
 

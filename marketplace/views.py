@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from marketplace.models import MarketListing
-from .serializers import MarketListingSerializer
+from .serializers import MarketListingSerializer,MarketEventDetailsSerializer
 from public.response import api_response
 
 
@@ -111,4 +111,55 @@ class MarketListingDeleteView(generics.DestroyAPIView):
             message="Successfully removed ticket from marketplace",
             status_code=200,
             data=serializer.data
+        )
+    
+
+
+class MarketListingDetailView(generics.RetrieveAPIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        return (
+            MarketListing.objects
+            .filter(status="active")
+            .select_related(
+                "ticket",
+                "ticket__event",
+                "ticket__order_ticket",
+                "ticket__order_ticket__ticket",
+                "seller",
+            )
+            .prefetch_related(
+                "ticket__event__media",
+                "ticket__event__tickets",
+                "ticket__event__tags",
+                "ticket__event__social_links",
+            )
+        )
+
+    def retrieve(self, request, *args, **kwargs):
+        listing = self.get_object()
+
+        # Optional: prevent expired listing access
+        if listing.expires_at and listing.expires_at < timezone.now():
+            return api_response(
+                message="This listing has expired",
+                status_code=404,
+                data=None
+            )
+
+        event = listing.ticket.event  # clean access
+
+        serializer = MarketEventDetailsSerializer(
+            event,
+            context={
+                "request": request,
+                "listing": listing,
+            }
+        )
+
+        return api_response(
+            message="Marketplace listing retrieved successfully",
+            status_code=200,
+            data=serializer.data,
         )

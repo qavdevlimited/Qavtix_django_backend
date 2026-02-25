@@ -1266,3 +1266,38 @@ class RequestAccountDeletionView(APIView):
             201,
             {"request_id": str(deletion_request.id)}
         )
+    
+
+
+class ListPayoutAccountsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        accounts = PayoutInformation.objects.filter(user=request.user)
+        serializer = PayoutInformationSerializer(accounts, many=True)
+        return api_response(
+            message="Payout accounts retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
+
+class AddPayoutAccountView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = PayoutInformationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # If user sets this as default, unset any existing defaults
+        if serializer.validated_data.get("is_default", False):
+            PayoutInformation.objects.filter(user=request.user).update(is_default=False)
+
+        account = serializer.save(user=request.user)
+
+        return api_response(
+            message="Payout account added successfully",
+            status_code=201,
+            data=PayoutInformationSerializer(account).data
+        )

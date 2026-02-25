@@ -283,3 +283,10 @@ class AccountDeletionRequestSerializer(serializers.ModelSerializer):
         model = AccountDeletionRequest
         fields = ["id", "user", "status", "requested_at", "reviewed_at", "admin_notes"]
         read_only_fields = ["id", "status", "requested_at", "reviewed_at", "admin_notes", "user"]
+
+
+class PayoutInformationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PayoutInformation
+        fields = ["id", "bank_name", "account_name", "account_number", "is_default", "created_at"]
+        read_only_fields = ["id", "created_at"]

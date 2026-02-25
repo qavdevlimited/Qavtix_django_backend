@@ -12,6 +12,7 @@ from drf_yasg.utils import swagger_auto_schema
 from decimal import Decimal
 from django.utils import timezone
 from public.response import flatten_errors,api_response
+from stripe import StripeError, InvalidRequestError
 
 
 class CheckoutPaymentView(APIView):
@@ -84,12 +85,51 @@ class AddCardView(APIView):
         set_default = serializer.validated_data["set_default"]
 
         gateway = get_gateway(country)
-        card = gateway.add_card(
-            user=user,
-            payment_method_id=payment_method_id,
-            email=user.email,
-        )
 
+        try:
+            card = gateway.add_card(
+                user=user,
+                payment_method_id=payment_method_id,
+                email=user.email,
+            )
+        except InvalidRequestError as e:
+            # Stripe says the payment method doesn't exist
+            return api_response(
+                message="Invalid payment method. Please check your card details and try again.",
+                status_code=400,
+                data={}
+            )
+        except StripeError as e:
+            # Catch any other Stripe-related errors
+            return api_response(
+                message=f"Payment service error: {e.user_message or str(e)}",
+                status_code=400,
+                data={}
+            )
+        except Exception as e:
+            # Catch anything else
+            return api_response(
+                message="An unexpected error occurred while adding your card. Please try again later.",
+                status_code=500,
+                data={}
+            )
+        existing_card = PaymentCard.objects.filter(
+            user=user,
+            last4=card.last4,
+            exp_month=card.exp_month,
+            exp_year=card.exp_year,
+            brand=card.brand,
+            provider=card.provider
+        ).first()
+
+        if existing_card:
+            return api_response(
+                message=f"You already have this card: ****{existing_card.last4} ({existing_card.brand})",
+                status_code=400,
+                data={}
+            )
+
+        # Set default if needed
         if set_default or not PaymentCard.objects.filter(user=user).exists():
             PaymentCard.objects.filter(user=user).update(is_default=False)
             card.is_default = True
@@ -98,7 +138,11 @@ class AddCardView(APIView):
 
         card.save()
 
-        return Response(PaymentCardSerializer(card).data, status=201)
+        return api_response(
+            message="Card added successfully",
+            status_code=201,
+            data=PaymentCardSerializer(card).data
+        )
 
 
 class ListCardsView(APIView):
@@ -107,6 +151,17 @@ class ListCardsView(APIView):
     def get(self, request):
         cards = PaymentCard.objects.filter(user=request.user)
         return Response(PaymentCardSerializer(cards, many=True).data)
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        serializer = self.get_serializer(queryset, many=True)
+
+        return api_response(
+            message="cards retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
 
 
 class SetDefaultCardView(APIView):
@@ -127,7 +182,11 @@ class SetDefaultCardView(APIView):
         card.is_default = True
         card.save()
 
-        return Response({"status": "success", "default_card": card.id})
+        return api_response(
+            message="card default successfully",
+            status_code=200,
+            data=card.id
+        )
 
 
 class DeleteCardView(APIView):

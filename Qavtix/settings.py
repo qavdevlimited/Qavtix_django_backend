@@ -64,7 +64,6 @@ INSTALLED_APPS = [
      # Third-party apps
     "corsheaders",
     'rest_framework',
-    "drf_yasg",
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
@@ -75,6 +74,7 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',
     'anymail',
     "django_filters",
+    "drf_spectacular",
 ]
 
 MIDDLEWARE = [
@@ -177,7 +177,20 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Qavtix API",
+    "DESCRIPTION": "Official API documentation for Qavtix",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+     "COMPONENT_SPLIT_REQUEST": True,
+     "ENUM_NAME_OVERRIDES": {
+        "status": "EventStatusEnum"
+    }
+}
+
 
 
 #Cors settings

@@ -27,6 +27,10 @@ import uuid
 from attendee.models import PayoutInformation
 from decimal import Decimal
 from notification.models import NotificationSettings
+from drf_spectacular.utils import extend_schema, inline_serializer,OpenApiParameter
+from rest_framework import serializers
+
+
 
 class TicketDashboardView(generics.ListAPIView):
     serializer_class = TicketDashboardSerializer
@@ -146,24 +150,63 @@ class TicketDashboardView(generics.ListAPIView):
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
 
-        serializer = self.get_serializer(page or queryset, many=True)
-
         if page is not None:
-            response = self.get_paginated_response(serializer.data)
-            response.data["cards"] = card_data
-            return response
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Dashboard retrieved successfully",
+                status_code=200,
+                data={
+                    "count": self.paginator.page.paginator.count,
+                    "next": self.paginator.get_next_link(),
+                    "previous": self.paginator.get_previous_link(),
+                    "results": serializer.data
+                }
+            )
+
+        serializer = self.get_serializer(queryset, many=True)
 
         return api_response(
-            message="Ticket dashboard fetched successfully",
+            message="Dashboard retrieved successfully",
             status_code=200,
-            data={
-                "cards": card_data,
-                "table": serializer.data
-            }
+            data=serializer.data
         )
     
 
-
+@extend_schema(
+    request=inline_serializer(
+        name="AddFavoriteEventRequest",
+        fields={
+            "event_id": serializers.UUIDField(),  # or serializers.IntegerField() depending on your PK
+        }
+    ),
+    responses={
+        200: inline_serializer(
+            name="AddFavoriteEventResponse",
+            fields={
+                "message": serializers.CharField(),
+                "status_code": serializers.IntegerField(),
+                "data": serializers.DictField()  # the serialized Event
+            }
+        ),
+        400: inline_serializer(
+            name="AddFavoriteEventBadRequest",
+            fields={
+                "message": serializers.CharField(),
+                "status_code": serializers.IntegerField(),
+                "data": serializers.DictField()
+            }
+        ),
+        404: inline_serializer(
+            name="AddFavoriteEventNotFound",
+            fields={
+                "message": serializers.CharField(),
+                "status_code": serializers.IntegerField(),
+                "data": serializers.DictField()
+            }
+        )
+    },
+    description="Add an event to the authenticated user's favorites."
+)
 class AddFavoriteEventView(generics.CreateAPIView):
     serializer_class = FavoriteEventSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -215,10 +258,10 @@ class FavoriteEventListView(generics.ListAPIView):
         filters.OrderingFilter,
     ]
     ordering_fields = ["created_at", "event__start_datetime"]
-    search_fields = ["title"]
+    search_fields = ["title","category"]
     filterset_fields = {
-        "event__category": ["exact"],
-        "event__start_datetime": ["gte", "lte"],
+        "category__id": ["exact"],        # model relation
+        "start_datetime": ["gte", "lte"],
         "tickets__price": ["gte", "lte"],
     }
 
@@ -230,12 +273,29 @@ class FavoriteEventListView(generics.ListAPIView):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Favourite retrieved successfully",
+                status_code=200,
+                data={
+                    "count": self.paginator.page.paginator.count,
+                    "next": self.paginator.get_next_link(),
+                    "previous": self.paginator.get_previous_link(),
+                    "results": serializer.data
+                }
+            )
+
         serializer = self.get_serializer(queryset, many=True)
+
         return api_response(
-            message="User favourite events retrieved successfully",
+            message="Favouriteretrieved successfully",
             status_code=200,
             data=serializer.data
         )
+        
 
 class RemoveFavoriteEventView(generics.DestroyAPIView):
     serializer_class = FavoriteEventSerializer
@@ -269,6 +329,9 @@ class RemoveFavoriteEventView(generics.DestroyAPIView):
     
 
 
+@extend_schema(
+    request=TicketTransferSerializer,
+)
 class TransferTicketView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -355,7 +418,19 @@ class TransferTicketView(APIView):
 
 
 #AFFLIATE FEATURES 
-
+@extend_schema(
+    description="Retrieve affiliate dashboard summary for the current user",
+    responses=inline_serializer(
+        name="AffiliateDashboardResponse",
+        fields={
+            "total_earnings": serializers.FloatField(),
+            "earnings_this_week": serializers.FloatField(),
+            "earnings_this_month": serializers.FloatField(),
+            "pending_withdrawals": serializers.FloatField(),
+            "available_to_withdraw": serializers.FloatField(),
+        }
+    )
+)
 class AffiliateDashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -388,7 +463,7 @@ class AffiliateDashboardView(APIView):
 
     
         return api_response(
-            message="Ticket transferred successfully",
+            message="Affliate Data Listed successfully",
             status_code=200,
             data={
                 "total_earnings": total_earnings,
@@ -433,22 +508,67 @@ class AffiliateEventsView(generics.ListAPIView):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-        
-        # Apply DRF pagination
         page = self.paginate_queryset(queryset)
+
         if page is not None:
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)  # <--- handles pagination
+            return api_response(
+                message="Affiliate Events retrieved successfully",
+                status_code=200,
+                data={
+                    "count": self.paginator.page.paginator.count,
+                    "next": self.paginator.get_next_link(),
+                    "previous": self.paginator.get_previous_link(),
+                    "results": serializer.data
+                }
+            )
 
-        # Fallback if pagination is not applied
         serializer = self.get_serializer(queryset, many=True)
+
         return api_response(
-            message="Affiliate events retrieved successfully",
+            message="Affiliate Events retrieved successfully",
             status_code=200,
             data=serializer.data
         )
     
 
+
+@extend_schema(
+    description="Retrieve affiliate dashboard graph data for the current user",
+    # no request body needed for GET, but if you allow query params you can declare them:
+    parameters=[
+        OpenApiParameter(
+            name="year",
+            description="Optional year to filter earnings",
+            required=False,
+            type=int,
+        ),
+        OpenApiParameter(
+            name="month",
+            description="Optional month to filter earnings",
+            required=False,
+            type=int,
+        ),
+    ],
+    responses=inline_serializer(
+        name="AffiliateGraphResponse",
+        fields={
+            "monthly_earnings": serializers.ListField(
+                child=serializers.DictField(
+                    child=serializers.FloatField()
+                )
+            ),
+            "total_clicks": serializers.IntegerField(),
+            "total_clicks_change_pct": serializers.FloatField(),
+            "total_sales": serializers.IntegerField(),
+            "total_sales_change_pct": serializers.FloatField(),
+            "conversion_rate": serializers.FloatField(),
+            "conversion_rate_change_pct": serializers.FloatField(),
+            "total_earnings": serializers.FloatField(),
+            "total_earnings_change_pct": serializers.FloatField(),
+        }
+    )
+)
 class AffiliateGraphView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -595,6 +715,16 @@ class AffiliateEarningHistoryView(generics.ListAPIView):
         )
 
 
+@extend_schema(
+    request=inline_serializer(
+        name="GenerateAffiliateLinkRequest",
+        fields={
+            "event_id": serializers.UUIDField(),
+        }
+    ),
+    responses=AffiliateLinkSerializer,  # keep your response serializer
+    description="Generate an affiliate link for an event"
+)
 class GenerateAffiliateLinkView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = AffiliateLinkSerializer 
@@ -641,7 +771,9 @@ class GenerateAffiliateLinkView(APIView):
         )
   
 
-
+@extend_schema(
+    request=WithdrawalRequestSerializer,
+)
 class RequestWithdrawalView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -866,6 +998,9 @@ class UpdateAttendeeProfileView(generics.UpdateAPIView):
         )
     
 
+@extend_schema(
+    request=TwoFactorToggleSerializer,
+)
 class ToggleTwoFactorView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -890,7 +1025,9 @@ class ToggleTwoFactorView(APIView):
     
 
 
-
+@extend_schema(
+    request=ChangePasswordSerializer,
+)
 class ChangePasswordView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -957,6 +1094,22 @@ class NotificationSettingsView(generics.RetrieveUpdateAPIView):
         )
     
 
+@extend_schema(
+    request=inline_serializer(
+        name="CreateGroupRequest",
+        fields={
+            "name": serializers.CharField(),
+            "members": serializers.ListField(
+                child=serializers.DictField(
+                    child=serializers.CharField()
+                ),
+                required=False,
+                help_text="List of members with their emails"
+            ),
+        },
+    ),
+    responses=TicketGroupSerializer,
+)
 class CreateGroupView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1066,6 +1219,10 @@ class MyGroupsView(generics.ListAPIView):
             data=serializer.data
         )
     
+
+@extend_schema(
+    request=TicketGroupSerializer,
+)
 class UpdateGroupView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1112,6 +1269,18 @@ class UpdateGroupView(APIView):
             return api_response("No changes applied", 200, serializer.data)
 
 
+@extend_schema(
+    request=None,  # DELETE has no body
+    responses={
+        200: inline_serializer(
+            name="DeleteGroupResponse",
+            fields={}  # empty response data
+        ),
+        403: None,
+        404: None,
+    },
+    description="Delete a group. Only the group owner can perform this action."
+)
 class DeleteGroupView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1127,7 +1296,24 @@ class DeleteGroupView(APIView):
     
 
 
-
+@extend_schema(
+    request=inline_serializer(
+        name="RemoveGroupMemberRequest",
+        fields={
+            "email": serializers.EmailField(),
+        },
+    ),
+    responses={
+        200: inline_serializer(
+            name="RemoveGroupMemberResponse",
+            fields={}  # empty dict since you return empty data
+        ),
+        400: None,
+        403: None,
+        404: None,
+    },
+    description="Remove a member from a group. Only the group owner can perform this action."
+)
 class RemoveGroupMemberView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1186,6 +1372,25 @@ class RemoveGroupMemberView(APIView):
         )
     
 
+
+    
+@extend_schema(
+    request=inline_serializer(
+        name="ActivitySharingRequest",
+        fields={
+            "show_events": serializers.BooleanField(required=False),
+            "show_favorites": serializers.BooleanField(required=False),
+        },
+    ),
+    responses=inline_serializer(
+        name="ActivitySharingResponse",
+        fields={
+            "show_events_attending": serializers.BooleanField(),
+            "show_favorites": serializers.BooleanField(),
+        },
+    ),
+    description="Update which activity types (events, favorites) are visible on your profile."
+)
 class ActivitySharingView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1247,6 +1452,24 @@ class DownloadMyDataView(APIView):
     
 
 
+@extend_schema(
+    request=inline_serializer(
+        name="RequestAccountDeletionRequest",
+        fields={
+            "password": serializers.CharField(write_only=True),
+        },
+    ),
+    responses={
+        201: inline_serializer(
+            name="RequestAccountDeletionResponse",
+            fields={
+                "request_id": serializers.UUIDField(),
+            },
+        ),
+        400: None,
+    },
+    description="Submit an account deletion request. Requires password confirmation.",
+)
 class RequestAccountDeletionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1268,7 +1491,9 @@ class RequestAccountDeletionView(APIView):
         )
     
 
-
+@extend_schema(
+    request=PayoutInformationSerializer,
+)
 class ListPayoutAccountsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1282,6 +1507,9 @@ class ListPayoutAccountsView(APIView):
         )
 
 
+@extend_schema(
+    request=PayoutInformationSerializer,
+)
 class AddPayoutAccountView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

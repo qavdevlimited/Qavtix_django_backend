@@ -6,22 +6,23 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from payments.services.factory import get_gateway
 from payments.models import PaymentCard, Payment
-from payments.serializers import CheckoutPaymentSerializer, AddCardSerializer, PaymentCardSerializer
+from payments.serializers import *
 from payments.services.checkout_service import CheckoutService, CheckoutError
-from drf_yasg.utils import swagger_auto_schema
+from drf_spectacular.utils import extend_schema
 from decimal import Decimal
 from django.utils import timezone
 from public.response import flatten_errors,api_response
 from stripe import StripeError, InvalidRequestError
+from drf_spectacular.utils import extend_schema, inline_serializer,OpenApiParameter
+from rest_framework import serializers
 
 
+@extend_schema(
+    request=CheckoutPaymentSerializer,
+)
 class CheckoutPaymentView(APIView):
     permission_classes = [AllowAny]
 
-    @swagger_auto_schema(
-        request_body=CheckoutPaymentSerializer,
-        responses={200: "Payment response"},
-    )
     @transaction.atomic
     def post(self, request):
         serializer = CheckoutPaymentSerializer(data=request.data)
@@ -71,6 +72,16 @@ class CheckoutPaymentView(APIView):
             },
         )
 
+
+@extend_schema(
+    request=AddCardSerializer,
+    responses={
+        201: PaymentCardSerializer,
+        400: None,
+        500: None
+    },
+    description="Add a new payment card for the authenticated user. Handles Stripe errors and prevents duplicate cards."
+)
 class AddCardView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -145,6 +156,11 @@ class AddCardView(APIView):
         )
 
 
+
+@extend_schema(
+    responses={200: PaymentCardSerializer(many=True)},
+    description="Retrieve all payment cards for the authenticated user."
+)
 class ListCardsView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -164,6 +180,11 @@ class ListCardsView(APIView):
         )
 
 
+@extend_schema(
+    request=SetDefaultCardRequestSerializer,
+    responses={200: SetDefaultCardResponseSerializer, 400: None, 404: None},
+    description="Set a specific payment card as the default for the user."
+)
 class SetDefaultCardView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -189,6 +210,22 @@ class SetDefaultCardView(APIView):
         )
 
 
+
+@extend_schema(
+    description="Delete a payment card for the authenticated user. If the deleted card was default, the next card becomes default.",
+    request=inline_serializer(
+        name="DeleteCardRequest",
+        fields={
+            "card_id": serializers.UUIDField(),
+        }
+    ),
+    responses=inline_serializer(
+        name="DeleteCardResponse",
+        fields={
+            "status": serializers.CharField()
+        }
+    )
+)
 class DeleteCardView(APIView):
     permission_classes = [IsAuthenticated]
 

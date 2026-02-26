@@ -21,7 +21,7 @@ urlpatterns = [
     path("profile/update/", UpdateAttendeeProfileView.as_view(), name="update-attendee-profile"),
     path("profile/twofactor/",ToggleTwoFactorView.as_view(),name="toggle_twofactor"),
     path("profile/change-password/", ChangePasswordView.as_view(),name="change_password"),
-    path("profile/notifications/", NotificationSettingsView.as_view(), name="notification-settings"),
+    path("profile/notifications/settings/", NotificationSettingsView.as_view(), name="notification-settings"),
 
 
     path("groups/", MyGroupsView.as_view()),

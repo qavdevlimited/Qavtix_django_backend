@@ -94,3 +94,15 @@ class AddCardSerializer(serializers.Serializer):
     payment_method_id = serializers.CharField()
     country = serializers.CharField()
     set_default = serializers.BooleanField(default=False)
+
+
+
+class SetDefaultCardRequestSerializer(serializers.Serializer):
+    card_id = serializers.UUIDField(
+        help_text="The ID of the card to set as default"
+    )
+
+class SetDefaultCardResponseSerializer(serializers.Serializer):
+    card_id = serializers.UUIDField(
+        help_text="The ID of the card that was set as default"
+    )

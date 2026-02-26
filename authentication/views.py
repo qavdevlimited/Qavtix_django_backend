@@ -13,7 +13,6 @@ from rest_framework.response import Response
 from rest_framework import status
 from .serializers import HostRegisterSerializer, AttendeeRegisterSerializer,CustomLoginSerializer,ForgotPasswordSerializer,VerifyPasswordResetOTPSerializer,PasswordResetConfirmSerializer
 from rest_framework_simplejwt.tokens import RefreshToken,TokenError,AccessToken
-from drf_yasg.utils import swagger_auto_schema
 from rest_framework import serializers
 from django.utils import timezone
 from datetime import timedelta
@@ -21,11 +20,14 @@ from .models import PasswordResetOTP, PasswordResetToken
 from notification.utils import send_password_reset_otp
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
+from drf_spectacular.utils import extend_schema
 
 
+@extend_schema(
+    request=CustomLoginSerializer,
+)
 class CustomLoginView(APIView):
-
-    @swagger_auto_schema(request_body=CustomLoginSerializer)
+    
     def post(self, request):
         serializer = CustomLoginSerializer(data=request.data)
         try:
@@ -103,9 +105,11 @@ class GoogleLogin(SocialLoginView):
             return api_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
             
 
+@extend_schema(
+    request=HostRegisterSerializer,
+)
 class HostRegisterView(APIView):
 
-    @swagger_auto_schema(request_body=HostRegisterSerializer)
     def post(self, request):
         serializer = HostRegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -120,9 +124,11 @@ class HostRegisterView(APIView):
         }, status=201)
 
 
+@extend_schema(
+    request=AttendeeRegisterSerializer,
+)
 class AttendeeRegisterView(APIView):
 
-    @swagger_auto_schema(request_body=AttendeeRegisterSerializer)
     def post(self, request):
         serializer = AttendeeRegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -195,11 +201,12 @@ class CustomTokenVerifyView(APIView):
 
 
 
-
+@extend_schema(
+    request=ForgotPasswordSerializer,
+)
 class PasswordResetOTPRequestView(APIView):
     permission_classes = []
 
-    @swagger_auto_schema(request_body=ForgotPasswordSerializer)
     def post(self, request):
         email = request.data.get("email")
 
@@ -233,12 +240,12 @@ class PasswordResetOTPRequestView(APIView):
         return Response(response)
 
 
-
+@extend_schema(
+    request=VerifyPasswordResetOTPSerializer,
+)
 class VerifyPasswordResetOTPView(APIView):
     permission_classes = []
 
-
-    @swagger_auto_schema(request_body=VerifyPasswordResetOTPSerializer)
     def post(self, request):
         email = request.data.get("email")
         otp = request.data.get("otp")
@@ -284,11 +291,12 @@ class VerifyPasswordResetOTPView(APIView):
             )
 
 
-
+@extend_schema(
+    request=PasswordResetConfirmSerializer,
+)
 class PasswordResetConfirmView(APIView):
     permission_classes = []
 
-    @swagger_auto_schema(request_body=PasswordResetConfirmSerializer)
     def post(self, request):
         token = request.data.get("token")
         new_password = request.data.get("new_password")

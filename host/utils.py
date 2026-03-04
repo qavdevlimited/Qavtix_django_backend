@@ -3,6 +3,7 @@ import django_filters
 from django.db.models import F, Sum
 from django.db.models.functions import Coalesce
 from events.models import Event
+from django.utils.timezone import now as tnow ,timedelta
 
 
 class EventDashboardFilter(django_filters.FilterSet):
@@ -32,3 +33,48 @@ class EventDashboardFilter(django_filters.FilterSet):
             ).filter(total_sold__gte=F("total_quantity"))
 
         return queryset
+
+
+class CustomerListFilter(django_filters.FilterSet):
+    """
+    Filters for the customer list endpoint.
+    Applied manually against the annotated queryset (a ValuesQuerySet),
+    so we define plain fields and apply them in the view.
+    """
+    ticket_type = django_filters.CharFilter(method="noop")   # handled in view
+    date_range = django_filters.CharFilter(method="noop")     # 'day'|'week'|'month'
+
+    class Meta:
+        # No Django model — we do the filtering logic in the view helper below.
+        fields = []
+
+    def noop(self, queryset, name, value):
+        return queryset
+
+
+def apply_date_range(queryset, date_range_value, date_field="last_purchase_date"):
+    """Return a queryset filtered to the chosen period."""
+    now = tnow()
+    if date_range_value == "day":
+        since = now - timedelta(days=1)
+    elif date_range_value == "week":
+        since = now - timedelta(weeks=1)
+    elif date_range_value == "month":
+        since = now - timedelta(days=30)
+    else:
+        return queryset
+    return queryset.filter(**{f"{date_field}__gte": since})
+
+
+def apply_date_range_qs(queryset, date_range_value, date_field="created_at"):
+    """Same helper but for ORM querysets (Order model)."""
+    now = tnow()
+    if date_range_value == "day":
+        since = now - timedelta(days=1)
+    elif date_range_value == "week":
+        since = now - timedelta(weeks=1)
+    elif date_range_value == "month":
+        since = now - timedelta(days=30)
+    else:
+        return queryset
+    return queryset.filter(**{f"{date_field}__gte": since})

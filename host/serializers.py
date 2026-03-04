@@ -216,3 +216,89 @@ class EventDetailsSerializer(serializers.ModelSerializer):
             .distinct()                   # Unique users
             .count()                      # Count of unique attendees
         )
+    
+
+
+class CustomerCardSerializer(serializers.Serializer):
+    """Cards for the customer list page."""
+    total_customers = serializers.IntegerField()
+    new_this_month = serializers.IntegerField()
+    repeat_buyers = serializers.IntegerField()
+    average_spend = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+
+class CustomerListSerializer(serializers.Serializer):
+    """Row data for the customer table."""
+    user_id = serializers.IntegerField(source="user__id")
+    name = serializers.CharField(source="user__attendee_profile__full_name")
+    email = serializers.CharField(source="user__email")
+    status = serializers.SerializerMethodField()
+    events_attended = serializers.IntegerField()
+    total_spent = serializers.DecimalField(max_digits=10, decimal_places=2)
+    last_purchase_date = serializers.DateTimeField()
+
+    def get_status(self, obj):
+        """Classify the customer: top spender, new customer, or repeat buyer."""
+        context = self.context
+        total_spent = obj.get("total_spent", 0) or 0
+        events_attended = obj.get("events_attended", 0) or 0
+        top_threshold = context.get("top_threshold", 0)
+
+        if total_spent >= top_threshold and top_threshold > 0:
+            return "top_spender"
+        if events_attended == 1:
+            return "new_customer"
+        return "repeat_buyer"
+
+
+# ── Detail page ────────────────────────────────────────────────────────────────
+
+class AttendeeProfileSerializer(serializers.Serializer):
+    """Full attendee profile info shown on the detail page."""
+    user_id = serializers.IntegerField()
+    full_name = serializers.CharField()
+    email = serializers.CharField()
+    phone_number = serializers.CharField()
+    country = serializers.CharField()
+    state = serializers.CharField()
+    city = serializers.CharField()
+    gender = serializers.CharField()
+    dob = serializers.DateField()
+    profile_picture = serializers.URLField()
+    registration_date = serializers.DateTimeField()
+    first_purchase_date = serializers.DateTimeField(allow_null=True)
+    last_purchase_date = serializers.DateTimeField(allow_null=True)
+
+
+class CustomerDetailCardSerializer(serializers.Serializer):
+    """4 KPI cards for the customer detail page."""
+    total_spent = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_spent_change = serializers.FloatField(help_text="% change vs previous period")
+
+    tickets_bought = serializers.IntegerField()
+    tickets_bought_change = serializers.FloatField()
+
+    refund_count = serializers.IntegerField()
+    refund_count_change = serializers.FloatField()
+
+    last_order_value = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True)
+    last_order_value_change = serializers.FloatField()
+
+
+class RevenueChartPointSerializer(serializers.Serializer):
+    """Single data point on the revenue chart."""
+    label = serializers.CharField()        # e.g. "2024-03-01" or "Mon" or "Mar"
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+
+class CustomerOrderHistorySerializer(serializers.Serializer):
+    """Order history row on the customer detail page."""
+    order_id = serializers.UUIDField()
+    event_id = serializers.UUIDField()
+    event_name = serializers.CharField()
+    event_image = serializers.URLField(allow_null=True, allow_blank=True)
+    event_category = serializers.CharField(allow_null=True)
+    purchase_date = serializers.DateTimeField()
+    quantity = serializers.IntegerField()
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
+    status = serializers.CharField()

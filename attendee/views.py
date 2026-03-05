@@ -24,7 +24,7 @@ from django.db.models.functions import ExtractMonth
 from django.utils.timezone import now
 from django.utils.dateparse import parse_date
 import uuid
-from attendee.models import PayoutInformation
+from payments.models import PayoutInformation
 from decimal import Decimal
 from notification.models import NotificationSettings
 from drf_spectacular.utils import extend_schema, inline_serializer,OpenApiParameter

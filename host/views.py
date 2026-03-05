@@ -2,11 +2,13 @@ from decimal import Decimal
 
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
+from rest_framework.views import APIView
 from attendee.models import Attendee
 from events.models import Event
 from host.helpers import _apply_date_range, _base_orders, _host_orders, _pct_change, _period_delta
+from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket
-from .serializers import AttendeeProfileSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, RevenueChartPointSerializer
+from .serializers import AttendeeProfileSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, PayoutInformationSerializer, RevenueChartPointSerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -22,7 +24,7 @@ from django.utils import timezone
 from .permissions import IsEventOwner
 from rest_framework import generics, permissions, filters
 from rest_framework.response import Response
-
+from django.db import transaction
 from public.response import api_response
 from .serializers import (
     CustomerListSerializer,
@@ -539,3 +541,48 @@ class CustomerDetailView(generics.ListAPIView):
                 "order_history": paginated_history,
             },
         )
+
+
+
+# PAYMENT SECTION
+@extend_schema(
+    request=PayoutInformationSerializer,
+)
+class ListPayoutAccountsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        accounts = PayoutInformation.objects.filter(user=request.user)
+        serializer = PayoutInformationSerializer(accounts, many=True)
+        return api_response(
+            message="Payout accounts retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
+
+
+@extend_schema(
+    request=PayoutInformationSerializer,
+)
+class AddPayoutAccountView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = PayoutInformationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # If user sets this as default, unset any existing defaults
+        if serializer.validated_data.get("is_default", False):
+            PayoutInformation.objects.filter(user=request.user).update(is_default=False)
+
+        account = serializer.save(user=request.user)
+
+        return api_response(
+            message="Payout account added successfully",
+            status_code=201,
+            data=PayoutInformationSerializer(account).data
+        )
+
+

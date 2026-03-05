@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from payments.models import PayoutInformation
 from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
 
 # Ticket promo codes
@@ -302,3 +303,12 @@ class CustomerOrderHistorySerializer(serializers.Serializer):
     quantity = serializers.IntegerField()
     amount = serializers.DecimalField(max_digits=10, decimal_places=2)
     status = serializers.CharField()
+
+
+
+
+class PayoutInformationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PayoutInformation
+        fields = ["id", "bank_name", "account_name", "account_number", "is_default", "created_at"]
+        read_only_fields = ["id", "created_at"]

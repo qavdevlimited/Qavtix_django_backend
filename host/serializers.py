@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from payments.models import PayoutInformation
 from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
+from transactions.models import Withdrawal
 
 # Ticket promo codes
 class PromoCodeNestedSerializer(serializers.ModelSerializer):
@@ -312,3 +313,22 @@ class PayoutInformationSerializer(serializers.ModelSerializer):
         model = PayoutInformation
         fields = ["id", "bank_name", "account_name", "account_number", "is_default", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+
+class WithdrawalHistorySerializer(serializers.ModelSerializer):
+    bank_account = serializers.CharField(source="payout_account.account_number")
+    bank_name = serializers.CharField(source="payout_account.bank_name")
+    account_name=serializers.CharField(source="payout_account.account_name")
+    status = serializers.CharField(source="get_status_display")
+
+    class Meta:
+        model = Withdrawal
+        fields = [
+            "id",
+            "created_at",
+            "amount",
+            "bank_name",
+            "bank_account",
+            "account_name",
+            "status",
+        ]

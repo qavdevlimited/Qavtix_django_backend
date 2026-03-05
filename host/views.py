@@ -7,8 +7,8 @@ from attendee.models import Attendee
 from events.models import Event
 from host.helpers import _apply_date_range, _base_orders, _host_orders, _pct_change, _period_delta
 from payments.models import PayoutInformation
-from transactions.models import Order, OrderTicket
-from .serializers import AttendeeProfileSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, PayoutInformationSerializer, RevenueChartPointSerializer
+from transactions.models import Order, OrderTicket, Withdrawal
+from .serializers import AttendeeProfileSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, PayoutInformationSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -586,3 +586,39 @@ class AddPayoutAccountView(APIView):
         )
 
 
+class WithdrawalHistoryView(generics.ListAPIView):
+    serializer_class = WithdrawalHistorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            Withdrawal.objects
+            .filter(user=self.request.user)
+            .select_related("payout_account")
+            .order_by("-created_at")
+        )
+    
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Affiliate earning history retrieved successfully",
+                status_code=200,
+                data={
+                    "count": self.paginator.page.paginator.count,
+                    "next": self.paginator.get_next_link(),
+                    "previous": self.paginator.get_previous_link(),
+                    "results": serializer.data
+                }
+            )
+
+        serializer = self.get_serializer(queryset, many=True)
+
+        return api_response(
+            message="Withdrawal history Retrieved",
+            status_code=200,
+            data=serializer.data
+        )

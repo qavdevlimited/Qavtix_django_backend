@@ -6,10 +6,11 @@ from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from attendee.models import Attendee
 from events.models import Event
-from host.helpers import _apply_date_range, _available_balance, _base_orders, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
+from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
+from host.service import AffiliateService, PromoCodeError, PromoCodeService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AttendeeProfileSerializer, ChangePasswordSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, RevenueCardSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
+from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -868,3 +869,122 @@ class ChangePasswordView(APIView):
             data={}
         )
     
+
+@extend_schema(
+    operation_id="host_promo_code_list",
+    parameters=[
+        OpenApiParameter("event",  OpenApiTypes.UUID, description="Filter by event UUID"),
+        OpenApiParameter("status", OpenApiTypes.STR,  description="active | ended"),
+        OpenApiParameter("search", OpenApiTypes.STR,  description="Search by code"),
+    ],
+    responses=PromoCodeListSerializer(many=True),
+)
+class PromoCodeListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = PromoCodeListSerializer
+
+    def list(self, request, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        promos = PromoCodeService.get_host_promo_codes(
+            host=host,
+            event_id=request.query_params.get("event"),
+            status=request.query_params.get("status"),
+            search=request.query_params.get("search", "").strip() or None,
+        )
+
+        page  = self.paginate_queryset(promos)
+        items = page if page is not None else promos
+        data  = {"results": PromoCodeListSerializer(items, many=True).data}
+
+        if page is not None:
+            data["count"]    = self.paginator.page.paginator.count
+            data["next"]     = self.paginator.get_next_link()
+            data["previous"] = self.paginator.get_previous_link()
+
+        return api_response(
+            message="Promo codes retrieved successfully", status_code=200, data=data
+        )
+
+
+# ── Promo Code Create ──────────────────────────────────────────────────────────
+
+@extend_schema(
+    operation_id="host_promo_code_create",
+    request=PromoCodeCreateSerializer,
+)
+class PromoCodeCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        serializer = PromoCodeCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+
+        try:
+            event, promos = PromoCodeService.create_promo_code(
+                host=host,
+                data=serializer.validated_data,
+            )
+        except PromoCodeError as e:
+            return api_response(message=e.message, status_code=e.status)
+
+        return api_response(
+            message="Promo code created successfully.",
+            status_code=201,
+            data={
+                "code":                promos[0].code,
+                "discount_percentage": promos[0].discount_percentage,
+                "usage_limit":         promos[0].maximum_users,
+                "valid_until":         promos[0].valid_till,
+                "event":               event.title,
+                "tickets_applied":     len(promos),
+            },
+        )
+
+# ── Affiliate List ─────────────────────────────────────────────────────────────
+
+@extend_schema(
+    operation_id="host_affiliate_list",
+    parameters=[
+        OpenApiParameter("event",  OpenApiTypes.UUID, description="Filter by event UUID"),
+        OpenApiParameter("search", OpenApiTypes.STR,  description="Search by affiliate name or email"),
+    ],
+    responses=AffiliateListSerializer(many=True),
+)
+class AffiliateListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AffiliateListSerializer
+
+    def list(self, request, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        cards, qs = AffiliateService.get_host_affiliates(
+            host=host,
+            event_id=request.query_params.get("event"),
+            search=request.query_params.get("search", "").strip() or None,
+        )
+
+        page  = self.paginate_queryset(list(qs))
+        items = page if page is not None else list(qs)
+
+        data = {
+            "cards":   AffiliateCardSerializer(cards).data,
+            "results": AffiliateListSerializer(items, many=True).data,
+        }
+        if page is not None:
+            data["count"]    = self.paginator.page.paginator.count
+            data["next"]     = self.paginator.get_next_link()
+            data["previous"] = self.paginator.get_previous_link()
+
+        return api_response(
+            message="Affiliate links retrieved successfully", status_code=200, data=data
+        )

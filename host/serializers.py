@@ -1,3 +1,4 @@
+from django.utils import timezone
 from decimal import Decimal
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
@@ -393,3 +394,104 @@ class ChangePasswordSerializer(serializers.Serializer):
         validate_password(value)
         return value
     
+
+
+
+class PromoCodeListSerializer(serializers.Serializer):
+    id             = serializers.IntegerField()
+    code           = serializers.CharField()
+    status         = serializers.SerializerMethodField()
+    discount_percentage = serializers.IntegerField()
+    usage_limit    = serializers.IntegerField(source="maximum_users")
+    usage_count    = serializers.IntegerField()        # annotated in view
+    revenue_impact = serializers.DecimalField(max_digits=12, decimal_places=2)  # annotated
+    expiry_date    = serializers.DateField(source="valid_till")
+    event_name     = serializers.CharField(source="ticket.event.title")
+    event_category = serializers.SerializerMethodField()
+    event_image    = serializers.SerializerMethodField()
+
+    def get_status(self, obj):
+        return "active" if obj.valid_till >= timezone.now().date() else "ended"
+
+    def get_event_category(self, obj):
+        cat = obj.ticket.event.category
+        return cat.name if cat else None
+
+    def get_event_image(self, obj):
+        media = obj.ticket.event.media.filter(is_featured=True).first() \
+                or obj.ticket.event.media.first()
+        return media.image_url if media else None
+
+
+class PromoCodeCreateSerializer(serializers.Serializer):
+    event_id            = serializers.UUIDField()
+    code                = serializers.CharField(max_length=50)
+    discount_percentage = serializers.IntegerField(min_value=1, max_value=100)
+    usage_limit         = serializers.IntegerField(min_value=1)
+    valid_until         = serializers.DateField()
+
+    def validate_valid_until(self, value):
+        if value < timezone.now().date():
+            raise serializers.ValidationError("Expiry date must be in the future.")
+        return value
+
+
+# ── Affiliate ──────────────────────────────────────────────────────────────────
+
+class AffiliateListSerializer(serializers.Serializer):
+    """One row per affiliate link on the host affiliate dashboard."""
+    id              = serializers.IntegerField()
+    affiliate_url   = serializers.SerializerMethodField()
+
+    # Identity — sourced from Attendee.full_name via user.attendee_profile
+    affiliate_name  = serializers.SerializerMethodField()
+    affiliate_email = serializers.CharField(source="user.email")
+
+    # Event info
+    event_name      = serializers.CharField(source="event.title")
+    event_category  = serializers.SerializerMethodField()
+    event_image     = serializers.SerializerMethodField()
+
+    # Performance
+    clicks          = serializers.IntegerField()
+    sales           = serializers.IntegerField()
+    conversion_rate = serializers.SerializerMethodField()   # sales / clicks %
+    rank            = serializers.IntegerField()            # attached in service
+    total_earnings  = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+    created_at      = serializers.DateTimeField()
+
+    def get_affiliate_url(self, obj):
+        return obj.get_url()
+
+    def get_affiliate_name(self, obj):
+        """Read full_name from the Attendee profile, fall back to email."""
+        attendee = getattr(obj.user, "attendee_profile", None)
+        return attendee.full_name if attendee else obj.user.email
+
+    def get_event_category(self, obj):
+        cat = obj.event.category
+        return cat.name if cat else None
+
+    def get_event_image(self, obj):
+        media = (
+            obj.event.media.filter(is_featured=True).first()
+            or obj.event.media.first()
+        )
+        return media.image_url if media else None
+
+    def get_conversion_rate(self, obj):
+        """
+        Conversion rate = (sales / clicks) × 100, rounded to 2 dp.
+        Returns 0.0 when there are no clicks yet.
+        """
+        if not obj.clicks:
+            return 0.0
+        return round((obj.sales / obj.clicks) * 100, 2)
+
+
+class AffiliateCardSerializer(serializers.Serializer):
+    total_affiliates       = serializers.IntegerField()
+    new_this_month         = serializers.IntegerField()
+    total_tickets_sold     = serializers.IntegerField()
+    total_commission_paid  = serializers.DecimalField(max_digits=12, decimal_places=2)

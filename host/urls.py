@@ -21,4 +21,10 @@ urlpatterns = [
 
     path("security/change-password/", ChangePasswordView.as_view(),name="change_password"),
 
+
+    # Promo Code
+    path("promo-codes/", PromoCodeListView.as_view(), name="host-promo-code-list"),
+    path("promo-codes/create/", PromoCodeCreateView.as_view(), name="host-promo-code-create"),
+    path("affiliates/", AffiliateListView.as_view(), name="host-affiliate-list"),
+
 ]

@@ -113,3 +113,11 @@ def _available_balance(host, host_user):
     )["total"] or Decimal("0.00")
 
     return max(total_revenue - total_claimed, Decimal("0.00"))
+
+
+
+def _get_host(request):
+    return getattr(request.user, "host_profile", None)
+
+
+

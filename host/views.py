@@ -1,14 +1,15 @@
 from decimal import Decimal
+import uuid
 
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from attendee.models import Attendee
 from events.models import Event
-from host.helpers import _apply_date_range, _base_orders, _host_orders, _pct_change, _period_delta
+from host.helpers import _apply_date_range, _available_balance, _base_orders, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AttendeeProfileSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, PayoutInformationSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
+from .serializers import AttendeeProfileSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, RevenueCardSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -33,6 +34,7 @@ from .serializers import (
     RevenueChartPointSerializer,
     CustomerOrderHistorySerializer,
 )
+from datetime import date, timedelta
 
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
@@ -621,4 +623,216 @@ class WithdrawalHistoryView(generics.ListAPIView):
             message="Withdrawal history Retrieved",
             status_code=200,
             data=serializer.data
+        )
+    
+
+
+@extend_schema(
+    operation_id="host_revenue_overview",
+    parameters=[
+        OpenApiParameter(
+            "date_range", OpenApiTypes.STR,
+            description="day | week | month — filters revenue and payout totals"
+        ),
+    ],
+    responses=RevenueCardSerializer,
+)
+class HostRevenueOverviewView(generics.ListAPIView):
+    """
+    GET /finance/overview/
+
+    Also returns a paginated list of the host's withdrawal history,
+    which respects the same date_range filter.
+
+    Query params
+    ────────────
+    date_range : day | week | month
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = WithdrawalHistorySerializer   # for drf-spectacular
+
+    def _get_host(self):
+        return getattr(self.request.user, "host_profile", None)
+
+    def list(self, request, *args, **kwargs):
+        host = self._get_host()
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        date_range = request.query_params.get("date_range")   # optional
+
+        # ── cards ─────────────────────────────────────────────────────────────
+        total_revenue = _host_revenue(host, date_range)
+        total_payout  = _host_payouts(request.user, date_range)
+        balance       = _available_balance(host, request.user)   # always real-time
+        next_friday   = _next_friday(date.today())
+
+        cards = RevenueCardSerializer({
+            "total_revenue":    total_revenue,
+            "total_payout":     total_payout,
+            "available_balance": balance,
+            "next_payout_date": next_friday,
+        }).data
+
+        # ── withdrawal history (paginated) ────────────────────────────────────
+        withdrawals = Withdrawal.objects.filter(
+            user=request.user
+        ).select_related("payout_account").order_by("-created_at")
+
+        if date_range:
+            withdrawals = _apply_date_range(withdrawals, date_range)
+
+        page = self.paginate_queryset(withdrawals)
+        items = page if page is not None else withdrawals
+        history_data = WithdrawalHistorySerializer(items, many=True).data
+
+        history = {"results": history_data}
+        if page is not None:
+            history["count"]    = self.paginator.page.paginator.count
+            history["next"]     = self.paginator.get_next_link()
+            history["previous"] = self.paginator.get_previous_link()
+
+        return api_response(
+            message="Revenue overview retrieved successfully",
+            status_code=200,
+            data={"cards": cards, "withdrawal_history": history},
+        )
+
+
+# ── Host Withdrawal Request ────────────────────────────────────────────────────
+
+@extend_schema(
+    operation_id="host_withdrawal_request",
+    request=HostWithdrawalRequestSerializer,
+    parameters=[
+        OpenApiParameter(
+            name="Idempotency-Key",
+            type=OpenApiTypes.STR,
+            location=OpenApiParameter.HEADER,
+            description="Unique key to prevent duplicate requests"
+        )
+    ]
+
+)
+class HostWithdrawalRequestView(APIView):
+    """
+    POST /finance/withdraw/
+
+    Headers
+    ───────
+    Idempotency-Key : <uuid>   (required — prevents duplicate submissions)
+
+    Body
+    ────
+    amount            : decimal
+    payout_account_id : int
+
+    Logic
+    ─────
+    available = completed_order_revenue - all_non_rejected_withdrawals
+    Request is only accepted when amount <= available.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _get_host(self):
+        return getattr(self.request.user, "host_profile", None)
+
+    def post(self, request):
+        host = self._get_host()
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        # ── idempotency key ───────────────────────────────────────────────────
+        idempotency_key = request.headers.get("Idempotency-Key")
+        if not idempotency_key:
+            return api_response(
+                message="Idempotency-Key header is required.",
+                status_code=400,
+            )
+
+        try:
+            idempotency_uuid = uuid.UUID(str(idempotency_key))
+        except ValueError:
+            return api_response(
+                message="Idempotency-Key must be a valid UUID.",
+                status_code=400,
+            )
+
+        # ── replay detection (outside transaction — fast path) ────────────────
+        existing = Withdrawal.objects.filter(
+            idempotency_key=idempotency_uuid,
+            user=request.user,
+        ).first()
+        if existing:
+            return api_response(
+                message="Withdrawal already submitted.",
+                status_code=200,
+                data={"withdrawal_id": existing.id},
+            )
+
+        # ── validate request body ─────────────────────────────────────────────
+        serializer = HostWithdrawalRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+
+        amount            = serializer.validated_data["amount"]
+        payout_account_id = serializer.validated_data["payout_account_id"]
+
+        # ── resolve payout account ────────────────────────────────────────────
+        try:
+            payout_account = PayoutInformation.objects.get(
+                id=payout_account_id,
+                user=request.user,
+            )
+        except PayoutInformation.DoesNotExist:
+            return api_response(
+                message="Invalid payout account.",
+                status_code=400,
+            )
+
+        # ── atomic balance check + creation ───────────────────────────────────
+        with transaction.atomic():
+            # Lock all withdrawal rows for this user to prevent race conditions
+            # where two simultaneous requests both see the same available balance.
+            total_revenue = (
+                Order.objects
+                .filter(event__host=host, status="completed")
+                .aggregate(total=Sum("total_amount"))["total"]
+                or Decimal("0.00")
+            )
+
+            total_claimed = (
+                Withdrawal.objects
+                .select_for_update()          # row-level lock
+                .filter(user=request.user)
+                .exclude(status="rejected")
+                .aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
+            )
+
+            available = max(total_revenue - total_claimed, Decimal("0.00"))
+
+            if amount > available:
+                return api_response(
+                    message="Insufficient balance.",
+                    status_code=400,
+                    data={"available_balance": str(available)},
+                )
+
+            withdrawal = Withdrawal.objects.create(
+                user=request.user,
+                payout_account=payout_account,
+                amount=amount,
+                idempotency_key=idempotency_uuid,
+            )
+
+        return api_response(
+            message="Withdrawal request submitted successfully.",
+            status_code=201,
+            data={
+                "withdrawal_id":    str(withdrawal.id),
+                "amount":           str(amount),
+                "available_balance": str(available - amount),
+                "status":           withdrawal.status,
+            },
         )

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from payments.models import PayoutInformation
 from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
@@ -332,3 +334,51 @@ class WithdrawalHistorySerializer(serializers.ModelSerializer):
             "account_name",
             "status",
         ]
+
+
+class RevenueCardSerializer(serializers.Serializer):
+    """
+    Cards shown on the host revenue overview page.
+    """
+    total_revenue   = serializers.DecimalField(max_digits=12, decimal_places=2)
+    total_payout    = serializers.DecimalField(max_digits=12, decimal_places=2)
+    available_balance = serializers.DecimalField(max_digits=12, decimal_places=2)
+    next_payout_date  = serializers.DateField()
+
+
+class WithdrawalHistorySerializer(serializers.Serializer):
+    """
+    Single withdrawal row in the history list.
+    """
+    id          = serializers.UUIDField()
+    amount      = serializers.DecimalField(max_digits=12, decimal_places=2)
+    status      = serializers.CharField()
+    created_at  = serializers.DateTimeField()
+    updated_at  = serializers.DateTimeField()
+    payout_account = serializers.SerializerMethodField()
+
+    def get_payout_account(self, obj):
+        acct = obj.payout_account
+        return {
+            "id":           acct.id,
+            "bank_name":    getattr(acct, "bank_name", None),
+            "account_name": getattr(acct, "account_name", None),
+            "account_number": getattr(acct, "account_number", None),
+        }
+
+
+# ── Withdrawal Request ─────────────────────────────────────────────────────────
+
+class HostWithdrawalRequestSerializer(serializers.Serializer):
+    """
+    Payload for POST /finance/withdraw/
+    """
+    amount            = serializers.DecimalField(max_digits=12, decimal_places=2)
+    payout_account_id = serializers.UUIDField()
+
+    def validate_amount(self, value):
+        if value <= Decimal("0.00"):
+            raise serializers.ValidationError(
+                "Withdrawal amount must be greater than zero."
+            )
+        return value

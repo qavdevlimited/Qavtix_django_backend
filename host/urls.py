@@ -15,7 +15,8 @@ urlpatterns = [
     path("payouts/list/", ListPayoutAccountsView.as_view(), name="list-payouts"),
     path("payouts/add/", AddPayoutAccountView.as_view(), name="add-payout"),
 
-    # path('withdrawal/request/',RequestWithdrawalView.as_view(),name="request_withdrawal"),
+    path("financial/overview/", HostRevenueOverviewView.as_view(), name="host-revenue-overview"),
+    path("withdraw/", HostWithdrawalRequestView.as_view(), name="host-withdrawal-request"),
     path('withdrawal/history/',WithdrawalHistoryView.as_view(),name="withdrawal_history"),
 
 ]

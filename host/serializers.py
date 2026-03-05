@@ -1,5 +1,5 @@
 from decimal import Decimal
-
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from payments.models import PayoutInformation
 from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
@@ -382,3 +382,14 @@ class HostWithdrawalRequestSerializer(serializers.Serializer):
                 "Withdrawal amount must be greater than zero."
             )
         return value
+
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value
+    

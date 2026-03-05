@@ -9,7 +9,7 @@ from events.models import Event
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AttendeeProfileSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, RevenueCardSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
+from .serializers import AttendeeProfileSerializer, ChangePasswordSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, RevenueCardSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -836,3 +836,35 @@ class HostWithdrawalRequestView(APIView):
                 "status":           withdrawal.status,
             },
         )
+
+
+
+
+@extend_schema(
+    request=ChangePasswordSerializer,
+)
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+
+        if not user.check_password(serializer.validated_data["old_password"]):
+            return api_response(
+                message="Old password is incorrect",
+                status_code=400,
+                data={}
+            )
+
+        user.set_password(serializer.validated_data["new_password"])
+        user.save()
+
+        return api_response(
+            message="Password changed successfully",
+            status_code=200,
+            data={}
+        )
+    

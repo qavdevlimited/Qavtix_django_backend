@@ -19,4 +19,6 @@ urlpatterns = [
     path("withdraw/", HostWithdrawalRequestView.as_view(), name="host-withdrawal-request"),
     path('withdrawal/history/',WithdrawalHistoryView.as_view(),name="withdrawal_history"),
 
+    path("security/change-password/", ChangePasswordView.as_view(),name="change_password"),
+
 ]

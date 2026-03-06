@@ -6,12 +6,12 @@ from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from attendee.models import Attendee
 from events.models import Event
-from host.services.brevoservice import CampaignError, CampaignService
+from host.services.brevoservice import CampaignError, CampaignService   
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
-from host.services.service import AffiliateService, CheckInService, DashboardService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
+from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer
+from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,DownloadEventAttendeeSerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -1506,6 +1506,86 @@ class TransactionHistoryView(generics.ListAPIView):
 
         return api_response(
             message="Transactions retrieved successfully",
+            status_code=200,
+            data=data,
+        )
+
+
+
+@extend_schema(
+    operation_id="event_attendee_list",
+    parameters=[
+        OpenApiParameter(
+            "event_id",
+            OpenApiTypes.UUID,
+            location=OpenApiParameter.PATH,
+            description="UUID of the event to list attendees for",
+            required=True,
+        ),
+        OpenApiParameter(
+            "search",
+            OpenApiTypes.STR,
+            location=OpenApiParameter.QUERY,
+            description="Search by attendee name or email",
+        ),
+    ],
+)
+class DownloadEventAttendeeView(generics.ListAPIView):
+    """
+    GET /events/<event_id>/attendees/
+
+    Full attendee list for a specific event owned by the logged-in host.
+    Includes ticket type, amount paid, check-in status and time.
+
+    Query params
+    ────────────
+    search : name or email
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = DownloadEventAttendeeSerializer
+
+    def list(self, request, event_id=None, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        # Validate event_id present and is a valid UUID
+        if not event_id:
+            return api_response(
+                message="event_id is required in the URL path e.g. /events/<uuid>/attendees/",
+                status_code=400,
+            )
+
+        # Verify event exists and belongs to this host
+        from events.models import Event
+        try:
+            event = Event.objects.get(id=event_id, host=host)
+        except Event.DoesNotExist:
+            return api_response(
+                message="Event not found or does not belong to you.",
+                status_code=404,
+            )
+
+        qs = DownloadEventAttendeeService.get_attendees(
+            host=host,
+            event_id=event_id,
+            search=request.query_params.get("search", "").strip() or None,
+        )
+
+        page  = self.paginate_queryset(qs)
+        items = page if page is not None else list(qs)
+
+        data = {
+            "event":   {"id": str(event.id), "title": event.title},
+            "results": DownloadEventAttendeeSerializer(items, many=True).data,
+        }
+        if page is not None:
+            data["count"]    = self.paginator.page.paginator.count
+            data["next"]     = self.paginator.get_next_link()
+            data["previous"] = self.paginator.get_previous_link()
+
+        return api_response(
+            message="Attendees retrieved successfully",
             status_code=200,
             data=data,
         )

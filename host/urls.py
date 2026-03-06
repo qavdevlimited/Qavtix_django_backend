@@ -5,6 +5,8 @@ urlpatterns = [
     path('events/create/', EventCreateView.as_view(), name='event-create'),
     path("events/<uuid:id>/update/",EventUpdateView.as_view(),name="event-update"),
     path("events/management/", EventDashboardView.as_view(), name="events-dashboard"),
+    #DOWNLOADS
+    path("events/<uuid:event_id>/attendees/", DownloadEventAttendeeView.as_view(), name="download-event-attendees"),
 
     # customers
     path("customers/", CustomerListView.as_view(), name="customer-list"),
@@ -45,5 +47,7 @@ urlpatterns = [
     path("sales/cards/",        SalesCardsView.as_view(),       name="sales-cards"),
     path("sales/graphs/",       SalesGraphsView.as_view(),      name="sales-graphs"),
     path("sales/transactions/", TransactionHistoryView.as_view(), name="sales-transactions"),
+
+    
 
 ]

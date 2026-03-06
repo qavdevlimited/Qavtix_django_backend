@@ -821,3 +821,34 @@ class TransactionHistorySerializer(serializers.Serializer):
 
     def get_quantity(self, obj):
         return sum(t.quantity for t in obj.tickets.all())
+
+
+
+class DownloadEventAttendeeSerializer(serializers.Serializer):
+    order_id      = serializers.UUIDField(source="order.id")
+    full_name     = serializers.SerializerMethodField()
+    email         = serializers.SerializerMethodField()
+    ticket_type   = serializers.CharField(source="order_ticket.ticket.ticket_type")
+    quantity      = serializers.IntegerField(source="order_ticket.quantity")
+    amount_paid   = serializers.DecimalField(
+        max_digits=12, decimal_places=2, source="order.total_amount"
+    )
+    purchase_date = serializers.DateTimeField(source="order.created_at")
+    status        = serializers.CharField()          # IssuedTicket.status
+    checkin_status = serializers.SerializerMethodField()
+    checked_in_at  = serializers.SerializerMethodField()
+
+    def get_full_name(self, obj):
+        attendee = getattr(obj.owner, "attendee_profile", None)
+        return attendee.full_name if attendee else (obj.owner.get_full_name() or obj.owner.email)
+
+    def get_email(self, obj):
+        return obj.owner.email
+
+    def get_checkin_status(self, obj):
+        checkin = getattr(obj, "checkin", None)
+        return checkin.status if checkin else "pending"
+
+    def get_checked_in_at(self, obj):
+        checkin = getattr(obj, "checkin", None)
+        return checkin.checked_in_at if checkin else None

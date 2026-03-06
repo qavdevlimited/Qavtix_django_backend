@@ -1099,3 +1099,29 @@ class TransactionService:
             )
 
         return qs.distinct().order_by("-created_at")
+
+
+
+class DownloadEventAttendeeService:
+
+    @staticmethod
+    def get_attendees(host, event_id, search=None):
+        qs = (
+            IssuedTicket.objects
+            .select_related(
+                "owner",
+                "owner__attendee_profile",
+                "order",
+                "order_ticket__ticket",
+            )
+            .prefetch_related("checkin")
+            .filter(event_id=event_id, event__host=host)
+        )
+
+        if search:
+            qs = qs.filter(
+                Q(owner__attendee_profile__full_name__icontains=search) |
+                Q(owner__email__icontains=search)
+            )
+
+        return qs.order_by("owner__attendee_profile__full_name")

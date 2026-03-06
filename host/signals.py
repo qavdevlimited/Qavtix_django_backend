@@ -1,122 +1,266 @@
 """
-dashboard/signals.py
+signals.py
 
-Call these helpers from your existing services whenever relevant things happen.
-They create both an activity log entry and a notification in one shot.
+Django signals that fire automatically when models change.
+Wire these up in your app's apps.py ready() method:
 
-Usage examples
-──────────────
-# In checkout_service._finalise() after order.status = "completed":
-from dashboard.signals import notify_sale
-notify_sale(host_user=order.event.host.user, order=order)
+    class HostConfig(AppConfig):
+        name = "host"
 
-# In CheckInService.process_scan() after successful check-in:
-from dashboard.signals import notify_checkin
-notify_checkin(host_user=ticket.event.host.user, issued_ticket=ticket)
-
-# In your withdrawal view after withdrawal is created:
-from dashboard.signals import notify_withdrawal
-notify_withdrawal(host_user=request.user, withdrawal=withdrawal)
+        def ready(self):
+            import host.signals  # noqa
 """
 
-from .models import HostActivity, HostNotification
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.db.models import F
 
 
-def notify_sale(host_user, order):
-    qty   = sum(t.quantity for t in order.tickets.all())
-    name  = getattr(
-        getattr(order.user, "attendee_profile", None), "full_name", None
-    ) or order.full_name or order.email
+# ── Order ──────────────────────────────────────────────────────────────────────
 
-    message = f"{name} bought {qty}x ticket(s) for {order.event.title} — ₦{order.total_amount:,.2f}"
+@receiver(post_save, sender="transactions.Order")
+def on_order_save(sender, instance, created, **kwargs):
+    """
+    New completed order  → sale activity + notification
+    Order flipped to refunded → refund activity + notification
+    """
+    if not getattr(instance, "event", None):
+        return
+    try:
+        host_user = instance.event.host.user
+    except Exception:
+        return
 
-    HostActivity.objects.create(
-        host=host_user,
-        activity_type="sale",
-        message=message,
-        metadata={
-            "order_id":    str(order.id),
-            "event_id":    str(order.event.id),
-            "amount":      str(order.total_amount),
-            "quantity":    qty,
-            "buyer_name":  name,
-        },
-    )
-    HostNotification.objects.create(
-        host=host_user,
-        notification_type="sale",
-        title="New Sale",
-        message=message,
-    )
+    if instance.status == "completed":
+        _notify_sale(host_user, instance)
+
+    elif not created and instance.status == "refunded":
+        _notify_refund(host_user, instance)
 
 
-def notify_checkin(host_user, issued_ticket):
-    name = getattr(
-        getattr(issued_ticket.owner, "attendee_profile", None), "full_name", None
-    ) or issued_ticket.owner.email
+# ── Refund ─────────────────────────────────────────────────────────────────────
 
-    ticket_type = issued_ticket.order_ticket.ticket.ticket_type
-    message     = f"{name} checked in with a {ticket_type} ticket for {issued_ticket.event.title}"
+@receiver(post_save, sender="transactions.Refund")
+def on_refund_status_change(sender, instance, created, **kwargs):
+    """
+    Refund status changed to processed → notify host.
+    Creation is handled by on_order_save above.
+    """
+    if created or instance.status != "processed":
+        return
+    try:
+        host_user = instance.order.event.host.user
+    except Exception:
+        return
 
-    HostActivity.objects.create(
-        host=host_user,
-        activity_type="checkin",
-        message=message,
-        metadata={
-            "issued_ticket_id": str(issued_ticket.id),
-            "event_id":         str(issued_ticket.event.id),
-            "ticket_type":      ticket_type,
-            "attendee_name":    name,
-        },
-    )
-    HostNotification.objects.create(
-        host=host_user,
-        notification_type="checkin",
-        title="Check-In",
-        message=message,
-    )
-
-
-def notify_withdrawal(host_user, withdrawal):
-    message = f"Withdrawal request of ₦{withdrawal.amount:,.2f} is {withdrawal.status}"
-
-    HostActivity.objects.create(
-        host=host_user,
-        activity_type="withdrawal",
-        message=message,
-        metadata={
-            "withdrawal_id": str(withdrawal.id),
-            "amount":        str(withdrawal.amount),
-            "status":        withdrawal.status,
-        },
-    )
-    HostNotification.objects.create(
-        host=host_user,
-        notification_type="withdrawal",
-        title="Withdrawal Update",
-        message=message,
-    )
-
-
-def notify_refund(host_user, order):
-    name    = getattr(
-        getattr(order.user, "attendee_profile", None), "full_name", None
-    ) or order.full_name or order.email
-    message = f"Refund of ₦{order.total_amount:,.2f} processed for {name} — {order.event.title}"
-
-    HostActivity.objects.create(
-        host=host_user,
-        activity_type="refund",
-        message=message,
-        metadata={
-            "order_id":   str(order.id),
-            "amount":     str(order.total_amount),
-            "buyer_name": name,
-        },
-    )
-    HostNotification.objects.create(
-        host=host_user,
+    _create_notification(
+        host_user=host_user,
         notification_type="refund",
         title="Refund Processed",
+        message=(
+            f"Refund of ₦{instance.amount:,.2f} for "
+            f"{instance.order.event.title} has been processed."
+        ),
+    )
+
+
+# ── CheckIn ────────────────────────────────────────────────────────────────────
+
+@receiver(post_save, sender="checkins.CheckIn")
+def on_checkin_save(sender, instance, created, **kwargs):
+    """First successful scan only."""
+    if not created or instance.status != "checked_in" or not instance.issued_ticket:
+        return
+    try:
+        host_user = instance.issued_ticket.event.host.user
+    except Exception:
+        return
+
+    _notify_checkin(host_user, instance.issued_ticket)
+
+
+# ── Withdrawal ─────────────────────────────────────────────────────────────────
+
+@receiver(post_save, sender="transactions.Withdrawal")
+def on_withdrawal_save(sender, instance, created, **kwargs):
+    """
+    Created          → pending activity log
+    → approved/paid/rejected → activity + notification
+    """
+    try:
+        host_user = instance.user
+    except Exception:
+        return
+
+    if created:
+        _create_activity(
+            host_user=host_user,
+            activity_type="withdrawal",
+            message=f"Withdrawal request of ₦{instance.amount:,.2f} submitted.",
+            metadata={
+                "withdrawal_id": str(instance.id),
+                "amount":        str(instance.amount),
+                "status":        "pending",
+            },
+        )
+        return
+
+    status_messages = {
+        "approved": f"Withdrawal of ₦{instance.amount:,.2f} has been approved.",
+        "paid":     f"Withdrawal of ₦{instance.amount:,.2f} has been paid out.",
+        "rejected": f"Withdrawal of ₦{instance.amount:,.2f} was rejected.",
+    }
+    msg = status_messages.get(instance.status)
+    if not msg:
+        return
+
+    _create_activity(
+        host_user=host_user,
+        activity_type="withdrawal",
+        message=msg,
+        metadata={
+            "withdrawal_id": str(instance.id),
+            "amount":        str(instance.amount),
+            "status":        instance.status,
+        },
+    )
+    _create_notification(
+        host_user=host_user,
+        notification_type="withdrawal",
+        title="Withdrawal Update",
+        message=msg,
+    )
+
+
+# ── Event view / click helpers ─────────────────────────────────────────────────
+# NOTE: Django signals do NOT fire on queryset .update() calls.
+# These are plain functions — call them directly from your views.
+
+def increment_event_views(event_id):
+    """
+    Call in your public event DETAIL view.
+    Uses F() to avoid race conditions under concurrent requests.
+    """
+    from events.models import Event
+    Event.objects.filter(id=event_id).update(views_count=F("views_count") + 1)
+
+
+def increment_event_clicks(event_id):
+    """
+    Call in your public event LISTING view when a user clicks an event card.
+    """
+    from events.models import Event
+    Event.objects.filter(id=event_id).update(clicks_count=F("clicks_count") + 1)
+
+
+# ── Private helpers ────────────────────────────────────────────────────────────
+
+def _buyer_name(order):
+    attendee = getattr(order.user, "attendee_profile", None) if order.user else None
+    return attendee.full_name if attendee else (order.full_name or order.email)
+
+
+def _notify_sale(host_user, order):
+    try:
+        qty  = sum(t.quantity for t in order.tickets.all())
+        name = _buyer_name(order)
+        msg  = (
+            f"{name} bought {qty}x ticket(s) for "
+            f"{order.event.title} — ₦{order.total_amount:,.2f}"
+        )
+        _create_activity(
+            host_user=host_user,
+            activity_type="sale",
+            message=msg,
+            metadata={
+                "order_id":   str(order.id),
+                "event_id":   str(order.event.id),
+                "amount":     str(order.total_amount),
+                "quantity":   qty,
+                "buyer_name": name,
+            },
+        )
+        _create_notification(
+            host_user=host_user,
+            notification_type="sale",
+            title="New Sale",
+            message=msg,
+        )
+    except Exception:
+        pass
+
+
+def _notify_refund(host_user, order):
+    try:
+        name = _buyer_name(order)
+        msg  = (
+            f"Refund of ₦{order.total_amount:,.2f} for "
+            f"{name} — {order.event.title}"
+        )
+        _create_activity(
+            host_user=host_user,
+            activity_type="refund",
+            message=msg,
+            metadata={
+                "order_id": str(order.id),
+                "amount":   str(order.total_amount),
+            },
+        )
+        _create_notification(
+            host_user=host_user,
+            notification_type="refund",
+            title="Refund Initiated",
+            message=msg,
+        )
+    except Exception:
+        pass
+
+
+def _notify_checkin(host_user, issued_ticket):
+    try:
+        attendee    = getattr(issued_ticket.owner, "attendee_profile", None)
+        name        = attendee.full_name if attendee else issued_ticket.owner.email
+        ticket_type = issued_ticket.order_ticket.ticket.ticket_type
+        msg         = (
+            f"{name} checked in with a {ticket_type} ticket "
+            f"for {issued_ticket.event.title}"
+        )
+        _create_activity(
+            host_user=host_user,
+            activity_type="checkin",
+            message=msg,
+            metadata={
+                "issued_ticket_id": str(issued_ticket.id),
+                "event_id":         str(issued_ticket.event.id),
+                "ticket_type":      ticket_type,
+                "attendee_name":    name,
+            },
+        )
+        _create_notification(
+            host_user=host_user,
+            notification_type="checkin",
+            title="Check-In",
+            message=msg,
+        )
+    except Exception:
+        pass
+
+
+def _create_activity(host_user, activity_type, message, metadata=None):
+    from .models import HostActivity
+    HostActivity.objects.create(
+        host=host_user,
+        activity_type=activity_type,
+        message=message,
+        metadata=metadata or {},
+    )
+
+
+def _create_notification(host_user, notification_type, title, message):
+    from .models import HostNotification
+    HostNotification.objects.create(
+        host=host_user,
+        notification_type=notification_type,
+        title=title,
         message=message,
     )

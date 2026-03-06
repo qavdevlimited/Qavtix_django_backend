@@ -66,7 +66,7 @@ def on_refund_status_change(sender, instance, created, **kwargs):
 
 # ── CheckIn ────────────────────────────────────────────────────────────────────
 
-@receiver(post_save, sender="checkins.CheckIn")
+@receiver(post_save, sender="host.CheckIn")
 def on_checkin_save(sender, instance, created, **kwargs):
     """First successful scan only."""
     if not created or instance.status != "checked_in" or not instance.issued_ticket:

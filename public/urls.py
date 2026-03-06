@@ -17,7 +17,7 @@ urlpatterns = [
    path("hosts/<int:id>/", HostPublicDetailView.as_view(),name="host_details"),
 
    path('message/',MessageCreateView.as_view(),name="create_message"),
-
+   path("categories/", CategoryListView.as_view(), name="category-list")
 
 
     

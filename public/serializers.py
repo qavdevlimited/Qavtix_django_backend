@@ -4,7 +4,7 @@ from host.models import Host
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count
-from .models import Follow,Message
+from .models import Category, Follow,Message
 
 
 class EventLocationSerializer(serializers.ModelSerializer):
@@ -161,3 +161,9 @@ class MessageSerializer(serializers.ModelSerializer):
         model = Message
         fields = "__all__"
         
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Category
+        fields = ["id", "name"]

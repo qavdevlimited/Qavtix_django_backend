@@ -3,7 +3,7 @@ from events.models import Event,EventLocation
 from rest_framework import generics, permissions,status
 from django.utils import timezone
 from django.db.models import Q
-from .serializers import EventListSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer
+from .serializers import CategorySerializer, EventListSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Count
@@ -18,7 +18,7 @@ from host.utils import EventDashboardFilter
 from host.models import Host
 from host.serializers import EventDetailsSerializer
 from django.shortcuts import get_object_or_404
-from .models import Follow,Message
+from .models import Category, Follow,Message
 from attendee.models import AffiliateLink
 from .helpers import increment_event_views
 
@@ -387,4 +387,23 @@ class MessageCreateView(generics.CreateAPIView):
             message="Message sent successfully",
             status_code=status.HTTP_201_CREATED,
             data=serializer.data
+        )
+    
+
+
+
+class CategoryListView(APIView):
+    """
+    GET /categories/
+
+    Returns all categories. No auth required — used for event creation forms,
+    filters, and public listing pages.
+    """
+
+    def get(self, request):
+        categories = Category.objects.all().order_by("name")
+        return api_response(
+            message="Categories retrieved successfully",
+            status_code=200,
+            data=CategorySerializer(categories, many=True).data,
         )

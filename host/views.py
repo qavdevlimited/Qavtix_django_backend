@@ -8,10 +8,10 @@ from attendee.models import Attendee
 from events.models import Event
 from host.services.brevoservice import CampaignError, CampaignService
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
-from host.services.service import AffiliateService, CheckInService, PromoCodeError, PromoCodeService
+from host.services.service import AffiliateService, CheckInService, DashboardService, PromoCodeError, PromoCodeService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, ScanInputSerializer, ScanResultSerializer, WithdrawalHistorySerializer
+from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostActivitySerializer, HostNotificationSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, ScanInputSerializer, ScanResultSerializer, TrendingTicketSerializer, WithdrawalHistorySerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -1236,4 +1236,117 @@ class CheckInScanView(APIView):
             message=result["message"],
             status_code=200,
             data=ScanResultSerializer(result).data,
+        )
+
+
+
+
+# ── Endpoint 1: Cards + Revenue Chart ─────────────────────────────────────────
+
+@extend_schema(
+    operation_id="host_dashboard_overview",
+    parameters=[
+        OpenApiParameter("year",  OpenApiTypes.INT, description="Year for chart e.g. 2025"),
+        OpenApiParameter("month", OpenApiTypes.INT, description="Month 1-12 — daily breakdown"),
+        OpenApiParameter("week",  OpenApiTypes.BOOL, description="true — current week daily breakdown"),
+    ],
+)
+class DashboardOverviewView(generics.ListAPIView):
+    """
+    GET /dashboard/overview/
+
+    Returns:
+      cards       : total_revenue, tickets_sold, active_events, pending_payouts
+                    each with a change indicator vs previous period
+      chart       : monthly revenue for the given year (default: current year)
+                    or daily if ?month= or ?week=true is passed
+
+    Query params
+    ────────────
+    year  : int   — which year to show on the chart (default: current year)
+    month : int   — drill into a specific month (daily buckets)
+    week  : bool  — drill into the current week (daily buckets)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = DashboardCardSerializer
+
+    def list(self, request, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        year  = int(request.query_params.get("year",  timezone.now().year))
+        month = request.query_params.get("month")
+        week  = request.query_params.get("week", "").lower() == "true"
+
+        month = int(month) if month else None
+
+        cards = DashboardService.get_cards(host)
+        chart = DashboardService.get_revenue_chart(host, year=year, month=month, week=week)
+
+        return api_response(
+            message="Dashboard overview retrieved successfully",
+            status_code=200,
+            data={
+                "cards": DashboardCardSerializer(cards).data,
+                "chart": RevenueChartPointSerializer(chart, many=True).data,
+            },
+        )
+
+
+# ── Endpoint 2: Activity + Notifications + Trending ───────────────────────────
+
+@extend_schema(
+    operation_id="host_dashboard_feed",
+    parameters=[
+        OpenApiParameter(
+            "mark_read", OpenApiTypes.BOOL,
+            description="true — mark all notifications as read"
+        ),
+    ],
+)
+class DashboardFeedView(generics.ListAPIView):
+    """
+    GET /dashboard/feed/
+
+    Returns:
+      activities    : recent host activity log (sales, check-ins, refunds, etc.)
+      notifications : host notifications with read/unread status
+      trending      : top 3 tickets by sales for active events
+
+    Query params
+    ────────────
+    mark_read : true — marks all unread notifications as read in the same call
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = HostActivitySerializer
+
+    def list(self, request, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        # Optionally mark notifications read on the same request
+        # so the frontend can fetch + clear badge in one call
+        if request.query_params.get("mark_read", "").lower() == "true":
+            DashboardService.mark_notifications_read(host)
+
+        activities    = DashboardService.get_recent_activities(host)
+        notifications = DashboardService.get_notifications(host)
+        trending      = DashboardService.get_trending_tickets(host)
+
+        # Attach revenue to trending tickets (may be None if no orders yet)
+        from decimal import Decimal
+        for ticket in trending:
+            if ticket.revenue is None:
+                ticket.revenue = Decimal("0.00")
+
+        return api_response(
+            message="Dashboard feed retrieved successfully",
+            status_code=200,
+            data={
+                "activities":    HostActivitySerializer(activities, many=True).data,
+                "notifications": HostNotificationSerializer(notifications, many=True).data,
+                "trending":      TrendingTicketSerializer(trending, many=True).data,
+            },
         )

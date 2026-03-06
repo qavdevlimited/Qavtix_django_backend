@@ -1,12 +1,12 @@
 from decimal import Decimal
-
+from datetime import timedelta
 from django.db.models import Count, Sum, Q
 from django.utils import timezone
 
 from events.models import Ticket, PromoCode
 from attendee.models import AffiliateLink          # adjust to your path
-from host.models import CheckIn
-from transactions.models import IssuedTicket, Order
+from host.models import CheckIn, HostActivity, HostNotification
+from transactions.models import IssuedTicket, Order, OrderTicket
 
 from django.core import signing
 from django.db import transaction
@@ -453,3 +453,224 @@ class CheckInService:
             "event_name":       event_name,
             "checked_in_at":    checkin.checked_in_at,
         }
+
+
+
+#DAHSBOARD SERVICES 
+
+MONTH_NAMES = [
+    "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+]
+
+
+class DashboardService:
+
+    # ── Endpoint 1: Cards + Chart ──────────────────────────────────────────────
+
+    @staticmethod
+    def get_cards(host):
+        now        = timezone.now()
+        week_ago   = now - timedelta(weeks=1)
+        month_ago  = now - timedelta(days=30)
+        last_month_start = (now.replace(day=1) - timedelta(days=1)).replace(day=1)
+        last_month_end   = now.replace(day=1)
+
+        base = Order.objects.filter(event__host=host, status="completed")
+
+        # ── Total revenue ─────────────────────────────────────────────────────
+        total_revenue = base.aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
+
+        # Revenue change: this month vs last month (%)
+        this_month_rev = (
+            base.filter(created_at__gte=now.replace(day=1))
+            .aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
+        )
+        last_month_rev = (
+            base.filter(
+                created_at__gte=last_month_start,
+                created_at__lt=last_month_end,
+            ).aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
+        )
+        revenue_change = (
+            round(((float(this_month_rev) - float(last_month_rev))
+                   / float(last_month_rev)) * 100, 2)
+            if last_month_rev else 0.0
+        )
+
+        # ── Tickets sold ──────────────────────────────────────────────────────
+        tickets_sold = (
+            OrderTicket.objects
+            .filter(order__event__host=host, order__status="completed")
+            .aggregate(t=Sum("quantity"))["t"] or 0
+        )
+        tickets_sold_change = (
+            OrderTicket.objects
+            .filter(
+                order__event__host=host,
+                order__status="completed",
+                order__created_at__gte=week_ago,
+            )
+            .aggregate(t=Sum("quantity"))["t"] or 0
+        )
+
+        # ── Active events ─────────────────────────────────────────────────────
+        from events.models import Event
+        active_events = Event.objects.filter(host=host, status="active").count()
+        active_events_change = (
+            Event.objects
+            .filter(host=host, status="active", created_at__gte=week_ago)
+            .count()
+        )
+
+        # ── Pending payouts ───────────────────────────────────────────────────
+        from transactions.models import Withdrawal
+        pending_payouts = (
+            Withdrawal.objects
+            .filter(user=host.user, status="pending")
+            .aggregate(t=Sum("amount"))["t"] or Decimal("0")
+        )
+        pending_payouts_change = (
+            Withdrawal.objects
+            .filter(user=host.user, status="pending", created_at__gte=week_ago)
+            .count()
+        )
+
+        return {
+            "total_revenue":          total_revenue,
+            "tickets_sold":           tickets_sold,
+            "active_events":          active_events,
+            "pending_payouts":        pending_payouts,
+            "revenue_change":         revenue_change,
+            "tickets_sold_change":    tickets_sold_change,
+            "active_events_change":   active_events_change,
+            "pending_payouts_change": pending_payouts_change,
+        }
+
+    @staticmethod
+    def get_revenue_chart(host, year, month=None, week=None):
+        """
+        year  : returns 12 monthly data points for that year
+        month : additionally filter to a single month (daily breakdown)
+        week  : filter to current week (daily breakdown)
+
+        Default (year only) → 12 monthly buckets.
+        month provided      → daily buckets for that month in that year.
+        week  provided      → daily buckets for the current week.
+        """
+        from django.db.models.functions import TruncMonth, TruncDay
+
+        base = Order.objects.filter(
+            event__host=host,
+            status="completed",
+        )
+
+        if week:
+            # Current week — daily
+            now      = timezone.now()
+            week_start = now - timedelta(days=now.weekday())
+            week_end   = week_start + timedelta(days=7)
+            qs = (
+                base
+                .filter(created_at__gte=week_start, created_at__lt=week_end)
+                .annotate(period=TruncDay("created_at"))
+                .values("period")
+                .annotate(amount=Sum("total_amount"))
+                .order_by("period")
+            )
+            return [
+                {
+                    "label":  row["period"].strftime("%a %d"),
+                    "month":  row["period"].month,
+                    "amount": row["amount"] or Decimal("0"),
+                }
+                for row in qs if row["period"]
+            ]
+
+        if month:
+            # Specific month — daily
+            qs = (
+                base
+                .filter(created_at__year=year, created_at__month=month)
+                .annotate(period=TruncDay("created_at"))
+                .values("period")
+                .annotate(amount=Sum("total_amount"))
+                .order_by("period")
+            )
+            return [
+                {
+                    "label":  row["period"].strftime("%d %b"),
+                    "month":  row["period"].month,
+                    "amount": row["amount"] or Decimal("0"),
+                }
+                for row in qs if row["period"]
+            ]
+
+        # Default: full year — monthly buckets
+        qs = (
+            base
+            .filter(created_at__year=year)
+            .annotate(period=TruncMonth("created_at"))
+            .values("period")
+            .annotate(amount=Sum("total_amount"))
+            .order_by("period")
+        )
+
+        # Build a full 12-month skeleton so months with no revenue show as 0
+        monthly = {i: Decimal("0") for i in range(1, 13)}
+        for row in qs:
+            if row["period"]:
+                monthly[row["period"].month] = row["amount"] or Decimal("0")
+
+        return [
+            {
+                "label":  MONTH_NAMES[m],
+                "month":  m,
+                "amount": monthly[m],
+            }
+            for m in range(1, 13)
+        ]
+
+    # ── Endpoint 2: Activity + Notifications + Trending ───────────────────────
+
+    @staticmethod
+    def get_recent_activities(host, limit=10):
+        return (
+            HostActivity.objects
+            .filter(host=host.user)
+            .order_by("-created_at")[:limit]
+        )
+
+    @staticmethod
+    def get_notifications(host, limit=20):
+        return (
+            HostNotification.objects
+            .filter(host=host.user)
+            .order_by("-created_at")[:limit]
+        )
+
+    @staticmethod
+    def get_trending_tickets(host, limit=3):
+        """
+        Top N tickets by sold_count for this host's active events.
+        Annotates revenue = sold_count × price.
+        """
+        return (
+            Ticket.objects
+            .select_related("event", "event__category")
+            .prefetch_related("event__media")
+            .filter(event__host=host, event__status="active")
+            .annotate(
+                revenue=Sum(
+                    "orderticket__price",
+                    filter=Q(
+                        orderticket__order__status="completed"
+                    ),
+                )
+            )
+            .order_by("-sold_count")[:limit]
+        )
+
+    @staticmethod
+    def mark_notifications_read(host):
+        HostNotification.objects.filter(host=host.user, is_read=False).update(is_read=True)

@@ -630,3 +630,76 @@ class ScanResultSerializer(serializers.Serializer):
 
 class ScanInputSerializer(serializers.Serializer):
     token = serializers.CharField()
+
+
+
+# ── Dashboard cards + chart ────────────────────────────────────────────────────
+
+class DashboardCardSerializer(serializers.Serializer):
+    total_revenue     = serializers.DecimalField(max_digits=14, decimal_places=2)
+    tickets_sold      = serializers.IntegerField()
+    active_events     = serializers.IntegerField()
+    pending_payouts   = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+    # % or count changes shown under each card
+    revenue_change        = serializers.FloatField(help_text="% change vs last month")
+    tickets_sold_change   = serializers.IntegerField(help_text="Count change this week")
+    active_events_change  = serializers.IntegerField(help_text="New active events this week")
+    pending_payouts_change= serializers.IntegerField(help_text="New pending payouts this week")
+
+
+class RevenueChartPointSerializer(serializers.Serializer):
+    label  = serializers.CharField(help_text="Month name e.g. Jan, Feb")
+    month  = serializers.IntegerField(help_text="Month number 1-12")
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+# ── Activity + Notifications ───────────────────────────────────────────────────
+
+class HostActivitySerializer(serializers.Serializer):
+    id            = serializers.UUIDField()
+    activity_type = serializers.CharField()
+    message       = serializers.CharField()
+    metadata      = serializers.DictField()
+    created_at    = serializers.DateTimeField()
+
+
+class HostNotificationSerializer(serializers.Serializer):
+    id                = serializers.UUIDField()
+    notification_type = serializers.CharField()
+    title             = serializers.CharField()
+    message           = serializers.CharField()
+    is_read           = serializers.BooleanField()
+    created_at        = serializers.DateTimeField()
+
+
+# ── Trending tickets ───────────────────────────────────────────────────────────
+
+class TrendingTicketSerializer(serializers.Serializer):
+    ticket_id       = serializers.IntegerField(source="id")
+    ticket_type     = serializers.CharField()
+    event_name      = serializers.CharField(source="event.title")
+    event_category  = serializers.SerializerMethodField()
+    event_image     = serializers.SerializerMethodField()
+    tickets_sold    = serializers.IntegerField(source="sold_count")
+    conversion_rate = serializers.SerializerMethodField()
+    revenue         = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+    def get_event_category(self, obj):
+        cat = obj.event.category
+        return cat.name if cat else None
+
+    def get_event_image(self, obj):
+        media = (
+            obj.event.media.filter(is_featured=True).first()
+            or obj.event.media.first()
+        )
+        return media.image_url if media else None
+
+    def get_conversion_rate(self, obj):
+        """
+        conversion_rate = (tickets_sold / total_capacity) * 100
+        """
+        if not obj.quantity:
+            return 0.0
+        return round((obj.sold_count / obj.quantity) * 100, 2)

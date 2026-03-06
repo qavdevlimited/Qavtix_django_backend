@@ -138,3 +138,70 @@ class CheckIn(models.Model):
 
     def __str__(self):
         return f"CheckIn {self.id} — {self.status}"
+
+
+
+
+class HostActivity(models.Model):
+    """
+    Activity feed for the host dashboard.
+    Created programmatically whenever a relevant event occurs
+    (sale completed, check-in, refund, etc.)
+    """
+
+    ACTIVITY_TYPES = [
+        ("sale",         "Sale"),
+        ("checkin",      "Check-In"),
+        ("refund",       "Refund"),
+        ("withdrawal",   "Withdrawal"),
+        ("ticket_transfer", "Ticket Transfer"),
+    ]
+
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    host       = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="host_activities",
+    )
+    activity_type = models.CharField(max_length=30, choices=ACTIVITY_TYPES)
+    message       = models.TextField()   # human-readable e.g. "John bought 2x VIP — ₦30,000"
+    metadata      = models.JSONField(default=dict, blank=True)  # extra data for FE if needed
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.activity_type} — {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class HostNotification(models.Model):
+    """
+    Notifications for the host.
+    """
+
+    NOTIFICATION_TYPES = [
+        ("sale",       "New Sale"),
+        ("withdrawal", "Withdrawal Update"),
+        ("checkin",    "Check-In Alert"),
+        ("system",     "System"),
+        ("refund",     "Refund"),
+    ]
+
+    id       = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    host     = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="host_notifications",
+    )
+    notification_type = models.CharField(max_length=30, choices=NOTIFICATION_TYPES)
+    title             = models.CharField(max_length=255)
+    message           = models.TextField()
+    is_read           = models.BooleanField(default=False)
+    created_at        = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.notification_type} — {self.title}"

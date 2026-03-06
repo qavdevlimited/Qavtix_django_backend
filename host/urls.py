@@ -36,4 +36,8 @@ urlpatterns = [
     path("checkin/attendees/", CheckInAttendeeListView.as_view(), name="checkin-attendee-list"),
     path("checkin/scan/",      CheckInScanView.as_view(),         name="checkin-scan"),
 
+    #DAHSBOARD
+    path("dashboard/overview/", DashboardOverviewView.as_view(), name="dashboard-overview"),
+    path("dashboard/feed/",     DashboardFeedView.as_view(),     name="dashboard-feed"),
+
 ]

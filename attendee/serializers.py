@@ -226,10 +226,11 @@ class PayoutInformationSerializer(serializers.ModelSerializer):
 
 class AttendeeProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
-
+    id = serializers.IntegerField(source="user.id", read_only=True)
     class Meta:
         model = Attendee
         fields = [
+            "id",
             "full_name",
             "email",
             "email_verified",
@@ -242,7 +243,7 @@ class AttendeeProfileSerializer(serializers.ModelSerializer):
             "profile_picture",
             "role"
         ]
-        read_only_fields = ["email", "email_verified"]
+        read_only_fields = ["email", "email_verified","id"]
 
     
 

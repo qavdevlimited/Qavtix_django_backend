@@ -495,3 +495,49 @@ class AffiliateCardSerializer(serializers.Serializer):
     new_this_month         = serializers.IntegerField()
     total_tickets_sold     = serializers.IntegerField()
     total_commission_paid  = serializers.DecimalField(max_digits=12, decimal_places=2)
+
+
+
+
+class EmailCampaignListSerializer(serializers.Serializer):
+    id              = serializers.UUIDField()
+    campaign_name   = serializers.CharField()
+    subject         = serializers.CharField()
+    sender_name     = serializers.CharField()
+    sender_email    = serializers.EmailField()
+    recipients      = serializers.IntegerField(source="recipients_count")
+    sent_at         = serializers.DateTimeField()
+    open_rate       = serializers.FloatField()
+    click_rate      = serializers.FloatField()
+    status          = serializers.CharField()
+
+    # Event info
+    event_id        = serializers.UUIDField(source="event.id")
+    event_name      = serializers.CharField(source="event.title")
+    event_category  = serializers.SerializerMethodField()
+    event_image     = serializers.SerializerMethodField()
+
+    def get_event_category(self, obj):
+        cat = obj.event.category
+        return cat.name if cat else None
+
+    def get_event_image(self, obj):
+        media = (
+            obj.event.media.filter(is_featured=True).first()
+            or obj.event.media.first()
+        )
+        return media.image_url if media else None
+
+
+class EmailCampaignCreateSerializer(serializers.Serializer):
+    event_id      = serializers.UUIDField()
+    campaign_name = serializers.CharField(max_length=255)
+    subject       = serializers.CharField(max_length=255)
+    html_content  = serializers.CharField()
+    sender_name   = serializers.CharField(max_length=255, required=False)
+    sender_email  = serializers.EmailField(required=False)
+
+
+class EmailCampaignSendSerializer(serializers.Serializer):
+    """Body is empty — campaign_id comes from the URL."""
+    pass

@@ -6,11 +6,12 @@ from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from attendee.models import Attendee
 from events.models import Event
+from host.brevoservice import CampaignError, CampaignService
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
 from host.service import AffiliateService, PromoCodeError, PromoCodeService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
+from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -987,4 +988,102 @@ class AffiliateListView(generics.ListAPIView):
 
         return api_response(
             message="Affiliate links retrieved successfully", status_code=200, data=data
+        )
+
+
+
+
+
+
+#EMAIL CAMPAIGN FEATURE VIEWS
+
+@extend_schema(
+    operation_id="host_campaign_list",
+    parameters=[
+        OpenApiParameter("search", OpenApiTypes.STR, description="Search by campaign name"),
+    ],
+    responses=EmailCampaignListSerializer(many=True),
+)
+class EmailCampaignListView(generics.ListAPIView):
+    """
+    GET /campaigns/
+
+    Lists all email campaigns for the logged-in host.
+    Open rate and click rate are refreshed live from Brevo on each call
+    and cached back to the DB for performance.
+
+    Query params
+    ────────────
+    search : campaign name
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = EmailCampaignListSerializer
+
+    def list(self, request, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        campaigns = CampaignService.get_host_campaigns(
+            host=host,
+            search=request.query_params.get("search", "").strip() or None,
+        )
+
+        page  = self.paginate_queryset(campaigns)
+        items = page if page is not None else campaigns
+
+        data = {"results": EmailCampaignListSerializer(items, many=True).data}
+        if page is not None:
+            data["count"]    = self.paginator.page.paginator.count
+            data["next"]     = self.paginator.get_next_link()
+            data["previous"] = self.paginator.get_previous_link()
+
+        return api_response(
+            message="Campaigns retrieved successfully", status_code=200, data=data
+        )
+
+
+@extend_schema(
+    operation_id="host_campaign_send",
+    request=EmailCampaignCreateSerializer,
+    responses=EmailCampaignListSerializer,
+)
+class EmailCampaignCreateAndSendView(APIView):
+    """
+    POST /campaigns/send/
+
+    Creates and immediately sends the campaign in a single action.
+
+    Body
+    ────
+    event_id      : uuid
+    campaign_name : string
+    subject       : string
+    html_content  : string  (full HTML email body)
+    sender_name   : string  (optional — defaults to event organizer name)
+    sender_email  : email   (optional — defaults to event public email)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        serializer = EmailCampaignCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+
+        try:
+            campaign = CampaignService.create_and_send_campaign(
+                host=host,
+                data=serializer.validated_data,
+            )
+        except CampaignError as e:
+            return api_response(message=e.message, status_code=e.status)
+
+        return api_response(
+            message="Campaign sent successfully.",
+            status_code=201,
+            data=EmailCampaignListSerializer(campaign).data,
         )

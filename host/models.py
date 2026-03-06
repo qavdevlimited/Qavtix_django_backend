@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from public.models import Category
 from django.conf import settings
@@ -46,3 +48,50 @@ class HostLink(models.Model):
     url = models.URLField(max_length=200)
     label = models.CharField(max_length=50, blank=True)  # e.g. Twitter, Website
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+class EmailCampaign(models.Model):
+
+    STATUS_CHOICES = (
+        ("draft",     "Draft"),
+        ("scheduled", "Scheduled"),
+        ("sent",      "Sent"),
+        ("failed",    "Failed"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    host  = models.ForeignKey(Host,  on_delete=models.CASCADE, related_name="email_campaigns")
+    event = models.ForeignKey("events.Event", on_delete=models.CASCADE, related_name="email_campaigns")
+
+    # Campaign identity
+    campaign_name = models.CharField(max_length=255)
+    subject       = models.CharField(max_length=255)
+    html_content  = models.TextField(help_text="Full HTML body of the email.")
+
+    # Sender info (can default to event organizer details)
+    sender_name  = models.CharField(max_length=255)
+    sender_email = models.EmailField()
+
+    # Brevo references — populated after syncing / sending
+    brevo_list_id     = models.IntegerField(null=True, blank=True)
+    brevo_campaign_id = models.IntegerField(null=True, blank=True)
+
+    # Recipients snapshot — recorded at send time
+    recipients_count = models.PositiveIntegerField(default=0)
+
+    # Cached Brevo stats — refreshed on list fetch
+    open_rate  = models.FloatField(default=0.0)
+    click_rate = models.FloatField(default=0.0)
+
+    status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    sent_at    = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.campaign_name} — {self.event.title}"

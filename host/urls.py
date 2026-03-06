@@ -27,4 +27,9 @@ urlpatterns = [
     path("promo-codes/create/", PromoCodeCreateView.as_view(), name="host-promo-code-create"),
     path("affiliates/", AffiliateListView.as_view(), name="host-affiliate-list"),
 
+
+    #EMAIL CAMPAIGNS
+    path("campaigns/", EmailCampaignListView.as_view(), name="campaign-list"),
+    path("campaigns/send/", EmailCampaignCreateAndSendView.as_view(), name="campaign-send"),
+
 ]

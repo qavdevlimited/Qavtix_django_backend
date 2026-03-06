@@ -8,10 +8,10 @@ from attendee.models import Attendee
 from events.models import Event
 from host.services.brevoservice import CampaignError, CampaignService
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
-from host.services.service import AffiliateService, CheckInService, DashboardService, PromoCodeError, PromoCodeService
+from host.services.service import AffiliateService, CheckInService, DashboardService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostActivitySerializer, HostNotificationSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, ScanInputSerializer, ScanResultSerializer, TrendingTicketSerializer, WithdrawalHistorySerializer
+from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -1349,4 +1349,163 @@ class DashboardFeedView(generics.ListAPIView):
                 "notifications": HostNotificationSerializer(notifications, many=True).data,
                 "trending":      TrendingTicketSerializer(trending, many=True).data,
             },
+        )
+
+
+
+
+#SALES ANALYSIS 
+@extend_schema(
+    operation_id="sales_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR,  description="day | week | month"),
+        OpenApiParameter("event",      OpenApiTypes.UUID, description="Filter by event UUID"),
+    ],
+    responses=SalesCardSerializer,
+)
+class SalesCardsView(APIView):
+    """
+    GET /sales/cards/
+
+    7 summary cards:
+      Row 1: total_revenue (+ raw change), tickets_sold,
+              conversion_rate (+ % change), average_order_value (+ % change)
+      Row 2: page_views, refunds, repeat_buyers
+
+    Filters: ?date_range=day|week|month  ?event=<uuid>
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        cards = SalesCardService.get_cards(
+            host=host,
+            date_range=request.query_params.get("date_range"),
+            event_id=request.query_params.get("event"),
+        )
+        return api_response(
+            message="Sales cards retrieved successfully",
+            status_code=200,
+            data=SalesCardSerializer(cards).data,
+        )
+
+
+# ── Endpoint 2: Graphs ─────────────────────────────────────────────────────────
+
+@extend_schema(
+    operation_id="sales_graphs",
+    parameters=[
+        OpenApiParameter("event",       OpenApiTypes.UUID, description="Filter by event UUID"),
+        OpenApiParameter("chart",       OpenApiTypes.STR,
+                         description="Revenue chart filter: week | month | year"),
+        OpenApiParameter("year",        OpenApiTypes.INT,
+                         description="Year for yearly chart e.g. 2025"),
+    ],
+    responses=RevenuePointSerializer(many=True),
+)
+class SalesGraphsView(APIView):
+    """
+    GET /sales/graphs/
+
+    Returns 4 graph datasets in one call:
+      revenue_chart  : daily or monthly revenue depending on ?chart filter
+      sales_breakdown: overall % by ticket type + by time-of-day period
+      week_analysis  : 7-day breakdown with morning/afternoon/evening splits
+      geo_breakdown  : tickets, revenue, clicks per city + best location
+
+    Filters
+    ───────
+    event : <uuid>          — scope all graphs to one event
+    chart : week|month|year — revenue chart granularity
+    year  : int             — used when chart=year (default current year)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        event_id    = request.query_params.get("event")
+        chart       = request.query_params.get("chart", "month")
+        year        = request.query_params.get("year")
+        year        = int(year) if year else timezone.now().year
+
+        revenue     = SalesGraphService.get_revenue_chart(
+            host, filter_type=chart, year=year, event_id=event_id
+        )
+        breakdown   = SalesGraphService.get_sales_breakdown(host, event_id=event_id)
+        week        = SalesGraphService.get_week_analysis(host, event_id=event_id)
+        geo         = SalesGraphService.get_geo_breakdown(host, event_id=event_id)
+
+        return api_response(
+            message="Sales graphs retrieved successfully",
+            status_code=200,
+            data={
+                "revenue_chart":   RevenuePointSerializer(revenue, many=True).data,
+                "sales_breakdown": SalesBreakdownSerializer(breakdown).data,
+                "week_analysis":   WeekAnalysisSerializer(week).data,
+                "geo_breakdown":   GeoBreakdownSerializer(geo).data,
+            },
+        )
+
+
+# ── Endpoint 3: Transaction History ───────────────────────────────────────────
+
+@extend_schema(
+    operation_id="sales_transactions",
+    parameters=[
+        OpenApiParameter("ticket_type", OpenApiTypes.INT,  description="Filter by Ticket PK"),
+        OpenApiParameter("date_range",  OpenApiTypes.STR,  description="day | week | month"),
+        OpenApiParameter("event",       OpenApiTypes.UUID, description="Filter by event UUID"),
+        OpenApiParameter("search",      OpenApiTypes.STR,
+                         description="Search by buyer name, email or event title"),
+    ],
+    responses=TransactionHistorySerializer(many=True),
+)
+class TransactionHistoryView(generics.ListAPIView):
+    """
+    GET /sales/transactions/
+
+    Paginated order history with full buyer, event and ticket details.
+
+    Filters
+    ───────
+    ticket_type : <int>          — filter by ticket type PK
+    date_range  : day|week|month — filter by purchase date
+    event       : <uuid>         — filter to one event
+    search      : string         — buyer name, email or event title
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = TransactionHistorySerializer
+
+    def list(self, request, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        qs = TransactionService.get_transactions(
+            host=host,
+            ticket_type_id=request.query_params.get("ticket_type"),
+            date_range=request.query_params.get("date_range"),
+            search=request.query_params.get("search", "").strip() or None,
+            event_id=request.query_params.get("event"),
+        )
+
+        page  = self.paginate_queryset(qs)
+        items = page if page is not None else list(qs)
+
+        data = {"results": TransactionHistorySerializer(items, many=True).data}
+        if page is not None:
+            data["count"]    = self.paginator.page.paginator.count
+            data["next"]     = self.paginator.get_next_link()
+            data["previous"] = self.paginator.get_previous_link()
+
+        return api_response(
+            message="Transactions retrieved successfully",
+            status_code=200,
+            data=data,
         )

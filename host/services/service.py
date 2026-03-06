@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.db.models import Count, Sum, Q
 from django.utils import timezone
 
-from events.models import Ticket, PromoCode
+from events.models import Ticket, PromoCode,Event
 from attendee.models import AffiliateLink          # adjust to your path
 from host.models import CheckIn, HostActivity, HostNotification
 from transactions.models import IssuedTicket, Order, OrderTicket
@@ -13,9 +13,10 @@ from django.db import transaction
 
 from transactions.models import IssuedTicket
 from host.models import CheckIn
-from host.helpers import verify_checkin_token
+from host.helpers import _apply_day_range, _pct_change, verify_checkin_token
 
-
+from django.db.models import Sum, Count, Q, Avg, F
+from django.db.models.functions import TruncDay, TruncMonth
 # ── Promo Codes ────────────────────────────────────────────────────────────────
 
 class PromoCodeService:
@@ -674,3 +675,427 @@ class DashboardService:
     @staticmethod
     def mark_notifications_read(host):
         HostNotification.objects.filter(host=host.user, is_read=False).update(is_read=True)
+
+
+
+#FINANCCIAL ANALYSIS 
+class SalesCardService:
+
+    @staticmethod
+    def get_cards(host, date_range=None, event_id=None):
+        now   = timezone.now()
+        delta = {
+            "day":   timedelta(days=1),
+            "week":  timedelta(weeks=1),
+            "month": timedelta(days=30),
+        }
+        d            = delta.get(date_range, timedelta(days=30))
+        period_start = now - d
+        prev_start   = period_start - d
+
+        def _base(start=None, end=None, status="completed"):
+            qs = Order.objects.filter(event__host=host, status=status)
+            if event_id:
+                qs = qs.filter(event_id=event_id)
+            if start:
+                qs = qs.filter(created_at__gte=start)
+            if end:
+                qs = qs.filter(created_at__lt=end)
+            return qs
+
+        def _tickets(start=None, end=None):
+            qs = OrderTicket.objects.filter(
+                order__event__host=host, order__status="completed"
+            )
+            if event_id:
+                qs = qs.filter(order__event_id=event_id)
+            if start:
+                qs = qs.filter(order__created_at__gte=start)
+            if end:
+                qs = qs.filter(order__created_at__lt=end)
+            return qs
+
+        # ── Total revenue ─────────────────────────────────────────────────────
+        total_revenue = (
+            _base().aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
+        )
+        curr_rev = (
+            _base(period_start, now).aggregate(t=Sum("total_amount"))["t"]
+            or Decimal("0")
+        )
+        prev_rev = (
+            _base(prev_start, period_start).aggregate(t=Sum("total_amount"))["t"]
+            or Decimal("0")
+        )
+        total_revenue_change = curr_rev - prev_rev
+
+        # ── Tickets sold ──────────────────────────────────────────────────────
+        tickets_sold = (
+            _tickets().aggregate(t=Sum("quantity"))["t"] or 0
+        )
+
+        # ── Conversion rate ───────────────────────────────────────────────────
+        cap_qs = Ticket.objects.filter(event__host=host)
+        if event_id:
+            cap_qs = cap_qs.filter(event_id=event_id)
+        total_capacity  = cap_qs.aggregate(t=Sum("quantity"))["t"] or 0
+        conversion_rate = (
+            round((tickets_sold / total_capacity) * 100, 2)
+            if total_capacity else 0.0
+        )
+        curr_sold = _tickets(period_start, now).aggregate(t=Sum("quantity"))["t"] or 0
+        prev_sold = _tickets(prev_start, period_start).aggregate(t=Sum("quantity"))["t"] or 0
+        conversion_change = _pct_change(curr_sold, prev_sold)
+
+        # ── Average order value ───────────────────────────────────────────────
+        curr_aov = (
+            _base(period_start, now).aggregate(a=Avg("total_amount"))["a"]
+            or Decimal("0")
+        )
+        prev_aov = (
+            _base(prev_start, period_start).aggregate(a=Avg("total_amount"))["a"]
+            or Decimal("0")
+        )
+        aov_change = _pct_change(curr_aov, prev_aov)
+
+        # ── Page views ────────────────────────────────────────────────────────
+        ev_qs = Event.objects.filter(host=host)
+        if event_id:
+            ev_qs = ev_qs.filter(id=event_id)
+        page_views = ev_qs.aggregate(t=Sum("views_count"))["t"] or 0
+
+        # ── Refunds ───────────────────────────────────────────────────────────
+        refund_qs = Order.objects.filter(event__host=host, status="refunded")
+        if event_id:
+            refund_qs = refund_qs.filter(event_id=event_id)
+        if date_range:
+            refund_qs = _apply_day_range(refund_qs, date_range)
+        refunds = refund_qs.count()
+
+        # ── Repeat buyers ─────────────────────────────────────────────────────
+        # Users who have placed more than 1 completed order with this host
+        all_orders = Order.objects.filter(event__host=host, status="completed")
+        if event_id:
+            all_orders = all_orders.filter(event_id=event_id)
+        repeat_buyers = (
+            all_orders
+            .values("user")
+            .annotate(cnt=Count("id"))
+            .filter(cnt__gt=1)
+            .count()
+        )
+
+        return {
+            "total_revenue":        total_revenue,
+            "total_revenue_change": total_revenue_change,
+            "tickets_sold":         tickets_sold,
+            "conversion_rate":      conversion_rate,
+            "conversion_change":    conversion_change,
+            "average_order_value":  curr_aov,
+            "aov_change":           aov_change,
+            "page_views":           page_views,
+            "refunds":              refunds,
+            "repeat_buyers":        repeat_buyers,
+        }
+
+
+# ── Endpoint 2: Graphs ─────────────────────────────────────────────────────────
+
+class SalesGraphService:
+
+    @staticmethod
+    def get_revenue_chart(host, filter_type=None, year=None, event_id=None):
+        """
+        filter_type = "week"  → daily for current week
+        filter_type = "month" → daily for current calendar month
+        filter_type = "year"  → monthly for given year (default current year)
+        """
+        now  = timezone.now()
+        base = Order.objects.filter(event__host=host, status="completed")
+        if event_id:
+            base = base.filter(event_id=event_id)
+
+        if filter_type == "week":
+            week_start = now - timedelta(days=now.weekday())
+            qs = (
+                base
+                .filter(created_at__gte=week_start)
+                .annotate(period=TruncDay("created_at"))
+                .values("period")
+                .annotate(amount=Sum("total_amount"))
+                .order_by("period")
+            )
+            return [
+                {
+                    "label":  r["period"].strftime("%a %d"),
+                    "amount": r["amount"] or Decimal("0"),
+                }
+                for r in qs if r["period"]
+            ]
+
+        if filter_type == "month":
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            qs = (
+                base
+                .filter(created_at__gte=month_start)
+                .annotate(period=TruncDay("created_at"))
+                .values("period")
+                .annotate(amount=Sum("total_amount"))
+                .order_by("period")
+            )
+            return [
+                {
+                    "label":  r["period"].strftime("%d %b"),
+                    "amount": r["amount"] or Decimal("0"),
+                }
+                for r in qs if r["period"]
+            ]
+
+        # Default: full year monthly buckets
+        y = year or now.year
+        qs = (
+            base
+            .filter(created_at__year=y)
+            .annotate(period=TruncMonth("created_at"))
+            .values("period")
+            .annotate(amount=Sum("total_amount"))
+            .order_by("period")
+        )
+        monthly = {i: Decimal("0") for i in range(1, 13)}
+        for r in qs:
+            if r["period"]:
+                monthly[r["period"].month] = r["amount"] or Decimal("0")
+
+        return [
+            {"label": MONTH_NAMES[m], "amount": monthly[m]}
+            for m in range(1, 13)
+        ]
+
+    @staticmethod
+    def get_sales_breakdown(host, event_id=None):
+        """
+        Returns overall ticket type breakdown + breakdown by time-of-day period.
+        Uses DB-level hour extraction so no Python looping over rows.
+        """
+        base = OrderTicket.objects.filter(
+            order__event__host=host, order__status="completed"
+        )
+        if event_id:
+            base = base.filter(order__event_id=event_id)
+
+        # Overall by ticket type
+        by_type = (
+            base
+            .values("ticket__ticket_type")
+            .annotate(count=Sum("quantity"))
+            .order_by("-count")
+        )
+        total = sum(r["count"] or 0 for r in by_type)
+
+        overall = [
+            {
+                "ticket_type": r["ticket__ticket_type"],
+                "count":       r["count"] or 0,
+                "percentage":  round((r["count"] / total) * 100, 2) if total else 0.0,
+            }
+            for r in by_type
+        ]
+
+        # Time-of-day periods
+        periods = [
+            ("Morning (12am - 12pm)",  Q(order__created_at__hour__lt=12)),
+            ("Afternoon (12pm - 6pm)", Q(order__created_at__hour__gte=12,
+                                         order__created_at__hour__lt=18)),
+            ("Evening (6pm - 12am)",   Q(order__created_at__hour__gte=18)),
+        ]
+
+        by_period = []
+        for label, period_q in periods:
+            period_qs    = base.filter(period_q)
+            period_total = period_qs.aggregate(t=Sum("quantity"))["t"] or 0
+            type_rows    = (
+                period_qs
+                .values("ticket__ticket_type")
+                .annotate(count=Sum("quantity"))
+                .order_by("-count")
+            )
+            by_period.append({
+                "period_label": label,
+                "total":        period_total,
+                "by_ticket_type": [
+                    {
+                        "ticket_type": r["ticket__ticket_type"],
+                        "count":       r["count"] or 0,
+                        "percentage":  round((r["count"] / period_total) * 100, 2)
+                                       if period_total else 0.0,
+                    }
+                    for r in type_rows
+                ],
+            })
+
+        return {"overall": overall, "by_period": by_period}
+
+    @staticmethod
+    def get_week_analysis(host, event_id=None):
+        now         = timezone.now()
+        week_start  = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        prev_start  = week_start - timedelta(weeks=1)
+        prev_end    = week_start
+
+        base = Order.objects.filter(event__host=host, status="completed")
+        if event_id:
+            base = base.filter(event_id=event_id)
+
+        def _count(qs):
+            return (
+                OrderTicket.objects
+                .filter(order__in=qs)
+                .aggregate(t=Sum("quantity"))["t"] or 0
+            )
+
+        this_week_count = _count(base.filter(created_at__gte=week_start))
+        last_week_count = _count(
+            base.filter(created_at__gte=prev_start, created_at__lt=prev_end)
+        )
+        change = _pct_change(this_week_count, last_week_count)
+
+        week_end = week_start + timedelta(days=7)
+        label = (
+            f"Sales from {week_start.strftime('%-d')}–"
+            f"{(week_end - timedelta(days=1)).strftime('%-d %b, %Y')}"
+        )
+
+        days = []
+        for i in range(7):
+            day_start = week_start + timedelta(days=i)
+            day_end   = day_start + timedelta(days=1)
+
+            day_orders = base.filter(created_at__gte=day_start, created_at__lt=day_end)
+
+            morning = (
+                OrderTicket.objects
+                .filter(order__in=day_orders, order__created_at__hour__lt=12)
+                .aggregate(t=Sum("quantity"))["t"] or 0
+            )
+            afternoon = (
+                OrderTicket.objects
+                .filter(
+                    order__in=day_orders,
+                    order__created_at__hour__gte=12,
+                    order__created_at__hour__lt=18,
+                )
+                .aggregate(t=Sum("quantity"))["t"] or 0
+            )
+            evening = (
+                OrderTicket.objects
+                .filter(order__in=day_orders, order__created_at__hour__gte=18)
+                .aggregate(t=Sum("quantity"))["t"] or 0
+            )
+            days.append({
+                "day":       day_start.strftime("%a"),
+                "date":      day_start.date(),
+                "morning":   morning,
+                "afternoon": afternoon,
+                "evening":   evening,
+                "total":     morning + afternoon + evening,
+            })
+
+        return {"change_vs_last_week": change, "label": label, "days": days}
+
+    @staticmethod
+    def get_geo_breakdown(host, event_id=None):
+        base = (
+            Order.objects
+            .filter(event__host=host, status="completed")
+            .filter(event__location__isnull=False)
+        )
+        if event_id:
+            base = base.filter(event_id=event_id)
+
+        rows = (
+            base
+            .values(
+                city=F("event__location__city"),
+                state=F("event__location__state"),
+            )
+            .annotate(
+                tickets=Sum("tickets__quantity"),
+                revenue=Sum("total_amount"),
+            )
+            .order_by("-tickets")
+        )
+
+        # Map clicks (views_count) per city from events
+        ev_qs = Event.objects.filter(host=host).select_related("location")
+        if event_id:
+            ev_qs = ev_qs.filter(id=event_id)
+        click_map = {}
+        for ev in ev_qs:
+            loc = getattr(ev, "location", None)
+            if loc:
+                key = (loc.city, loc.state)
+                click_map[key] = click_map.get(key, 0) + ev.views_count
+
+        locations = [
+            {
+                "city":    r["city"],
+                "state":   r["state"],
+                "tickets": r["tickets"] or 0,
+                "revenue": r["revenue"] or Decimal("0"),
+                "clicks":  click_map.get((r["city"], r["state"]), 0),
+            }
+            for r in rows
+        ]
+
+        best = max(locations, key=lambda x: x["tickets"], default=None)
+        best_location = (
+            {
+                "label":   f"{best['city']}, {best['state']}",
+                "tickets": best["tickets"],
+                "revenue": best["revenue"],
+                "clicks":  best["clicks"],
+            }
+            if best else None
+        )
+
+        return {"locations": locations, "best_location": best_location}
+
+
+# ── Endpoint 3: Transactions ───────────────────────────────────────────────────
+
+class TransactionService:
+
+    @staticmethod
+    def get_transactions(host, ticket_type_id=None, date_range=None,
+                         search=None, event_id=None):
+        qs = (
+            Order.objects
+            .select_related(
+                "user",
+                "user__attendee_profile",
+                "event",
+                "event__category",
+            )
+            .prefetch_related("event__media", "tickets")
+            .filter(event__host=host)
+        )
+
+        if event_id:
+            qs = qs.filter(event_id=event_id)
+
+        if ticket_type_id:
+            qs = qs.filter(tickets__ticket_id=ticket_type_id)
+
+        if date_range:
+            qs = _apply_day_range(qs, date_range)
+
+        if search:
+            qs = qs.filter(
+                Q(user__attendee_profile__full_name__icontains=search) |
+                Q(user__email__icontains=search)                       |
+                Q(event__title__icontains=search)
+            )
+
+        return qs.distinct().order_by("-created_at")

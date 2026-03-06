@@ -40,4 +40,10 @@ urlpatterns = [
     path("dashboard/overview/", DashboardOverviewView.as_view(), name="dashboard-overview"),
     path("dashboard/feed/",     DashboardFeedView.as_view(),     name="dashboard-feed"),
 
+
+    #SALES ANALYTICS
+    path("sales/cards/",        SalesCardsView.as_view(),       name="sales-cards"),
+    path("sales/graphs/",       SalesGraphsView.as_view(),      name="sales-graphs"),
+    path("sales/transactions/", TransactionHistoryView.as_view(), name="sales-transactions"),
+
 ]

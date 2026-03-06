@@ -164,3 +164,52 @@ class Withdrawal(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.amount}"
+
+
+
+
+class Refund(models.Model):
+
+    REASON_CHOICES = [
+        ("cancelled_event", "Event Cancelled"),
+        ("customer_request", "Customer Request"),
+        ("duplicate_order", "Duplicate Order"),
+        ("fraud",           "Fraud"),
+        ("other",           "Other"),
+    ]
+
+    STATUS_CHOICES = [
+        ("pending",   "Pending"),
+        ("approved",  "Approved"),
+        ("rejected",  "Rejected"),
+        ("processed", "Processed"),
+    ]
+
+    id    = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order = models.OneToOneField(
+        "Order",
+        on_delete=models.CASCADE,
+        related_name="refund",
+    )
+
+    amount     = models.DecimalField(max_digits=12, decimal_places=2)
+    reason     = models.CharField(max_length=30, choices=REASON_CHOICES)
+    notes      = models.TextField(blank=True)
+    status     = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+
+    # Who processed it (admin/host user)
+    processed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="processed_refunds",
+    )
+
+    created_at   = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Refund {self.id} — {self.order.id} — {self.status}"

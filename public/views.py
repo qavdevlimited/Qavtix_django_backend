@@ -20,6 +20,7 @@ from host.serializers import EventDetailsSerializer
 from django.shortcuts import get_object_or_404
 from .models import Follow,Message
 from attendee.models import AffiliateLink
+from .helpers import increment_event_views
 
 
 
@@ -245,6 +246,8 @@ class EventDetailView(generics.RetrieveAPIView):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
+
+        increment_event_views(instance.id)  # Increment views count safely
 
         ref_code = request.GET.get("ref")
         if ref_code:

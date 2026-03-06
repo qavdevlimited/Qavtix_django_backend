@@ -4,6 +4,14 @@ from django.utils.timezone import now as tnow,timedelta
 from transactions.models import Order, Withdrawal
 from datetime import date, timedelta
 from django.core import signing
+from django.utils import timezone
+
+
+MONTH_NAMES = [
+    "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+]
+
 
 def _pct_change(current, previous):
     """Return percentage change between two values. Returns 0 if no previous."""
@@ -120,6 +128,16 @@ def _available_balance(host, host_user):
 def _get_host(request):
     return getattr(request.user, "host_profile", None)
 
+
+def _apply_day_range(qs, date_range, field="created_at"):
+    now = timezone.now()
+    delta = {
+        "day":   timedelta(days=1),
+        "week":  timedelta(weeks=1),
+        "month": timedelta(days=30),
+    }
+    d = delta.get(date_range)
+    return qs.filter(**{f"{field}__gte": now - d}) if d else qs
 
 
 #  For CHECKIN SYSTEM

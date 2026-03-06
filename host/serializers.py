@@ -703,3 +703,121 @@ class TrendingTicketSerializer(serializers.Serializer):
         if not obj.quantity:
             return 0.0
         return round((obj.sold_count / obj.quantity) * 100, 2)
+
+
+
+
+#SALES ANALYSIS
+class SalesCardSerializer(serializers.Serializer):
+    # Row 1
+    total_revenue        = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_revenue_change = serializers.DecimalField(
+        max_digits=14, decimal_places=2,
+        help_text="Raw change vs previous period e.g. +733000"
+    )
+    tickets_sold         = serializers.IntegerField()
+    conversion_rate      = serializers.FloatField(help_text="sold / capacity * 100")
+    conversion_change    = serializers.FloatField(help_text="% change vs previous period")
+    average_order_value  = serializers.DecimalField(max_digits=14, decimal_places=2)
+    aov_change           = serializers.FloatField(help_text="% change vs previous period")
+
+    # Row 2
+    page_views    = serializers.IntegerField()
+    refunds       = serializers.IntegerField()
+    repeat_buyers = serializers.IntegerField()
+
+
+# ── Endpoint 2: Graphs ─────────────────────────────────────────────────────────
+
+class RevenuePointSerializer(serializers.Serializer):
+    label  = serializers.CharField()
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+class TicketTypeSalesSerializer(serializers.Serializer):
+    ticket_type = serializers.CharField()
+    count       = serializers.IntegerField()
+    percentage  = serializers.FloatField()
+
+
+class SalesPeriodBreakdownSerializer(serializers.Serializer):
+    period_label   = serializers.CharField()
+    total          = serializers.IntegerField()
+    by_ticket_type = TicketTypeSalesSerializer(many=True)
+
+
+class SalesBreakdownSerializer(serializers.Serializer):
+    overall   = TicketTypeSalesSerializer(many=True)
+    by_period = SalesPeriodBreakdownSerializer(many=True)
+
+
+class WeekDayPointSerializer(serializers.Serializer):
+    day       = serializers.CharField()
+    date      = serializers.DateField()
+    morning   = serializers.IntegerField()
+    afternoon = serializers.IntegerField()
+    evening   = serializers.IntegerField()
+    total     = serializers.IntegerField()
+
+
+class WeekAnalysisSerializer(serializers.Serializer):
+    change_vs_last_week = serializers.FloatField()
+    label               = serializers.CharField()
+    days                = WeekDayPointSerializer(many=True)
+
+
+class GeoLocationSerializer(serializers.Serializer):
+    city    = serializers.CharField()
+    state   = serializers.CharField()
+    tickets = serializers.IntegerField()
+    revenue = serializers.DecimalField(max_digits=14, decimal_places=2)
+    clicks  = serializers.IntegerField()
+
+
+class BestLocationSerializer(serializers.Serializer):
+    label   = serializers.CharField()
+    tickets = serializers.IntegerField()
+    revenue = serializers.DecimalField(max_digits=14, decimal_places=2)
+    clicks  = serializers.IntegerField()
+
+
+class GeoBreakdownSerializer(serializers.Serializer):
+    locations     = GeoLocationSerializer(many=True)
+    best_location = BestLocationSerializer(allow_null=True)
+
+
+# ── Endpoint 3: Transaction History ───────────────────────────────────────────
+
+class TransactionHistorySerializer(serializers.Serializer):
+    payment_id    = serializers.UUIDField(source="id")
+    purchased_by  = serializers.SerializerMethodField()
+    event         = serializers.SerializerMethodField()
+    purchase_date = serializers.DateTimeField(source="created_at")
+    quantity      = serializers.SerializerMethodField()
+    amount        = serializers.DecimalField(
+        max_digits=14, decimal_places=2, source="total_amount"
+    )
+    status = serializers.CharField()
+
+    def get_purchased_by(self, obj):
+        attendee = getattr(obj.user, "attendee_profile", None) if obj.user else None
+        return {
+            "full_name": attendee.full_name if attendee else (obj.full_name or obj.email),
+            "email":     obj.user.email if obj.user else obj.email,
+        }
+
+    def get_event(self, obj):
+        event = obj.event
+        media = (
+            event.media.filter(is_featured=True).first()
+            or event.media.first()
+        )
+        return {
+            "id":       str(event.id),
+            "name":     event.title,
+            "image":    media.image_url if media else None,
+            "category": event.category.name if event.category else None,
+        }
+
+    def get_quantity(self, obj):
+        return sum(t.quantity for t in obj.tickets.all())

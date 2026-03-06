@@ -8,10 +8,11 @@ from django.utils import timezone
 from datetime import timedelta
 from django.contrib.auth.password_validation import validate_password
 from notification.models import NotificationSettings
+from host.helpers import generate_checkin_token
 
 class TicketDashboardSerializer(serializers.ModelSerializer):
     sn = serializers.SerializerMethodField()
-
+    qrcode_token = serializers.SerializerMethodField()
     event_name = serializers.CharField(source="event.title", read_only=True)
     category = serializers.CharField(source="event.category.name", read_only=True)
 
@@ -41,6 +42,7 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
             "sn",
             "id",
             "ticket_id",
+            "qrcode_token",
             "event_name",
             "event_image",
             "category",
@@ -71,8 +73,8 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
         first_media = obj.event.media.first()
         return first_media.image_url if first_media else None
     
-
-
+    def get_qrcode_token(self, obj):
+        return generate_checkin_token(str(obj.id), obj.owner_id)
 
 
 class FavoriteEventSerializer(serializers.ModelSerializer):

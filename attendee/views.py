@@ -159,6 +159,7 @@ class TicketDashboardView(generics.ListAPIView):
                     "count": self.paginator.page.paginator.count,
                     "next": self.paginator.get_next_link(),
                     "previous": self.paginator.get_previous_link(),
+                    "card_data": card_data,
                     "results": serializer.data
                 }
             )

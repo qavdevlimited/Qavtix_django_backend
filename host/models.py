@@ -7,6 +7,8 @@ from django.conf import settings
 
 
 
+
+
 class Host(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -95,3 +97,44 @@ class EmailCampaign(models.Model):
 
     def __str__(self):
         return f"{self.campaign_name} — {self.event.title}"
+
+
+
+class CheckIn(models.Model):
+
+    STATUS_CHOICES = [
+        ("checked_in", "Checked In"),
+        ("duplicate",  "Duplicate Scan"),
+        ("invalid",    "Invalid"),
+    ]
+
+    id            = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    issued_ticket = models.OneToOneField(
+        "transactions.IssuedTicket",
+        on_delete=models.CASCADE,
+        related_name="checkin",
+        null=True,      # null when status=invalid (ticket not found)
+        blank=True,
+    )
+
+    # Raw token stored for audit/log purposes
+    scanned_token = models.TextField()
+
+    status        = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    checked_in_at = models.DateTimeField(auto_now_add=True)
+
+    # Who performed the scan (staff/host account), optional
+    scanned_by    = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="checkins_performed",
+    )
+
+    notes = models.TextField(blank=True)   # e.g. reason for duplicate/invalid
+
+    class Meta:
+        ordering = ["-checked_in_at"]
+
+    def __str__(self):
+        return f"CheckIn {self.id} — {self.status}"

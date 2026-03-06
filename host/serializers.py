@@ -541,3 +541,92 @@ class EmailCampaignCreateSerializer(serializers.Serializer):
 class EmailCampaignSendSerializer(serializers.Serializer):
     """Body is empty — campaign_id comes from the URL."""
     pass
+
+
+#FOR CHECKIN
+
+# ── Overview (cards) ───────────────────────────────────────────────────────────
+
+class CheckInCardSerializer(serializers.Serializer):
+    total_tickets   = serializers.IntegerField()
+    total_checkins  = serializers.IntegerField()
+    issues          = serializers.IntegerField(
+        help_text="Duplicate or invalid scans"
+    )
+
+
+# ── Attendee list ──────────────────────────────────────────────────────────────
+
+class CheckInAttendeeSerializer(serializers.Serializer):
+    """One row per issued ticket — shown in the attendee check-in list."""
+
+    # Attendee identity
+    full_name    = serializers.SerializerMethodField()
+    email        = serializers.SerializerMethodField()
+
+    # Ticket info
+    issued_ticket_id = serializers.UUIDField(source="id")
+    ticket_type      = serializers.CharField(
+        source="order_ticket.ticket.ticket_type"
+    )
+    qr_token         = serializers.SerializerMethodField()
+
+    # Event info
+    event_name     = serializers.CharField(source="event.title")
+    event_category = serializers.SerializerMethodField()
+    event_image    = serializers.SerializerMethodField()
+
+    # Check-in info
+    checkin_status  = serializers.SerializerMethodField()
+    # possible values: pending | checked_in | invalid | already_checked_in
+    checked_in_at   = serializers.SerializerMethodField()
+
+    def get_full_name(self, obj):
+        attendee = getattr(obj.owner, "attendee_profile", None)
+        return attendee.full_name if attendee else obj.owner.email
+
+    def get_email(self, obj):
+        return obj.owner.email
+
+    def get_qr_token(self, obj):
+        from .helpers import generate_checkin_token
+        # Bind token to current owner — transfers invalidate old tokens
+        return generate_checkin_token(str(obj.id), obj.owner_id)
+
+    def get_event_category(self, obj):
+        cat = obj.event.category
+        return cat.name if cat else None
+
+    def get_event_image(self, obj):
+        media = (
+            obj.event.media.filter(is_featured=True).first()
+            or obj.event.media.first()
+        )
+        return media.image_url if media else None
+
+    def get_checkin_status(self, obj):
+        checkin = getattr(obj, "checkin", None)
+        if checkin is None:
+            return "pending"
+        return checkin.status
+
+    def get_checked_in_at(self, obj):
+        checkin = getattr(obj, "checkin", None)
+        return checkin.checked_in_at if checkin else None
+
+
+# ── Scan result ────────────────────────────────────────────────────────────────
+
+class ScanResultSerializer(serializers.Serializer):
+    """Response returned after a QR scan."""
+    status           = serializers.CharField()
+    message          = serializers.CharField()
+    issued_ticket_id = serializers.UUIDField(allow_null=True)
+    full_name        = serializers.CharField(allow_null=True)
+    ticket_type      = serializers.CharField(allow_null=True)
+    event_name       = serializers.CharField(allow_null=True)
+    checked_in_at    = serializers.DateTimeField(allow_null=True)
+
+
+class ScanInputSerializer(serializers.Serializer):
+    token = serializers.CharField()

@@ -3,6 +3,7 @@ from django.db.models import Sum, Q
 from django.utils.timezone import now as tnow,timedelta
 from transactions.models import Order, Withdrawal
 from datetime import date, timedelta
+from django.core import signing
 
 def _pct_change(current, previous):
     """Return percentage change between two values. Returns 0 if no previous."""
@@ -121,3 +122,44 @@ def _get_host(request):
 
 
 
+#  For CHECKIN SYSTEM
+# ── QR Token helpers ───────────────────────────────────────────────────────────
+
+SIGNER = signing.TimestampSigner(salt="qavtix-checkin")
+
+# Separator that won't appear in UUIDs or integers
+_SEP = "|"
+
+
+def generate_checkin_token(issued_ticket_id: str, owner_id: int) -> str:
+    """
+    Produces a signed token binding the ticket to its CURRENT owner.
+
+    Payload signed: "<issued_ticket_id>|<owner_id>"
+
+    If the ticket is transferred or resold, the new owner's ID is different
+    so this token becomes invalid — the previous owner's QR screenshot is
+    useless. The new owner's ticket listing will return a fresh token.
+
+    Embed this string in a QR code on the frontend.
+    """
+    payload = f"{issued_ticket_id}{_SEP}{owner_id}"
+    return SIGNER.sign(payload)
+
+
+def verify_checkin_token(token: str, max_age_days: int = 365) -> tuple[str, int]:
+    """
+    Verifies the signature and returns (issued_ticket_id, owner_id).
+    Raises signing.BadSignature for ANY failure — bad signature,
+    expired token, wrong format, missing separator, etc.
+    This way the caller only needs to catch one exception type.
+    """
+    try:
+        payload = SIGNER.unsign(token, max_age=60 * 60 * 24 * max_age_days)
+        issued_ticket_id, owner_id = payload.split(_SEP, 1)
+        return issued_ticket_id, int(owner_id)
+    except (signing.BadSignature, signing.SignatureExpired):
+        raise
+    except Exception:
+        # Covers ValueError (missing separator), malformed payload, etc.
+        raise signing.BadSignature("Invalid token format.")

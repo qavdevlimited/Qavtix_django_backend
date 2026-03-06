@@ -6,12 +6,11 @@ urlpatterns = [
     path("events/<uuid:id>/update/",EventUpdateView.as_view(),name="event-update"),
     path("events/management/", EventDashboardView.as_view(), name="events-dashboard"),
 
-    # GET /customers/
+    # customers
     path("customers/", CustomerListView.as_view(), name="customer-list"),
-
-    # GET /customers/<user_id>/
     path("customers/<int:user_id>/", CustomerDetailView.as_view(), name="customer-detail"),
 
+    #PAYOUTS/FINANCIALS
     path("payouts/list/", ListPayoutAccountsView.as_view(), name="list-payouts"),
     path("payouts/add/", AddPayoutAccountView.as_view(), name="add-payout"),
 
@@ -31,5 +30,10 @@ urlpatterns = [
     #EMAIL CAMPAIGNS
     path("campaigns/", EmailCampaignListView.as_view(), name="campaign-list"),
     path("campaigns/send/", EmailCampaignCreateAndSendView.as_view(), name="campaign-send"),
+
+    # CHECK IN SYSTEM
+    path("checkin/overview/",  CheckInOverviewView.as_view(),     name="checkin-overview"),
+    path("checkin/attendees/", CheckInAttendeeListView.as_view(), name="checkin-attendee-list"),
+    path("checkin/scan/",      CheckInScanView.as_view(),         name="checkin-scan"),
 
 ]

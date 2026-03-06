@@ -6,12 +6,12 @@ from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from attendee.models import Attendee
 from events.models import Event
-from host.brevoservice import CampaignError, CampaignService
+from host.services.brevoservice import CampaignError, CampaignService
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
-from host.service import AffiliateService, PromoCodeError, PromoCodeService
+from host.services.service import AffiliateService, CheckInService, PromoCodeError, PromoCodeService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, WithdrawalHistorySerializer
+from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, ScanInputSerializer, ScanResultSerializer, WithdrawalHistorySerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -1086,4 +1086,154 @@ class EmailCampaignCreateAndSendView(APIView):
             message="Campaign sent successfully.",
             status_code=201,
             data=EmailCampaignListSerializer(campaign).data,
+        )
+
+
+
+
+#CHECK IN FEATURE VIEWS
+@extend_schema(
+    operation_id="checkin_overview",
+    parameters=[
+        OpenApiParameter("event", OpenApiTypes.UUID, description="Filter by event UUID"),
+    ],
+    responses=CheckInCardSerializer,
+)
+class CheckInOverviewView(generics.ListAPIView):
+    """
+    GET /checkins/overview/
+
+    Cards
+    ─────
+    total_tickets   : all issued tickets for host's events
+    total_checkins  : successfully checked-in tickets
+    issues          : duplicate or invalid scans
+
+    Query params
+    ────────────
+    event : <uuid>  — scope to a single event
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = CheckInCardSerializer
+
+    def list(self, request, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        cards = CheckInService.get_cards(
+            host=host,
+            event_id=request.query_params.get("event"),
+        )
+
+        return api_response(
+            message="Check-in overview retrieved successfully",
+            status_code=200,
+            data=CheckInCardSerializer(cards).data,
+        )
+
+
+# ── 2. Attendee list ───────────────────────────────────────────────────────────
+
+@extend_schema(
+    operation_id="checkin_attendee_list",
+    parameters=[
+        OpenApiParameter("event",       OpenApiTypes.UUID, description="Filter by event UUID"),
+        OpenApiParameter("ticket_type", OpenApiTypes.INT,  description="Filter by Ticket PK"),
+        OpenApiParameter("status",      OpenApiTypes.STR,
+                         description="pending | checked_in | duplicate | invalid"),
+    ],
+    responses=CheckInAttendeeSerializer(many=True),
+)
+class CheckInAttendeeListView(generics.ListAPIView):
+    """
+    GET /checkins/attendees/
+
+    Lists all issued tickets for the host's events with check-in status.
+    Each row includes a signed QR token ready to embed in a QR code.
+
+    Query params
+    ────────────
+    event       : <uuid>                              — filter to one event
+    ticket_type : <int>                               — filter by ticket type PK
+    status      : pending|checked_in|duplicate|invalid — filter by check-in status
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = CheckInAttendeeSerializer
+
+    def list(self, request, *args, **kwargs):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        qs = CheckInService.get_attendees(
+            host=host,
+            event_id=request.query_params.get("event"),
+            ticket_type=request.query_params.get("ticket_type"),
+            status=request.query_params.get("status"),
+        )
+
+        page  = self.paginate_queryset(qs)
+        items = page if page is not None else list(qs)
+
+        data = {"results": CheckInAttendeeSerializer(items, many=True).data}
+        if page is not None:
+            data["count"]    = self.paginator.page.paginator.count
+            data["next"]     = self.paginator.get_next_link()
+            data["previous"] = self.paginator.get_previous_link()
+
+        return api_response(
+            message="Attendees retrieved successfully",
+            status_code=200,
+            data=data,
+        )
+
+
+# ── 3. QR Scan ─────────────────────────────────────────────────────────────────
+
+@extend_schema(
+    operation_id="checkin_scan",
+    request=ScanInputSerializer,
+    responses=ScanResultSerializer,
+)
+class CheckInScanView(APIView):
+    """
+    POST /checkins/scan/
+
+    Receives the scanned QR token, verifies it, and records the check-in.
+    Always returns a clear status — never raises a 4xx on bad/duplicate scans
+    so the scanning device always gets a usable response.
+
+    Body
+    ────
+    token : string  — the signed token from the attendee's QR code
+
+    Responses
+    ─────────
+    checked_in : first valid scan — ticket is now marked used
+    duplicate  : ticket was already checked in
+    invalid    : token is forged, expired, or ticket doesn't exist
+    """
+    # No IsAuthenticated here intentionally — scanning devices at the door
+    # may use a separate auth mechanism (e.g. a dedicated scanner token).
+    # Add your preferred auth when integrating with your scanner app.
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ScanInputSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+
+        result = CheckInService.process_scan(
+            token=serializer.validated_data["token"],
+            scanned_by=request.user,
+        )
+
+        # Always 200 — the status field tells the scanner what happened.
+        # A 4xx would cause some scanner apps to show a generic error
+        # instead of the meaningful duplicate/invalid message.
+        return api_response(
+            message=result["message"],
+            status_code=200,
+            data=ScanResultSerializer(result).data,
         )

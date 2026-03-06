@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.db import transaction
 
 from transactions.models import Order
-from .models import EmailCampaign
+from host.models import EmailCampaign
 from . import brevocampaign as brevo
 
 logger = logging.getLogger(__name__)

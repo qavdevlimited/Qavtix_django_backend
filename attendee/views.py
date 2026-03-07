@@ -29,6 +29,7 @@ from decimal import Decimal
 from notification.models import NotificationSettings
 from drf_spectacular.utils import extend_schema, inline_serializer,OpenApiParameter
 from rest_framework import serializers
+from .utils import pagination_data
 
 
 
@@ -156,11 +157,9 @@ class TicketDashboardView(generics.ListAPIView):
                 message="Dashboard retrieved successfully",
                 status_code=200,
                 data={
-                    "count": self.paginator.page.paginator.count,
-                    "next": self.paginator.get_next_link(),
-                    "previous": self.paginator.get_previous_link(),
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
                     "card_data": card_data,
-                    "results": serializer.data
                 }
             )
 
@@ -282,9 +281,7 @@ class FavoriteEventListView(generics.ListAPIView):
                 message="Favourite retrieved successfully",
                 status_code=200,
                 data={
-                    "count": self.paginator.page.paginator.count,
-                    "next": self.paginator.get_next_link(),
-                    "previous": self.paginator.get_previous_link(),
+                    **pagination_data(self.paginator),
                     "results": serializer.data
                 }
             )
@@ -517,10 +514,8 @@ class AffiliateEventsView(generics.ListAPIView):
                 message="Affiliate Events retrieved successfully",
                 status_code=200,
                 data={
-                    "count": self.paginator.page.paginator.count,
-                    "next": self.paginator.get_next_link(),
-                    "previous": self.paginator.get_previous_link(),
-                    "results": serializer.data
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
                 }
             )
 
@@ -700,10 +695,8 @@ class AffiliateEarningHistoryView(generics.ListAPIView):
                 message="Affiliate earning history retrieved successfully",
                 status_code=200,
                 data={
-                    "count": self.paginator.page.paginator.count,
-                    "next": self.paginator.get_next_link(),
-                    "previous": self.paginator.get_previous_link(),
-                    "results": serializer.data
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
                 }
             )
 
@@ -897,10 +890,8 @@ class WithdrawalHistoryView(generics.ListAPIView):
                 message="Affiliate earning history retrieved successfully",
                 status_code=200,
                 data={
-                    "count": self.paginator.page.paginator.count,
-                    "next": self.paginator.get_next_link(),
-                    "previous": self.paginator.get_previous_link(),
-                    "results": serializer.data
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
                 }
             )
 
@@ -930,10 +921,8 @@ class PayoutInformationListView(generics.ListAPIView):
                 message="Affiliate earning history retrieved successfully",
                 status_code=200,
                 data={
-                    "count": self.paginator.page.paginator.count,
-                    "next": self.paginator.get_next_link(),
-                    "previous": self.paginator.get_previous_link(),
-                    "results": serializer.data
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
                 }
             )
 

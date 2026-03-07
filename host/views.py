@@ -17,7 +17,7 @@ from django.http import Http404
 from rest_framework import generics, permissions, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.http import Http404
-from .utils import EventDashboardFilter, apply_date_range_qs
+from .utils import EventDashboardFilter, apply_date_range_qs,pagination_data
 from django.http import Http404
 from django.db.models import (
     Count, Sum, Max, Min, Q, OuterRef, Subquery, DecimalField
@@ -151,9 +151,7 @@ class EventDashboardView(generics.ListAPIView):
                 message="Events retrieved successfully",
                 status_code=200,
                 data={
-                    "count": self.paginator.page.paginator.count,
-                    "next": self.paginator.get_next_link(),
-                    "previous": self.paginator.get_previous_link(),
+                    **pagination_data(self.paginator),
                     "cards": card_data,
                     "results": serializer.data,
                 }
@@ -292,9 +290,8 @@ class CustomerListView(generics.ListAPIView):
 
         data = {"cards": cards, "results": serializer.data}
         if page is not None:
-            data["count"]    = self.paginator.page.paginator.count
-            data["next"]     = self.paginator.get_next_link()
-            data["previous"] = self.paginator.get_previous_link()
+            # New — 1 line, returns page numbers + extra info
+            data.update(pagination_data(self.paginator))
 
         return api_response(
             message="Customers retrieved successfully", status_code=200, data=data
@@ -612,9 +609,7 @@ class WithdrawalHistoryView(generics.ListAPIView):
                 message="Affiliate earning history retrieved successfully",
                 status_code=200,
                 data={
-                    "count": self.paginator.page.paginator.count,
-                    "next": self.paginator.get_next_link(),
-                    "previous": self.paginator.get_previous_link(),
+                    **pagination_data(self.paginator),
                     "results": serializer.data
                 }
             )
@@ -690,9 +685,7 @@ class HostRevenueOverviewView(generics.ListAPIView):
 
         history = {"results": history_data}
         if page is not None:
-            history["count"]    = self.paginator.page.paginator.count
-            history["next"]     = self.paginator.get_next_link()
-            history["previous"] = self.paginator.get_previous_link()
+           history.update(pagination_data(self.paginator))
 
         return api_response(
             message="Revenue overview retrieved successfully",
@@ -901,9 +894,7 @@ class PromoCodeListView(generics.ListAPIView):
         data  = {"results": PromoCodeListSerializer(items, many=True).data}
 
         if page is not None:
-            data["count"]    = self.paginator.page.paginator.count
-            data["next"]     = self.paginator.get_next_link()
-            data["previous"] = self.paginator.get_previous_link()
+            data.update(pagination_data(self.paginator))
 
         return api_response(
             message="Promo codes retrieved successfully", status_code=200, data=data
@@ -982,9 +973,7 @@ class AffiliateListView(generics.ListAPIView):
             "results": AffiliateListSerializer(items, many=True).data,
         }
         if page is not None:
-            data["count"]    = self.paginator.page.paginator.count
-            data["next"]     = self.paginator.get_next_link()
-            data["previous"] = self.paginator.get_previous_link()
+            data.update(pagination_data(self.paginator))
 
         return api_response(
             message="Affiliate links retrieved successfully", status_code=200, data=data
@@ -1034,9 +1023,7 @@ class EmailCampaignListView(generics.ListAPIView):
 
         data = {"results": EmailCampaignListSerializer(items, many=True).data}
         if page is not None:
-            data["count"]    = self.paginator.page.paginator.count
-            data["next"]     = self.paginator.get_next_link()
-            data["previous"] = self.paginator.get_previous_link()
+            data.update(pagination_data(self.paginator))
 
         return api_response(
             message="Campaigns retrieved successfully", status_code=200, data=data
@@ -1178,9 +1165,7 @@ class CheckInAttendeeListView(generics.ListAPIView):
 
         data = {"results": CheckInAttendeeSerializer(items, many=True).data}
         if page is not None:
-            data["count"]    = self.paginator.page.paginator.count
-            data["next"]     = self.paginator.get_next_link()
-            data["previous"] = self.paginator.get_previous_link()
+            data.update(pagination_data(self.paginator))
 
         return api_response(
             message="Attendees retrieved successfully",
@@ -1500,9 +1485,7 @@ class TransactionHistoryView(generics.ListAPIView):
 
         data = {"results": TransactionHistorySerializer(items, many=True).data}
         if page is not None:
-            data["count"]    = self.paginator.page.paginator.count
-            data["next"]     = self.paginator.get_next_link()
-            data["previous"] = self.paginator.get_previous_link()
+            data.update(pagination_data(self.paginator))
 
         return api_response(
             message="Transactions retrieved successfully",
@@ -1580,9 +1563,7 @@ class DownloadEventAttendeeView(generics.ListAPIView):
             "results": DownloadEventAttendeeSerializer(items, many=True).data,
         }
         if page is not None:
-            data["count"]    = self.paginator.page.paginator.count
-            data["next"]     = self.paginator.get_next_link()
-            data["previous"] = self.paginator.get_previous_link()
+            data.update(pagination_data(self.paginator))
 
         return api_response(
             message="Attendees retrieved successfully",

@@ -93,22 +93,35 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
     category = serializers.SerializerMethodField()
     event_name=serializers.CharField(source="title", read_only=True)
     event_datetime=serializers.DateTimeField(source="start_datetime", read_only=True)
+    event_description=serializers.CharField(source="short_description", read_only=True)
+    price=serializers.SerializerMethodField()
     
     class Meta:
         model = Event
         fields = [
             "id", "event_name", "category", "event_datetime", "end_datetime",
-            "event_location", "event_image", "host", "event_status", "attendees_count"
+            "event_location", "event_image", "host", "event_status", "attendees_count","event_description","price"
         ]
+    def get_price(self, obj):
+        lowest_ticket = obj.tickets.order_by("price").first()
+        return lowest_ticket.price if lowest_ticket else None
     
     def get_category(self, obj):
         return obj.category.name if obj.category else None
 
     def get_event_image(self, obj):
-        return [
-            {"image_url": m.image_url, "video_url": m.video_url, "is_featured": m.is_featured}
-            for m in obj.media.all()
-        ]
+         # Get the featured media first
+        featured = obj.media.filter(is_featured=True).first()
+        if featured:
+            return featured.image_url   
+        
+        # Fallback: use the first media if no featured
+        first_media = obj.media.first()
+        if first_media:
+            return [{"image_url": first_media.image_url, "video_url": first_media.video_url, "is_featured": False}]
+        
+        # If no media at all
+        return []
 
     def get_host(self, obj):
         return getattr(obj.host, "business_name", None)

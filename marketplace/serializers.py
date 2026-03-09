@@ -7,15 +7,15 @@ from transactions.models import IssuedTicket
 from host.serializers import EventLocationNestedSerializer,OrganizerSocialLinkNestedSerializer,EventMediaNestedSerializer,EventDetailsSerializer
 
 class MarketListingSerializer(serializers.ModelSerializer):
-    event_title = serializers.CharField(source="ticket.event.title", read_only=True)
+    event_name = serializers.CharField(source="ticket.event.title", read_only=True)
     host = serializers.CharField(source="ticket.event.host.full_name", read_only=True)
     category = serializers.CharField(source="ticket.event.category.name", read_only=True)
     event_datetime = serializers.DateTimeField(source="ticket.event.start_datetime", read_only=True)
     event_description = serializers.CharField(source="ticket.event.short_description", read_only=True)
     
-    venue = serializers.SerializerMethodField()
+    event_location = serializers.SerializerMethodField()
     event_image = serializers.SerializerMethodField()
-    unique_buyers_count = serializers.SerializerMethodField()
+    attendees_count = serializers.SerializerMethodField()
 
     is_mine = serializers.SerializerMethodField()
     is_favorite = serializers.SerializerMethodField()
@@ -24,14 +24,14 @@ class MarketListingSerializer(serializers.ModelSerializer):
         model = MarketListing
         fields = [
             "id",
-            "event_title",
+            "event_name",
             "host",
             "price",
             "category",
             "event_datetime",
-            "venue",
+            "event_location",
             "event_image",
-            "unique_buyers_count",
+            "attendees_count",
             "status",
             "created_at",
             "expires_at",
@@ -47,7 +47,7 @@ class MarketListingSerializer(serializers.ModelSerializer):
         # Compare logged-in user with the ticket seller
         return obj.seller == request.user
     
-    def get_venue(self, obj):
+    def get_event_location(self, obj):
         location = getattr(obj.ticket.event, "location", None)
         if location:
             return location.venue_name
@@ -60,7 +60,7 @@ class MarketListingSerializer(serializers.ModelSerializer):
         first_media = obj.ticket.event.media.first()
         return first_media.image_url if first_media else None
 
-    def get_unique_buyers_count(self, obj):
+    def get_attendees_count(self, obj):
         return IssuedTicket.objects.filter(
             event=obj.ticket.event
         ).exclude(status="cancelled").values('owner').distinct().count()

@@ -54,7 +54,7 @@ class MarketListingListView(generics.ListAPIView):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ["ticket__event__title", "ticket__event__host__name"]
     filterset_fields = {
-        "category": ["exact"],
+        "ticket__event__category__id": ["exact"],
         "price": ["gte", "lte"],
         "ticket__event__start_datetime": ["gte", "lte"],
     }

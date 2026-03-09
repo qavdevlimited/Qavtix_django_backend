@@ -260,7 +260,7 @@ class FavoriteEventListView(generics.ListAPIView):
     ordering_fields = ["created_at", "event__start_datetime"]
     search_fields = ["title","category"]
     filterset_fields = {
-        "category": ["exact"],        # model relation
+        "category__id": ["exact"],        # model relation
         "start_datetime": ["gte", "lte"],
         "price": ["gte", "lte"],
     }

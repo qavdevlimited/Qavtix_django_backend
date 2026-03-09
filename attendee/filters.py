@@ -14,7 +14,7 @@ from .serializers import FavoriteEventSerializer
 
 class TicketDashboardFilter(django_filters.FilterSet):
 
-    category = django_filters.ModelChoiceFilter(
+    category = django_filters.ModelMultipleChoiceFilter(
         field_name="event__category",
         queryset=Category.objects.all()
     )

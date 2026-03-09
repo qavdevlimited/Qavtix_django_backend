@@ -251,50 +251,55 @@ class AddFavoriteEventView(generics.CreateAPIView):
         )
 
 class FavoriteEventListView(generics.ListAPIView):
-    serializer_class = FavoriteEventSerializer
+    serializer_class   = FavoriteEventSerializer
     permission_classes = [permissions.IsAuthenticated]
+
     filter_backends = [
         DjangoFilterBackend,
         filters.SearchFilter,
         filters.OrderingFilter,
     ]
-    ordering_fields = ["created_at", "event__start_datetime"]
-    search_fields = ["title","category"]
-    filterset_fields = {
-        "category__id": ["exact"],        # model relation
-        "start_datetime": ["gte", "lte"],
-        "price": ["gte", "lte"],
-    }
+
+    filterset_class  = FavoriteEventFilter     # ← use class, not filterset_fields
+    search_fields    = ["title", "category__name"]
+    ordering_fields  = ["start_datetime"]
+    ordering         = ["-start_datetime"]
 
     def get_queryset(self):
-        # get all event IDs the user has favorited
-        favorite_event_ids = FavoriteEvent.objects.filter(user=self.request.user).values_list("event_id", flat=True)
-        # fetch those events
-        return Event.objects.filter(id__in=favorite_event_ids).distinct()
+        favorite_event_ids = FavoriteEvent.objects.filter(
+            user=self.request.user
+        ).values_list("event_id", flat=True)
+
+        return (
+            Event.objects
+            .filter(id__in=favorite_event_ids)
+            .select_related("category", "location", "host")
+            .prefetch_related("media", "tickets")
+            .distinct()
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-        page = self.paginate_queryset(queryset)
+        page     = self.paginate_queryset(queryset)
 
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return api_response(
-                message="Favourite retrieved successfully",
+                message="Favourites retrieved successfully",
                 status_code=200,
                 data={
                     **pagination_data(self.paginator),
-                    "results": serializer.data
+                    "results": serializer.data,
                 }
             )
 
         serializer = self.get_serializer(queryset, many=True)
-
         return api_response(
-            message="Favouriteretrieved successfully",
+            message="Favourites retrieved successfully",
             status_code=200,
-            data=serializer.data
+            data=serializer.data,
         )
-        
+  
 
 class RemoveFavoriteEventView(generics.DestroyAPIView):
     serializer_class = FavoriteEventSerializer

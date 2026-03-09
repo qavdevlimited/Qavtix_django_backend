@@ -70,13 +70,23 @@ class TicketDashboardFilter(django_filters.FilterSet):
 
 
 # FilterSet for Favorite Events
-class FavoriteEventFilter(filters.FilterSet):
-    category = filters.NumberFilter(field_name="event__category__id", lookup_expr="exact")
-    start_date = filters.DateFilter(field_name="event__start_datetime", lookup_expr="gte")
-    end_date = filters.DateFilter(field_name="event__start_datetime", lookup_expr="lte")
-    min_price = filters.NumberFilter(field_name="event__tickets__price", lookup_expr="gte")
-    max_price = filters.NumberFilter(field_name="event__tickets__price", lookup_expr="lte")
+class FavoriteEventFilter(django_filters.FilterSet):
+    category  = django_filters.NumberFilter(
+        field_name="category__id", lookup_expr="exact"
+    )
+    start_date = django_filters.DateFilter(
+        field_name="start_datetime", lookup_expr="date__gte"
+    )
+    end_date = django_filters.DateFilter(
+        field_name="start_datetime", lookup_expr="date__lte"
+    )
+    min_price = django_filters.NumberFilter(
+        field_name="tickets__price", lookup_expr="gte"
+    )
+    max_price = django_filters.NumberFilter(
+        field_name="tickets__price", lookup_expr="lte"
+    )
 
     class Meta:
-        model = FavoriteEvent
+        model  = Event          # ← must match the queryset model in the view
         fields = ["category", "start_date", "end_date", "min_price", "max_price"]

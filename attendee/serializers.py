@@ -85,24 +85,26 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
 
 
 class FavoriteEventSerializer(serializers.ModelSerializer):
-    location = EventLocationSerializer(read_only=True)
-    media = serializers.SerializerMethodField()
+    event_location = EventLocationSerializer(read_only=True)
+    event_image = serializers.SerializerMethodField()
     business_name = serializers.SerializerMethodField()
-    dynamic_status = serializers.SerializerMethodField()
+    event_status = serializers.SerializerMethodField()
     attendees_count = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
+    event_name=serializers.CharField(source="title", read_only=True)
+    event_datetime=serializers.DateTimeField(source="start_datetime", read_only=True)
     
     class Meta:
         model = Event
         fields = [
-            "id", "title", "category", "start_datetime", "end_datetime",
-            "location", "media", "business_name", "dynamic_status", "attendees_count"
+            "id", "event_name", "category", "event_datetime", "end_datetime",
+            "event_location", "event_image", "business_name", "event_status", "attendees_count"
         ]
     
     def get_category(self, obj):
         return obj.category.name if obj.category else None
 
-    def get_media(self, obj):
+    def get_event_image(self, obj):
         return [
             {"image_url": m.image_url, "video_url": m.video_url, "is_featured": m.is_featured}
             for m in obj.media.all()
@@ -111,7 +113,7 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
     def get_business_name(self, obj):
         return getattr(obj.host, "business_name", None)
 
-    def get_dynamic_status(self, obj):
+    def get_event_status(self, obj):
         total_quantity = sum(t.quantity for t in obj.tickets.all())
         sold_quantity = sum(getattr(t, "sold_count", 0) for t in obj.tickets.all())
 

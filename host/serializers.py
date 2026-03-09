@@ -52,23 +52,25 @@ class OrganizerSocialLinkNestedSerializer(serializers.ModelSerializer):
 # Event serializer with all nested fields
 class EventSerializer(serializers.ModelSerializer):
     tickets = TicketNestedSerializer(many=True)
-    location = EventLocationNestedSerializer(required=True)
+    event_location = EventLocationNestedSerializer(required=True)
     social_links = OrganizerSocialLinkNestedSerializer(many=True, required=False)
     permissions=EventPermissionSerializer(many=True,required=False)
     tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
     media = EventMediaNestedSerializer(many=True, required=False)
+    event_name=serializers.CharField(source="title", read_only=True)
+    event_status=serializers.CharField(source="status", read_only=True)
 
     class Meta:
         model = Event
         fields = [
-            'id', 'title', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
+            'id', 'event_name', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
             'location_type', 'short_description', 'full_description',
             'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
             'refund_policy', 'refund_percentage', 'qr_enabled', 'age_restriction',
             'order_confirmation', 'ticket_delivery', 'reminders', 'post_event_emails',
             'customize_sender_name', 'affiliate_enabled', 'commission_percentage',
             'affiliate_start', 'affiliate_end',
-            'location', 'social_links', 'tickets','permissions','status','media'
+            'event_location', 'social_links', 'tickets','permissions','event_status','media'
         ]
     
     def validate(self, attrs):
@@ -131,11 +133,11 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 class EventTableSerializer(serializers.ModelSerializer):
-    location = serializers.SerializerMethodField()
+    event_location = serializers.SerializerMethodField()
     tickets_sold_percentage = serializers.SerializerMethodField()
     tickets_total_revenue = serializers.SerializerMethodField()
-    category_name = serializers.CharField(source="category.name", read_only=True)
-    media=serializers.SerializerMethodField()
+    category= serializers.CharField(source="category.name", read_only=True)
+    event_image=serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -143,10 +145,10 @@ class EventTableSerializer(serializers.ModelSerializer):
             "id",
             "status",
             "title",
-            "category_name",
-            "media",
+            "category",
+            "event_image",
             "start_datetime",
-            "location",
+            "event_location",
             "tickets_sold_percentage",
             "tickets_total_revenue",
             
@@ -154,7 +156,7 @@ class EventTableSerializer(serializers.ModelSerializer):
             "saves_count",
         ]
 
-    def get_media(self, obj):
+    def get_event_image(self, obj):
         # Get only the featured media
         featured_media = obj.media.filter(is_featured=True).first()
         if featured_media:
@@ -164,7 +166,7 @@ class EventTableSerializer(serializers.ModelSerializer):
             }
         return None
 
-    def get_location(self, obj):
+    def get_event_location(self, obj):
         if obj.location:
             return f"{obj.location.address}, {obj.location.city}, {obj.location.state}, {obj.location.country}"
         return ""
@@ -194,11 +196,12 @@ class EventCardSerializer(serializers.Serializer):
 
 class EventDetailsSerializer(serializers.ModelSerializer):
     tickets = TicketNestedSerializer(many=True)
-    location = EventLocationNestedSerializer(required=True)
+    event_location = EventLocationNestedSerializer(required=True)
     social_links = OrganizerSocialLinkNestedSerializer(many=True, required=False)
     tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
-    media = EventMediaNestedSerializer(many=True, required=False)
+    event_image = EventMediaNestedSerializer(many=True, required=False)
     attendees_count = serializers.SerializerMethodField()
+    event_status= serializers.CharField(source="status", read_only=True)
 
     class Meta:
         model = Event
@@ -206,7 +209,7 @@ class EventDetailsSerializer(serializers.ModelSerializer):
             'id', 'title', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
             'location_type', 'short_description', 'full_description',
             'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
-            'location', 'social_links', 'tickets','status','media','attendees_count'
+            'event_location', 'social_links', 'tickets','event_status','event_image','attendees_count'
         ]
     
     def get_attendees_count(self, obj):
@@ -449,7 +452,7 @@ class AffiliateListSerializer(serializers.Serializer):
 
     # Event info
     event_name      = serializers.CharField(source="event.title")
-    event_category  = serializers.SerializerMethodField()
+    category  = serializers.SerializerMethodField()
     event_image     = serializers.SerializerMethodField()
 
     # Performance
@@ -469,7 +472,7 @@ class AffiliateListSerializer(serializers.Serializer):
         attendee = getattr(obj.user, "attendee_profile", None)
         return attendee.full_name if attendee else obj.user.email
 
-    def get_event_category(self, obj):
+    def get_category(self, obj):
         cat = obj.event.category
         return cat.name if cat else None
 

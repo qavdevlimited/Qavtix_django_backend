@@ -302,3 +302,102 @@ class PayoutInformationSerializer(serializers.ModelSerializer):
         model = PayoutInformation
         fields = ["id", "bank_name", "account_name", "account_number", "is_default", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+
+
+class TicketReceiptSerializer(serializers.Serializer):
+
+    # ── Event info ─────────────────────────────────────────────────────────────
+    event = serializers.SerializerMethodField()
+
+    # ── Ticket info ────────────────────────────────────────────────────────────
+    issued_ticket_id = serializers.IntegerField(source="id")
+    ticket_type      = serializers.CharField(source="order_ticket.ticket.ticket_type")
+    quantity         = serializers.IntegerField(source="order_ticket.quantity")
+    status           = serializers.CharField()
+
+    # ── Current owner ──────────────────────────────────────────────────────────
+    current_owner = serializers.SerializerMethodField()
+
+    # ── Billing info (who paid) ────────────────────────────────────────────────
+    billed_to = serializers.SerializerMethodField()
+
+    # ── Payment breakdown ──────────────────────────────────────────────────────
+    payment = serializers.SerializerMethodField()
+
+    def get_event(self, obj):
+        event = obj.event
+        media = (
+            event.media.filter(is_featured=True).first()
+            or event.media.first()
+        )
+        location = getattr(event, "location", None)
+        return {
+            "id":           str(event.id),
+            "name":         event.title,
+            "category":     event.category.name if event.category else None,
+            "featured_image": media.image_url if media else None,
+            "location":     {
+                "venue":   location.venue_name  if location else None,
+                "address": location.address     if location else None,
+                "city":    location.city        if location else None,
+                "state":   location.state       if location else None,
+                "country": location.country     if location else None,
+            } if location else None,
+            "start_datetime": event.start_datetime,
+            "end_datetime":   event.end_datetime,
+        }
+
+    def get_current_owner(self, obj):
+        attendee = getattr(obj.owner, "attendee_profile", None)
+        return {
+            "full_name": attendee.full_name if attendee else obj.owner.email,
+            "email":     obj.owner.email,
+            "phone":     attendee.phone_number if attendee else None,
+        }
+
+    def get_billed_to(self, obj):
+        order = obj.order
+        # The person who placed the order (may differ from current owner if transferred)
+        original_user = order.user
+        attendee = getattr(original_user, "attendee_profile", None) if original_user else None
+        return {
+            "full_name":    attendee.full_name if attendee else (order.full_name or order.email),
+            "email":        original_user.email if original_user else order.email,
+            "phone_number": order.phone_number,
+        }
+
+    def get_payment(self, obj):
+        order = obj.order
+
+        # Resolve payment record linked to this order
+        from django.contrib.contenttypes.models import ContentType
+        from payments.models import Payment
+
+        try:
+            ct      = ContentType.objects.get_for_model(order)
+            payment = Payment.objects.get(content_type=ct, object_id=order.id)
+        except Payment.DoesNotExist:
+            payment = None
+
+        # Amount breakdown
+        subtotal       = obj.order_ticket.quantity * obj.order_ticket.price
+        discount       = order.discount or 0
+        fees           = order.fees    or 0
+
+        # Derive service charge and tax from fees
+        # Standard split: 70% service charge, 30% tax — adjust to your fee structure
+        service_charge = round(float(fees) * 0.70, 2)
+        tax            = round(float(fees) * 0.30, 2)
+
+        return {
+            "payment_date":    payment.created_at   if payment else order.created_at,
+            "payment_method":  payment.provider      if payment else order.payment_method,
+            "provider":        payment.provider      if payment else None,
+            "subtotal":        str(subtotal),
+            "discount":        str(discount),
+            "service_charge":  str(service_charge),
+            "tax":             str(tax),
+            "total_amount":    str(order.total_amount),
+            "status":          payment.status if payment else order.status,
+        }

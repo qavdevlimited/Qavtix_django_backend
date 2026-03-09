@@ -7,6 +7,7 @@ urlpatterns = [
     path('favorite/remove/<uuid:event_id>/',RemoveFavoriteEventView.as_view(),name='remove-favorite-event'),
     path('favorite/list/',FavoriteEventListView.as_view(),name="listfave"),
     path("tickets/transfer/",TransferTicketView.as_view(),name="transfer-ticket"),
+    path("tickets/<int:issued_ticket_id>/receipt/", TicketReceiptView.as_view(), name="ticket-receipt"),
     path("affliate/dashboard/",AffiliateDashboardView.as_view(),name="affliate_dashboard"),
     path('affliate/event/',AffiliateEventsView.as_view(),name="affliate_event"),
     path('affliate/graph/',AffiliateGraphView.as_view(),name="affliate_graph"),

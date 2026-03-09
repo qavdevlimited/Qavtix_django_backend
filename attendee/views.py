@@ -1,3 +1,4 @@
+from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, permissions, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
@@ -5,7 +6,7 @@ from django.db.models import Sum, Count,Prefetch
 from django.http import Http404
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
-from .serializers import (TicketDashboardSerializer,FavoriteEventSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
+from .serializers import (TicketDashboardSerializer,FavoriteEventSerializer, TicketReceiptSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
                           AffiliateLinkSerializer,WithdrawalHistorySerializer,WithdrawalRequestSerializer,PayoutInformationSerializer,
                           AttendeeProfileSerializer,TwoFactorToggleSerializer,ChangePasswordSerializer,NotificationSettingsSerializer,
                           GroupMemberSerializer,TicketGroupSerializer)
@@ -1518,4 +1519,75 @@ class AddPayoutAccountView(APIView):
             message="Payout account added successfully",
             status_code=201,
             data=PayoutInformationSerializer(account).data
+        )
+
+
+
+@extend_schema(
+    operation_id="ticket_receipt",
+    parameters=[
+        OpenApiParameter(
+            "issued_ticket_id",
+            OpenApiTypes.INT,
+            location=OpenApiParameter.PATH,
+            description="ID of the issued ticket",
+            required=True,
+        ),
+    ],
+    responses=TicketReceiptSerializer,
+)
+class TicketReceiptView(APIView):
+    """
+    GET /tickets/<issued_ticket_id>/receipt/
+
+    Returns the full receipt for a single issued ticket.
+    Only the current owner of the ticket can access this.
+
+    Includes:
+      - Event: name, category, featured image, location, dates
+      - Ticket: type, quantity, status
+      - Current owner: name, email, phone
+      - Billed to: who originally paid (may differ after transfer)
+      - Payment: date, provider, subtotal, discount, service charge, tax, total
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, issued_ticket_id=None):
+        if not issued_ticket_id:
+            return api_response(
+                message="issued_ticket_id is required in the URL.",
+                status_code=400,
+            )
+
+        try:
+            ticket = (
+                IssuedTicket.objects
+                .select_related(
+                    "owner",
+                    "owner__attendee_profile",
+                    "event",
+                    "event__category",
+                    "event__location",
+                    "order",
+                    "order__user",
+                    "order__user__attendee_profile",
+                    "order_ticket__ticket",
+                )
+                .prefetch_related("event__media")
+                .get(id=issued_ticket_id)
+            )
+        except IssuedTicket.DoesNotExist:
+            return api_response(message="Ticket not found.", status_code=404)
+
+        # Only the current owner can view their receipt
+        if ticket.owner != request.user:
+            return api_response(
+                message="Receipt not found.",  # generic message to avoid info leak
+                status_code=404,
+            )
+
+        return api_response(
+            message="Receipt retrieved successfully",
+            status_code=200,
+            data=TicketReceiptSerializer(ticket).data,
         )

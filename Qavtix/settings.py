@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     #internal apps
+    'administrator',
     'authentication',
     'host',
     'public',
@@ -75,6 +76,7 @@ INSTALLED_APPS = [
     'anymail',
     "django_filters",
     "drf_spectacular",
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -288,3 +290,13 @@ DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL")
 STRIPE_SECRET_KEY = config('STRIPE_SECRET_KEY')
 STRIPE_PUBLISHABLE_KEY = config('STRIPE_PUBLISHABLE_KEY')
 PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY')
+
+
+
+#CELERY SETTINGS
+
+CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
+CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_BACKEND = "django-db"

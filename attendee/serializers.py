@@ -349,17 +349,17 @@ class TicketReceiptSerializer(serializers.Serializer):
         location = getattr(event, "location", None)
         return {
             "id":           str(event.id),
-            "name":         event.title,
+            "event_name":         event.title,
             "category":     event.category.name if event.category else None,
-            "featured_image": media.image_url if media else None,
-            "location":     {
+            "event_image": media.image_url if media else None,
+            "event_location":     {
                 "venue":   location.venue_name  if location else None,
                 "address": location.address     if location else None,
                 "city":    location.city        if location else None,
                 "state":   location.state       if location else None,
                 "country": location.country     if location else None,
             } if location else None,
-            "start_datetime": event.start_datetime,
+            "event_datetime": event.start_datetime,
             "end_datetime":   event.end_datetime,
         }
 

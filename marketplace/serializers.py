@@ -8,13 +8,13 @@ from host.serializers import EventLocationNestedSerializer,OrganizerSocialLinkNe
 
 class MarketListingSerializer(serializers.ModelSerializer):
     event_title = serializers.CharField(source="ticket.event.title", read_only=True)
-    host_name = serializers.CharField(source="ticket.event.host.name", read_only=True)
-    price = serializers.DecimalField(source="ticket.price", max_digits=12, decimal_places=2, read_only=True)
+    host = serializers.CharField(source="ticket.event.host.full_name", read_only=True)
     category = serializers.CharField(source="ticket.event.category.name", read_only=True)
     event_datetime = serializers.DateTimeField(source="ticket.event.start_datetime", read_only=True)
+    event_description = serializers.CharField(source="ticket.event.short_description", read_only=True)
     
     venue = serializers.SerializerMethodField()
-    featured_image = serializers.SerializerMethodField()
+    event_image = serializers.SerializerMethodField()
     unique_buyers_count = serializers.SerializerMethodField()
 
     is_mine = serializers.SerializerMethodField()
@@ -25,18 +25,19 @@ class MarketListingSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "event_title",
-            "host_name",
+            "host",
             "price",
             "category",
             "event_datetime",
             "venue",
-            "featured_image",
+            "event_image",
             "unique_buyers_count",
             "status",
             "created_at",
             "expires_at",
             "is_mine",
             "is_favorite",
+            'event_description',
         ]
 
     def get_is_mine(self, obj):
@@ -52,7 +53,7 @@ class MarketListingSerializer(serializers.ModelSerializer):
             return location.venue_name
         return None
 
-    def get_featured_image(self, obj):
+    def get_event_image(self, obj):
         featured = obj.ticket.event.media.filter(is_featured=True).first()
         if featured:
             return featured.image_url

@@ -87,7 +87,7 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
 class FavoriteEventSerializer(serializers.ModelSerializer):
     event_location = EventLocationSerializer(read_only=True)
     event_image = serializers.SerializerMethodField()
-    business_name = serializers.SerializerMethodField()
+    host = serializers.SerializerMethodField()
     event_status = serializers.SerializerMethodField()
     attendees_count = serializers.SerializerMethodField()
     category = serializers.SerializerMethodField()
@@ -98,7 +98,7 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
         model = Event
         fields = [
             "id", "event_name", "category", "event_datetime", "end_datetime",
-            "event_location", "event_image", "business_name", "event_status", "attendees_count"
+            "event_location", "event_image", "host", "event_status", "attendees_count"
         ]
     
     def get_category(self, obj):
@@ -110,7 +110,7 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
             for m in obj.media.all()
         ]
 
-    def get_business_name(self, obj):
+    def get_host(self, obj):
         return getattr(obj.host, "business_name", None)
 
     def get_event_status(self, obj):

@@ -13,32 +13,45 @@ class EventLocationSerializer(serializers.ModelSerializer):
         fields = ["venue_name", "address", "city", "state", "country"]
 
 class EventListSerializer(serializers.ModelSerializer):
-    location = EventLocationSerializer(read_only=True)
-    media = serializers.SerializerMethodField()
-    business_name = serializers.SerializerMethodField()
-    dynamic_status = serializers.SerializerMethodField()
+    event_location = EventLocationSerializer(read_only=True)
+    event_image = serializers.SerializerMethodField()
+    host = serializers.SerializerMethodField()
+    event_status = serializers.SerializerMethodField()
     attendees_count = serializers.SerializerMethodField()
     category=serializers.SerializerMethodField()
+    event_datetime=serializers.DateTimeField(source="start_datetime", read_only=True)
+    event_description=serializers.CharField(source="short_description", read_only=True)
+    price=serializers.SerializerMethodField()
+    event_name=serializers.CharField(source="title", read_only=True)
 
     class Meta:
         model = Event
         fields = [
-            "id", "title", "category", "start_datetime", "end_datetime",
-            "location", "media", "business_name", "dynamic_status", "attendees_count"
+            "id", "event_name", "category", "event_datetime", "end_datetime",
+            "event_location", "event_image", "host", "event_status", "attendees_count","event_description","price"
         ]
+    
+    def get_price(self, obj):
+        lowest_ticket = obj.tickets.order_by("price").first()
+        return lowest_ticket.price if lowest_ticket else None
     
     def get_category(self,obj):
         return obj.category.name
 
-    def get_media(self, obj):
-        return [{"image_url": m.image_url, "video_url": m.video_url,"is_featured":m.is_featured} for m in obj.media.all()]
+    def get_event_image(self, obj):
+        featured = obj.media.filter(is_featured=True).first()
+        if featured:
+            return featured.image_url
 
-    def get_business_name(self, obj):
+        first_media = obj.media.first()
+        return first_media.image_url if first_media else None
+
+    def get_host(self, obj):
         if hasattr(obj.host, "business_name"):
             return obj.host.business_name
         return None
 
-    def get_dynamic_status(self, obj):
+    def get_event_status(self, obj):
         """
         Compute status based on tickets left and creation date.
         - sold-out: all tickets sold
@@ -99,13 +112,14 @@ class HostPublicDetailSerializer(serializers.ModelSerializer):
     past_events = serializers.SerializerMethodField()
     is_following = serializers.SerializerMethodField()
     relevant_links=serializers.SerializerMethodField()
+    host=serializers.CharField(source="business_name", read_only=True)
 
 
     class Meta:
         model = Host
         fields = [
             "id",
-            "business_name",
+            "host",
             "business_type",
             "city",
             "state",

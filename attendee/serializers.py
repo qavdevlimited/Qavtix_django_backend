@@ -176,19 +176,12 @@ class AffiliateEarningHistorySerializer(serializers.ModelSerializer):
         return getattr(obj, "total_sale", 0)
     
     def get_event_image(self, obj):
-        """
-        Return featured image if exists,
-        otherwise return first image,
-        otherwise None
-        """
-        event = obj.link.event
-        featured = event.media.filter(is_featured=True).first()
+        all_media = obj.link.event.media.all()
+        featured = next((m for m in all_media if m.is_featured), None)
         if featured:
             return featured.image_url
-
-        first_image = event.media.first()
-        return first_image.image_url if first_image else None
-
+        first = next(iter(all_media), None)
+        return first.image_url if first else None
 
     
 

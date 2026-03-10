@@ -59,6 +59,14 @@ class CheckoutPaymentSerializer(serializers.Serializer):
 
         return data
 
+# In your serializers file
+class PaystackIntentSerializer(serializers.Serializer):
+    event_id   = serializers.UUIDField()
+    tickets    = TicketLineItemSerializer(many=True)
+    promo_code = serializers.CharField(required=False, allow_blank=True)
+    currency   = serializers.CharField(default="NGN")
+    email      = serializers.EmailField(required=False)  # for guests
+
 
 class PaymentCardSerializer(serializers.ModelSerializer):
     class Meta:

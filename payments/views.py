@@ -11,6 +11,7 @@ from payments.services.checkout_service import CheckoutService, CheckoutError
 from drf_spectacular.utils import extend_schema
 from decimal import Decimal
 from django.utils import timezone
+from payments.services.paystack_service import PaystackIntentService
 from public.response import flatten_errors,api_response
 from stripe import StripeError, InvalidRequestError
 from drf_spectacular.utils import extend_schema, inline_serializer,OpenApiParameter
@@ -72,6 +73,30 @@ class CheckoutPaymentView(APIView):
             },
         )
 
+class CreatePaystackIntentView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PaystackIntentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        user  = request.user if request.user.is_authenticated else None
+        email = user.email if user else data.get("email")
+
+        if not email:
+            return api_response(message="Email is required", status_code=400)
+
+        try:
+            result = PaystackIntentService(user=user, email=email, data=data).run()
+        except Exception as e:
+            return api_response(message=str(e), status_code=400)
+
+        return api_response(
+            message="Payment intent created",
+            status_code=200,
+            data=result,
+        )
 
 @extend_schema(
     request=AddCardSerializer,

@@ -1,11 +1,13 @@
+# payments/services/paystack_intent.py
+import uuid
 import requests
+from decimal import Decimal
 from django.conf import settings
-from payments.models import PaymentCard, Payment
-from .base import PaymentGateway
+from django.utils import timezone
+from events.models import Event, Ticket
 
 
-class PaystackGateway(PaymentGateway):
-
+class PaystackIntentService:
     base_url = "https://api.paystack.co"
 
     @property
@@ -15,122 +17,89 @@ class PaystackGateway(PaymentGateway):
             "Content-Type": "application/json",
         }
 
-    def create_customer(self, user=None, email=None):
-        """
-        Returns a Paystack customer ID.
-        - Authenticated users: create once and cache on user.paystack_customer_id
-        - Guests: create a one-off customer using their email (not cached)
-        """
-        if user is not None:
-            if hasattr(user, "paystack_customer_id") and user.paystack_customer_id:
-                return user.paystack_customer_id
+    def __init__(self, user, email, data):
+        self.user  = user
+        self.email = email
+        self.data  = data
 
-            data = {
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-            }
-            resp = requests.post(
-                f"{self.base_url}/customer", json=data, headers=self.headers
-            ).json()
+    def run(self):
+        event      = self._get_event()
+        line_items = self._validate_tickets(event)
+        discount   = self._apply_promo(line_items)
+        subtotal   = sum(qty * price for _, qty, price in line_items)
+        total      = max(subtotal - discount, Decimal("0.00"))
+        reference  = f"qavtix_{uuid.uuid4().hex[:16]}"
 
-            self._assert_ok(resp, "Failed to create Paystack customer")
-
-            customer_id = resp["data"]["customer_code"]
-            user.paystack_customer_id = customer_id
-            user.save(update_fields=["paystack_customer_id"])
-            return customer_id
-
-        # Guest checkout — ephemeral customer, not saved anywhere
-        if not email:
-            raise ValueError("Either a user or an email is required to create a Paystack customer.")
-
-        data = {"email": email}
         resp = requests.post(
-            f"{self.base_url}/customer", json=data, headers=self.headers
-        ).json()
-
-        self._assert_ok(resp, "Failed to create Paystack guest customer")
-        return resp["data"]["customer_code"]
-
-    def add_card(self, user=None, authorization_code=None, email=None):
-        """
-        Verifies a Paystack transaction and extracts card details.
-        - Authenticated users: card is returned unsaved (view handles persistence).
-        - Guests: card object is built in memory only (not saved).
-
-        NOTE: `authorization_code` here is actually the transaction REFERENCE
-        returned by Paystack's frontend after the user pays. We verify it to
-        extract the reusable authorization_code for future charges.
-        """
-        resp = requests.get(
-            f"{self.base_url}/transaction/verify/{authorization_code}",
+            f"{self.base_url}/transaction/initialize",
+            json={
+                "email":     self.email,
+                "amount":    int(total * 100),   # kobo
+                "currency":  self.data.get("currency", "NGN").upper(),
+                "reference": reference,
+            },
             headers=self.headers,
         ).json()
 
-        self._assert_ok(resp, "Failed to verify Paystack transaction")
+        if not resp.get("status"):
+            raise Exception(f"Paystack init failed: {resp.get('message')}")
 
-        card_info = resp["data"]["authorization"]
-
-        card = PaymentCard(
-            user=user,           # None for guests — view will not save it
-            provider="paystack",
-            token=card_info["authorization_code"],
-            brand=card_info.get("card_type", ""),
-            last4=card_info.get("last4", ""),
-            exp_month=int(card_info.get("exp_month") or 0),
-            exp_year=int(card_info.get("exp_year") or 0),
-            is_default=False,    # view controls is_default
-        )
-        return card
-
-    def charge_card(self, card: PaymentCard, amount, currency="NGN", user=None, email=None):
-        """
-        Charges a card via Paystack charge_authorization.
-        - Resolves email from authenticated user or guest email param.
-        - Returns a lightweight result object — view handles Payment persistence.
-        """
-        charge_email = user.email if user is not None else email
-        if not charge_email:
-            raise ValueError("An email is required to charge via Paystack.")
-
-        data = {
-            "authorization_code": card.token,
-            "email": charge_email,
-            "amount": int(amount * 100),    # Paystack works in kobo
-            "currency": currency.upper(),
+        return {
+            "amount":    int(total * 100),
+            "currency":  self.data.get("currency", "NGN").upper(),
+            "email":     self.email,
+            "reference": reference,
+            "subtotal":  str(subtotal),
+            "discount":  str(discount),
+            "total":     str(total),
         }
 
-        resp = requests.post(
-            f"{self.base_url}/transaction/charge_authorization",
-            json=data,
-            headers=self.headers,
-        ).json()
+    def _get_event(self):
+        try:
+            return Event.objects.get(id=self.data["event_id"])
+        except Event.DoesNotExist:
+            raise Exception("Event not found")
 
-        self._assert_ok(resp, "Paystack charge failed")
+    def _validate_tickets(self, event):
+        now        = timezone.now()
+        line_items = []
+        for item in self.data["tickets"]:
+            try:
+                ticket = Ticket.objects.get(id=item["ticket_id"], event=event)
+            except Ticket.DoesNotExist:
+                raise Exception(f"Ticket {item['ticket_id']} not found")
 
-        tx = resp["data"]
-        return _PaymentResult(
-            id=tx["reference"],
-            status=tx["status"],
-            metadata={
-                "reference": tx["reference"],
-                "gateway_response": tx.get("gateway_response"),
-                "channel": tx.get("channel"),
-            },
-        )
+            qty       = item["quantity"]
+            available = ticket.quantity - ticket.sold_count
 
-    # ------------------------------------------------------------------ #
-    # Helpers                                                              #
-    # ------------------------------------------------------------------ #
-    @staticmethod
-    def _assert_ok(resp, message="Paystack error"):
-        if not resp.get("status"):
-            raise Exception(f"{message}: {resp.get('message', 'Unknown error')}")
-        
+            if qty > ticket.per_person_max:
+                raise Exception(f"Max {ticket.per_person_max} tickets allowed per order")
+            if qty > available:
+                raise Exception(f"Only {available} tickets left")
+            if now < ticket.sales_start or now > ticket.sales_end:
+                raise Exception(f"Ticket '{ticket.ticket_type}' is not on sale right now")
 
-class _PaymentResult:
-    def __init__(self, id, status, metadata=None):
-        self.id = id
-        self.status = status
-        self.metadata = metadata or {}
+            line_items.append((ticket, qty, ticket.price))
+        return line_items
+
+    def _apply_promo(self, line_items):
+        promo_code = self.data.get("promo_code")
+        if not promo_code:
+            return Decimal("0.00")
+
+        now          = timezone.now()
+        matched      = None
+        for ticket, _, _ in line_items:
+            try:
+                matched = ticket.promo_codes.get(
+                    code=promo_code, valid_till__gte=now.date()
+                )
+                break
+            except Exception:
+                continue
+
+        if not matched:
+            raise Exception("Invalid or expired promo code")
+
+        raw = sum(qty * price for _, qty, price in line_items)
+        return (raw * matched.discount_percentage / 100).quantize(Decimal("0.01"))

@@ -88,7 +88,7 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
 
 
 class FavoriteEventSerializer(serializers.ModelSerializer):
-    event_location = EventLocationSerializer(read_only=True)
+    event_location = EventLocationSerializer(source="location",read_only=True)
     event_image = serializers.SerializerMethodField()
     host = serializers.SerializerMethodField()
     event_status = serializers.SerializerMethodField()

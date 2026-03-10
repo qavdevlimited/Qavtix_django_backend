@@ -1,10 +1,17 @@
 from rest_framework import serializers
-from events.models import Event, EventLocation, Ticket
+from events.models import Event, EventLocation, Ticket,EventMedia
 from host.models import Host
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count
 from .models import Category, Follow,Message
+
+from django.db.models import (
+    Count, Prefetch, OuterRef, Subquery, Min
+)
+from transactions.models import Order
+
+
 
 
 class EventLocationSerializer(serializers.ModelSerializer):
@@ -30,37 +37,45 @@ class EventListSerializer(serializers.ModelSerializer):
             "id", "event_name", "category", "event_datetime", "end_datetime",
             "event_location", "event_image", "host", "event_status", "attendees_count","event_description","price"
         ]
-    
-    def get_price(self, obj):
-        lowest_ticket = obj.tickets.order_by("price").first()
-        return lowest_ticket.price if lowest_ticket else None
-    
-    def get_category(self,obj):
-        return obj.category.name
 
+
+    # After — safe
+    def get_category(self, obj):
+        return obj.category.name if obj.category else None
+
+    # After — safe
+    def get_event_location(self, obj):
+        location = getattr(obj, "location", None)
+        if location is None:
+            return None
+        return EventLocationSerializer(location).data
+        
     def get_event_image(self, obj):
-        featured = obj.media.filter(is_featured=True).first()
-        if featured:
-            return featured.image_url
+        # Uses prefetched featured_media_list instead of hitting DB
+        media_list = getattr(obj, "featured_media_list", None)
+        if media_list:
+            return media_list[0].image_url
+        # Fallback — only hits DB if prefetch wasn't applied
+        first = obj.media.first()
+        return first.image_url if first else None
 
-        first_media = obj.media.first()
-        return first_media.image_url if first_media else None
 
-    def get_host(self, obj):
-        if hasattr(obj.host, "business_name"):
-            return obj.host.business_name
-        return None
+    # Replace get_price:
+    def get_price(self, obj):
+        tickets = getattr(obj, "all_tickets", None)
+        if tickets:
+            prices = [t.price for t in tickets]
+            return min(prices) if prices else None
+        # Fallback
+        lowest = obj.tickets.order_by("price").first()
+        return lowest.price if lowest else None
 
+
+    # Replace get_event_status:
     def get_event_status(self, obj):
-        """
-        Compute status based on tickets left and creation date.
-        - sold-out: all tickets sold
-        - fast-selling: less than 25% left
-        - new: created within last 7 days
-        - otherwise: normal
-        """
-        total_quantity = sum(t.quantity for t in obj.tickets.all())
-        sold_quantity = sum(getattr(t, "sold_quantity", 0) for t in obj.tickets.all())
+        tickets = getattr(obj, "all_tickets", None) or list(obj.tickets.all())
+        total_quantity = sum(t.quantity for t in tickets)
+        sold_quantity  = sum(getattr(t, "sold_count", 0) for t in tickets)
 
         if sold_quantity >= total_quantity:
             return "sold-out"
@@ -70,19 +85,27 @@ class EventListSerializer(serializers.ModelSerializer):
             return "new"
         return "normal"
 
-    
+
+    # Replace get_attendees_count:
     def get_attendees_count(self, obj):
-        """
-        Count unique users who purchased any ticket for this event.
-        Only count completed orders.
-        """
+        # Use annotated value if available (set by event_list_queryset)
+        annotated = getattr(obj, "attendees_count_annotated", None)
+        if annotated is not None:
+            return annotated
+        # Fallback
         return (
             obj.order_set
-            .filter(status="completed")   # Only completed orders
-            .values("user")               # Group by user
-            .distinct()                   # Unique users
-            .count()                      # Count of unique attendees
-        )
+            .filter(status="completed")
+            .values("user")
+            .distinct()
+            .count()
+            )
+
+    def get_host(self, obj):
+        host = getattr(obj, "host", None)
+        if host is None:
+            return None
+        return getattr(host, "business_name", None)
 
 
 
@@ -141,21 +164,24 @@ class HostPublicDetailSerializer(serializers.ModelSerializer):
         return obj.hoster.count()
 
     def get_upcoming_events(self, obj):
-        now = timezone.now()
-        events = obj.hoster.filter(
-            start_datetime__gte=now,
-            status="active"
-        ).order_by("start_datetime")[:10]
+        events = getattr(obj, "upcoming_events_list", None)
+        if events is None:
+            now = timezone.now()
+            events = obj.hoster.filter(
+                start_datetime__gte=now, status="active"
+            ).order_by("start_datetime")[:10]
+        return EventListSerializer(events[:10], many=True).data
 
-        return EventListSerializer(events, many=True).data
 
+    # Replace get_past_events:
     def get_past_events(self, obj):
-        now = timezone.now()
-        events = obj.hoster.filter(
-            start_datetime__lt=now
-        ).order_by("-start_datetime")[:10]
-
-        return EventListSerializer(events, many=True).data
+        events = getattr(obj, "past_events_list", None)
+        if events is None:
+            now = timezone.now()
+            events = obj.hoster.filter(
+                start_datetime__lt=now
+            ).order_by("-start_datetime")[:10]
+        return EventListSerializer(events[:10], many=True).data
 
     def get_is_following(self, obj):
         request = self.context.get("request")
@@ -181,3 +207,77 @@ class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model  = Category
         fields = ["id", "name"]
+
+
+
+def event_list_queryset(base_qs=None):
+    """
+    Use this queryset wherever EventListSerializer is used.
+    Resolves all N+1s: media, tickets, attendees_count.
+    """
+    if base_qs is None:
+        base_qs = Event.objects.all()
+
+    # Prefetch only featured media first, fall back handled in serializer
+    media_qs = EventMedia.objects.filter(is_featured=True)
+
+    # Prefetch tickets for price + event_status
+    tickets_qs = Ticket.objects.all()
+
+    # Annotate attendees_count directly on the queryset
+    attendees = (
+        Order.objects
+        .filter(event=OuterRef("pk"), status="completed")
+        .values("event")
+        .annotate(c=Count("user", distinct=True))
+        .values("c")
+    )
+
+    return (
+        base_qs
+        .select_related("category", "location", "host")
+        .prefetch_related(
+            Prefetch("media", queryset=media_qs, to_attr="featured_media_list"),
+            Prefetch("tickets", queryset=tickets_qs, to_attr="all_tickets"),
+        )
+        .annotate(attendees_count_annotated=Subquery(attendees))
+        .order_by("-created_at")
+    )
+
+
+def host_detail_queryset(base_qs=None):
+    """
+    Use this queryset wherever HostPublicDetailSerializer is used.
+    Resolves N+1 on upcoming_events and past_events.
+    """
+    if base_qs is None:
+        base_qs = Host.objects.all()
+
+    now = timezone.now()
+
+    upcoming_qs = event_list_queryset(
+        Event.objects.filter(start_datetime__gte=now, status="active")
+        .order_by("start_datetime")
+    )
+
+    past_qs = event_list_queryset(
+        Event.objects.filter(start_datetime__lt=now)
+        .order_by("-start_datetime")
+    )
+
+    return (
+        base_qs
+        .annotate(followers_count=Count("followers", distinct=True))
+        .prefetch_related(
+            Prefetch(
+                "hoster",
+                queryset=upcoming_qs,
+                to_attr="upcoming_events_list",
+            ),
+            Prefetch(
+                "hoster",
+                queryset=past_qs,
+                to_attr="past_events_list",
+            ),
+        )
+    )

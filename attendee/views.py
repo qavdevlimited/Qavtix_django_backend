@@ -2,7 +2,7 @@ from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, permissions, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
-from django.db.models import Sum, Count,Prefetch
+from django.db.models import OuterRef, Subquery, Sum, Count,Prefetch
 from django.http import Http404
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
@@ -50,7 +50,6 @@ class TicketDashboardView(generics.ListAPIView):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        # Prefetch only featured media
         featured_media = EventMedia.objects.filter(is_featured=True)
 
         return (
@@ -58,12 +57,16 @@ class TicketDashboardView(generics.ListAPIView):
             .filter(owner=self.request.user)
             .select_related(
                 "event",
+                "event__category",
+                "event__location",    # ← add
+                "event__host",        # ← add
                 "order",
+                "order_ticket",
+                "order_ticket__ticket",  # ← add
                 "owner",
-                "event__category"  # make sure Event.category exists
             )
             .prefetch_related(
-                Prefetch("event__media", queryset=featured_media)
+                Prefetch("event__media", queryset=featured_media, to_attr="featured_media_list")  # ← add to_attr
             )
             .order_by("-created_at")
         )
@@ -270,11 +273,20 @@ class FavoriteEventListView(generics.ListAPIView):
             user=self.request.user
         ).values_list("event_id", flat=True)
 
+        attendees = (
+            Order.objects
+            .filter(event=OuterRef("pk"), status="completed")
+            .values("event")
+            .annotate(c=Count("user", distinct=True))
+            .values("c")
+        )
+
         return (
             Event.objects
             .filter(id__in=favorite_event_ids)
             .select_related("category", "location", "host")
             .prefetch_related("media", "tickets")
+            .annotate(attendees_count_annotated=Subquery(attendees))
             .distinct()
         )
 

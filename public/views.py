@@ -1,9 +1,9 @@
 from django.shortcuts import render
 from events.models import Event,EventLocation
-from rest_framework import generics, permissions,status
+from rest_framework import generics, permissions,status,filters
 from django.utils import timezone
 from django.db.models import Q
-from .serializers import CategorySerializer, EventListSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer
+from .serializers import CategorySerializer, EventListSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer, event_list_queryset
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Count
@@ -21,163 +21,211 @@ from django.shortcuts import get_object_or_404
 from .models import Category, Follow,Message
 from attendee.models import AffiliateLink
 from .helpers import increment_event_views
+from django_filters.rest_framework import DjangoFilterBackend
+from .utils import pagination_data
 
 
+# ── Nearby Events ──────────────────────────────────────────────────────────────
 
 class NearbyEventsView(generics.ListAPIView):
-    serializer_class = EventListSerializer
+    serializer_class   = EventListSerializer
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
         user = self.request.user
-        now = timezone.now()
+        now  = timezone.now()
 
-        base_queryset = Event.objects.filter(
-            status="active",
-            start_datetime__gte=now
-        )
+        base = Event.objects.filter(status="active", start_datetime__gte=now)
 
-        # filter by logged-in user's location
         if user.is_authenticated and hasattr(user, "profile"):
             user_city = getattr(user.profile, "city", None)
             if user_city:
-                base_queryset = base_queryset.filter(location__city__iexact=user_city)
+                base = base.filter(location__city__iexact=user_city)
 
-        # Optional filters
-        category = self.request.query_params.get("category")
+        category   = self.request.query_params.get("category")
         start_date = self.request.query_params.get("start_date")
-        end_date = self.request.query_params.get("end_date")
+        end_date   = self.request.query_params.get("end_date")
 
         if category:
-            base_queryset = base_queryset.filter(category_id=category)
+            base = base.filter(category_id=category)
         if start_date and end_date:
-            base_queryset = base_queryset.filter(
+            base = base.filter(
                 start_datetime__date__gte=start_date,
-                end_datetime__date__lte=end_date
+                end_datetime__date__lte=end_date,
             )
 
-        return base_queryset.order_by("start_datetime")
-    
+        # Apply N+1 fix
+        return event_list_queryset(base).order_by("start_datetime")
+
     def list(self, request, *args, **kwargs):
-        """Override list to use api_response"""
-        queryset = self.get_queryset()
+        queryset = self.filter_queryset(self.get_queryset())
+        page     = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Nearby events retrieved successfully",
+                status_code=200,
+                data={
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
+                },
+            )
+
         serializer = self.get_serializer(queryset, many=True)
         return api_response(
             message="Nearby events retrieved successfully",
             status_code=200,
-            data=serializer.data
+            data=serializer.data,
         )
 
-    
 
+# ── Featured Events ────────────────────────────────────────────────────────────
 
 class FeaturedEventsView(generics.ListAPIView):
-    serializer_class = EventListSerializer
+    serializer_class   = EventListSerializer
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        now = timezone.now()
-        return Event.objects.filter(
+        now  = timezone.now()
+        base = Event.objects.filter(
             featured__status="active",
             featured__start_date__lte=now,
-            featured__end_date__gte=now
-        ).distinct().order_by("-featured__start_date")
+            featured__end_date__gte=now,
+        ).distinct()
+
+        # Apply N+1 fix
+        return event_list_queryset(base).order_by("-featured__start_date")
 
     def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
+        queryset = self.filter_queryset(self.get_queryset())
+        page     = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Featured events retrieved successfully",
+                status_code=200,
+                data={
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
+                },
+            )
+
         serializer = self.get_serializer(queryset, many=True)
         return api_response(
             message="Featured events retrieved successfully",
             status_code=200,
-            data=serializer.data
+            data=serializer.data,
         )
 
+
+# ── Top Event Locations ────────────────────────────────────────────────────────
+# No serializer change needed — pure annotation, no N+1 here
 
 class TopEventLocationsView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, *args, **kwargs):
-        top_locations = EventLocation.objects.filter(
-            event__status="active",
-            event__start_datetime__gte=timezone.now()
-        ).values(
-            "city", "state", "country"
-        ).annotate(
-            event_count=Count("event")
-        ).order_by("-event_count")[:10]  # top 10 locations
+        top_locations = (
+            EventLocation.objects
+            .filter(
+                event__status="active",
+                event__start_datetime__gte=timezone.now(),
+            )
+            .values("city", "state", "country")
+            .annotate(event_count=Count("event"))
+            .order_by("-event_count")[:10]
+        )
 
         return api_response(
             message="Top event locations retrieved successfully",
             status_code=200,
-            data=list(top_locations)
+            data=list(top_locations),
         )
-from rest_framework import generics, permissions, filters
-from django_filters.rest_framework import DjangoFilterBackend
+
+
+# ── Trending Events ────────────────────────────────────────────────────────────
 
 class TrendingEventsView(generics.ListAPIView):
-    serializer_class = EventListSerializer
+    serializer_class   = EventListSerializer
     permission_classes = [permissions.AllowAny]
-    filter_backends = [
+    filter_backends    = [
         DjangoFilterBackend,
         filters.SearchFilter,
         filters.OrderingFilter,
     ]
     filterset_class = EventDashboardFilter
-    search_fields = ["title"]
+    search_fields   = ["title"]
 
     def get_queryset(self):
-        now = timezone.now()
-        queryset = Event.objects.filter(status="active")
+        now  = timezone.now()
+        base = Event.objects.filter(status="active")
 
-        # --- Filters ---
-        location = self.request.query_params.get("location")
-        category = self.request.query_params.get("category")
-        min_price = self.request.query_params.get("min_price")
-        max_price = self.request.query_params.get("max_price")
+        location   = self.request.query_params.get("location")
+        category   = self.request.query_params.get("category")
+        min_price  = self.request.query_params.get("min_price")
+        max_price  = self.request.query_params.get("max_price")
         start_date = self.request.query_params.get("start_date")
-        end_date = self.request.query_params.get("end_date")
+        end_date   = self.request.query_params.get("end_date")
 
         if location:
-            queryset = queryset.filter(location__city__iexact=location)
+            base = base.filter(location__city__iexact=location)
         if category:
-            queryset = queryset.filter(category_id=category)
-
-        # Use subquery-safe price filtering to avoid duplicate rows from JOIN
+            base = base.filter(category_id=category)
         if min_price:
-            queryset = queryset.filter(tickets__price__gte=min_price)
+            base = base.filter(tickets__price__gte=min_price)
         if max_price:
-            queryset = queryset.filter(tickets__price__lte=max_price)
+            base = base.filter(tickets__price__lte=max_price)
         if start_date and end_date:
-            queryset = queryset.filter(
+            base = base.filter(
                 start_datetime__date__gte=start_date,
                 end_datetime__date__lte=end_date,
             )
 
-        # distinct() prevents duplicate events caused by ticket JOIN
-        queryset = queryset.distinct()
+        base = base.distinct()
 
-        # --- Annotations ---
-        queryset = queryset.annotate(
-            total_tickets=Coalesce(Sum("tickets__quantity"), Value(0)),
-            sold_tickets=Coalesce(Sum("tickets__sold_count"), Value(0)),
-        ).annotate(
-            # NullIf guards against division by zero
-            sold_percentage=ExpressionWrapper(
-                F("sold_tickets") * 100.0 / NullIf(F("total_tickets"), 0),
-                output_field=FloatField(),
+        # Trend score annotations
+        base = (
+            base
+            .annotate(
+                total_tickets=Coalesce(Sum("tickets__quantity"), Value(0)),
+                sold_tickets=Coalesce(Sum("tickets__sold_count"), Value(0)),
             )
-        ).annotate(
-            trend_score=Coalesce(F("sold_percentage"), Value(0.0)) + Case(
-                When(created_at__gte=now - timedelta(days=7), then=Value(5.0)),
-                default=Value(0.0),
-                output_field=FloatField(),
+            .annotate(
+                sold_percentage=ExpressionWrapper(
+                    F("sold_tickets") * 100.0 / NullIf(F("total_tickets"), 0),
+                    output_field=FloatField(),
+                )
             )
-        ).order_by("-trend_score", "-views_count")
+            .annotate(
+                trend_score=Coalesce(F("sold_percentage"), Value(0.0)) + Case(
+                    When(created_at__gte=now - timedelta(days=7), then=Value(5.0)),
+                    default=Value(0.0),
+                    output_field=FloatField(),
+                )
+            )
+            .order_by("-trend_score", "-views_count")
+        )
 
-        return queryset  # ← was missing
+        # Apply N+1 fix on top of the annotated queryset
+        return event_list_queryset(base)
 
     def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset()) 
+        queryset = self.filter_queryset(self.get_queryset())
+        page     = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Trending events retrieved successfully",
+                status_code=200,
+                data={
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
+                },
+            )
+
         serializer = self.get_serializer(queryset, many=True)
         return api_response(
             message="Trending events retrieved successfully",

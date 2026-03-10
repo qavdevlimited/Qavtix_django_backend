@@ -69,16 +69,19 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
         return 1
 
     def get_event_image(self, obj):
-        featured_media = obj.event.media.filter(is_featured=True).first()
-
-        if featured_media:
-            return featured_media.image_url
-
-        first_media = obj.event.media.first()
-        return first_media.image_url if first_media else None
+        # Use prefetched to_attr list — no extra query
+        media_list = getattr(obj.event, "featured_media_list", None)
+        if media_list:
+            return media_list[0].image_url
+        # Fallback
+        first = obj.event.media.first()
+        return first.image_url if first else None
 
     def get_event_location(self, obj):
-        return EventLocationSerializer(obj.event.location).data
+        location = getattr(obj.event, "location", None)
+        if location is None:
+            return None
+        return EventLocationSerializer(location).data  # already select_related, no query
 
     def get_qrcode_token(self, obj):
         return generate_checkin_token(str(obj.id), obj.owner_id)
@@ -102,33 +105,28 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
             "id", "event_name", "category", "event_datetime", "end_datetime",
             "event_location", "event_image", "host", "event_status", "attendees_count","event_description","price"
         ]
-    def get_price(self, obj):
-        lowest_ticket = obj.tickets.order_by("price").first()
-        return lowest_ticket.price if lowest_ticket else None
     
     def get_category(self, obj):
         return obj.category.name if obj.category else None
 
-    def get_event_image(self, obj):
-         # Get the featured media first
-        featured = obj.media.filter(is_featured=True).first()
-        if featured:
-            return featured.image_url   
-        
-        # Fallback: use the first media if no featured
-        first_media = obj.media.first()
-        if first_media:
-            return [{"image_url": first_media.image_url, "video_url": first_media.video_url, "is_featured": False}]
-        
-        # If no media at all
-        return []
 
     def get_host(self, obj):
         return getattr(obj.host, "business_name", None)
 
+    def get_event_image(self, obj):
+        # Iterate prefetched media — no extra query
+        all_media = obj.media.all()
+        featured = next((m for m in all_media if m.is_featured), None)
+        if featured:
+            return featured.image_url
+        first = next(iter(all_media), None)
+        return first.image_url if first else None
+
     def get_event_status(self, obj):
-        total_quantity = sum(t.quantity for t in obj.tickets.all())
-        sold_quantity = sum(getattr(t, "sold_count", 0) for t in obj.tickets.all())
+        # obj.tickets.all() uses prefetch cache — but only call it once
+        tickets = list(obj.tickets.all())
+        total_quantity = sum(t.quantity for t in tickets)
+        sold_quantity  = sum(getattr(t, "sold_count", 0) for t in tickets)
 
         if sold_quantity >= total_quantity:
             return "sold-out"
@@ -138,9 +136,15 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
             return "new"
         return "normal"
 
+    def get_price(self, obj):
+        # Use prefetched tickets
+        tickets = list(obj.tickets.all())
+        prices = [t.price for t in tickets]
+        return min(prices) if prices else None
+
     def get_attendees_count(self, obj):
         return obj.order_set.filter(status="completed").values("user").distinct().count()
-    
+        
 
 
 

@@ -81,39 +81,58 @@ class OrderTicket(models.Model):
 
 
 class IssuedTicket(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE)
     STATUS_CHOICES = [
-        ("active", "Active"),
+        ("active",      "Active"),
         ("transferred", "Transferred"),
-        ("resold", "Resold"),
-        ("used", "Used"),
-        ("cancelled", "Cancelled"),
+        ("resold",      "Resold"),
+        ("used",        "Used"),
+        ("cancelled",   "Cancelled"),
+        ("reserved",    "Reserved"),   # ← NEW: locked during split, not yet issued
     ]
 
+    order        = models.ForeignKey("Order", on_delete=models.CASCADE)
     order_ticket = models.ForeignKey(
-        OrderTicket,
+        "OrderTicket",
         on_delete=models.CASCADE,
         related_name="issued_tickets"
     )
-    event = models.ForeignKey(Event, on_delete=models.CASCADE)
+    event = models.ForeignKey("events.Event", on_delete=models.CASCADE)
+
+    # Authenticated owner — null for guests
     owner = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name="owned_tickets"
+        related_name="owned_tickets",
+        null=True,
+        blank=True,
     )
+
+    # Guest owner — filled when buyer is not registered
+    guest_email = models.EmailField(blank=True)
 
     original_owner = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
+        blank=True,
         related_name="original_tickets"
     )
+    # Guest original owner
+    guest_original_email = models.EmailField(blank=True)
 
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
-
+    status         = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
     transferred_at = models.DateTimeField(null=True, blank=True)
-    metadata=models.JSONField()
-    created_at = models.DateTimeField(auto_now_add=True)
+    metadata       = models.JSONField(default=dict)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    def get_owner_email(self):
+        if self.owner:
+            return self.owner.email
+        return self.guest_email
+
+    def __str__(self):
+        return f"Ticket {self.id} — {self.get_owner_email()}"
+
 
 
 
@@ -213,3 +232,117 @@ class Refund(models.Model):
 
     def __str__(self):
         return f"Refund {self.id} — {self.order.id} — {self.status}"
+    
+
+
+
+# transactions/models.py — ADD these models to your existing file
+
+import uuid
+from django.db import models
+from django.conf import settings
+from django.utils import timezone
+
+
+class SplitOrder(models.Model):
+    """
+    Tracks an overall split payment session.
+    Created when initiator checks out with is_split=True.
+    Order only completes when ALL participants have paid.
+    """
+    STATUS_CHOICES = [
+        ("pending",   "Pending"),     # waiting for all to pay
+        ("completed", "Completed"),   # all paid, tickets issued
+        ("expired",   "Expired"),     # time ran out, refunds created
+        ("cancelled", "Cancelled"),   # manually cancelled
+    ]
+
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order       = models.OneToOneField(
+        "Order",
+        on_delete=models.CASCADE,
+        related_name="split_order"
+    )
+    initiated_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="initiated_splits"
+    )
+    total_participants = models.PositiveIntegerField()  # must equal ticket quantity
+    paid_count         = models.PositiveIntegerField(default=0)
+    status             = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    expires_at         = models.DateTimeField()
+    created_at         = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"SplitOrder {self.id} — {self.status}"
+
+    def is_expired(self):
+        return timezone.now() > self.expires_at and self.status == "pending"
+
+    def check_completion(self):
+        """Call after each participant pays. Completes order if all paid."""
+        if self.paid_count >= self.total_participants:
+            self.status = "completed"
+            self.save(update_fields=["status"])
+            return True
+        return False
+
+
+class SplitParticipant(models.Model):
+    """
+    One row per person in a split order (including the initiator).
+    """
+    STATUS_CHOICES = [
+        ("pending",  "Pending"),   # hasn't paid yet
+        ("paid",     "Paid"),      # paid successfully
+        ("refunded", "Refunded"),  # refunded after cancellation
+        ("failed",   "Failed"),    # payment failed
+    ]
+
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    split_order = models.ForeignKey(
+        SplitOrder,
+        on_delete=models.CASCADE,
+        related_name="participants"
+    )
+    user        = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="split_participations"
+    )
+    # The ticket reserved for this participant
+    issued_ticket = models.OneToOneField(
+        "IssuedTicket",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="split_participant"
+    )
+
+    amount          = models.DecimalField(max_digits=10, decimal_places=2)
+    percentage      = models.DecimalField(max_digits=5, decimal_places=2)  # e.g. 33.33
+    status          = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+
+    # Payment tracking
+    payment_reference = models.CharField(max_length=255, blank=True)  # Paystack reference
+    payment          = models.ForeignKey(
+        "payments.Payment",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="split_participant"
+    )
+
+    # Payment link token — sent via email, used to identify participant on pay
+    pay_token   = models.UUIDField(default=uuid.uuid4, unique=True)
+    paid_at     = models.DateTimeField(null=True, blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("split_order", "user")
+
+    def __str__(self):
+        return f"{self.user.email} — {self.status} — {self.amount}"

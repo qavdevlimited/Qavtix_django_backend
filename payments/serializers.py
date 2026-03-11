@@ -7,44 +7,44 @@ from events.models import Ticket
 
 class TicketLineItemSerializer(serializers.Serializer):
     ticket_id = serializers.IntegerField()
-    quantity = serializers.IntegerField(min_value=1)
+    quantity  = serializers.IntegerField(min_value=1)
 
 
-class CheckoutPaymentSerializer(serializers.Serializer):
-    country = serializers.CharField()
-    currency = serializers.CharField(default="USD")
-    full_name=serializers.CharField()
-    phone_number=serializers.CharField()
-    is_split=serializers.BooleanField(default=False)
+class SplitMemberSerializer(serializers.Serializer):
+    email      = serializers.EmailField()
+    percentage = serializers.DecimalField(max_digits=5, decimal_places=2)
 
-    # Target is now always an event — Order is created server-side
-    event_id = serializers.UUIDField(required=False)
-    marketplace_listing_id = serializers.IntegerField(required=False)
 
-    # One or more ticket types with quantities
-    tickets = TicketLineItemSerializer(many=True,required=False)
+class CheckoutSerializer(serializers.Serializer):
+    # Location — determines gateway
+    country  = serializers.CharField(default="NG")
+    currency = serializers.CharField(default="NGN")
 
-    # Optional promo code applied to the whole order
-    promo_code = serializers.CharField(required=False, allow_blank=True)
+    # Buyer info
+    full_name    = serializers.CharField()
+    phone_number = serializers.CharField()
+    email        = serializers.EmailField(required=False)  # required for guests
 
-    # Card: either a saved card id OR a new payment method token
-    card_id = serializers.UUIDField(required=False)
-    payment_method_id = serializers.CharField(required=False)
+    # Flow selector
+    is_split               = serializers.BooleanField(default=False)
+    event_id               = serializers.UUIDField(required=False, allow_null=True)
+    marketplace_listing_id = serializers.IntegerField(required=False, allow_null=True)
+
+    # Tickets
+    tickets    = TicketLineItemSerializer(many=True, required=False, default=list)
+    promo_code = serializers.CharField(required=False, allow_blank=True, default="")
+
+    # Card
     save_card = serializers.BooleanField(default=False)
 
-    # Required for anonymous (unauthenticated) checkout
-    email = serializers.EmailField(required=False)
-
+    # Split members — only used when is_split=True
+    split_members = SplitMemberSerializer(many=True, required=False, default=list)
 
     def validate(self, data):
-        # Must supply a payment instrument
-        if not data.get("card_id") and not data.get("payment_method_id"):
-            raise serializers.ValidationError(
-                "Provide either card_id (saved card) or payment_method_id (new card)."
-            )
-        event_id = data.get("event_id")
-        tickets = data.get("tickets")
         marketplace_id = data.get("marketplace_listing_id")
+        event_id       = data.get("event_id")
+        tickets        = data.get("tickets", [])
+        is_split       = data.get("is_split", False)
 
         # Must choose one flow
         if marketplace_id and (event_id or tickets):
@@ -54,10 +54,34 @@ class CheckoutPaymentSerializer(serializers.Serializer):
 
         if not marketplace_id and not (event_id and tickets):
             raise serializers.ValidationError(
-                "You must provide either marketplace_listing_id OR event_id with tickets."
+                "Provide either marketplace_listing_id OR event_id with tickets."
             )
 
+        # Split validation
+        if is_split:
+            split_members = data.get("split_members", [])
+            if not split_members:
+                raise serializers.ValidationError(
+                    "split_members is required when is_split=True."
+                )
+            if marketplace_id:
+                raise serializers.ValidationError(
+                    "Split payment is not available for marketplace purchases."
+                )
+
         return data
+
+
+class CompleteCheckoutSerializer(serializers.Serializer):
+    reference = serializers.CharField()
+    save_card = serializers.BooleanField(default=False)
+    country   = serializers.CharField(default="NG")
+    email     = serializers.EmailField(required=False)  # for guests
+
+
+class SplitPayTokenSerializer(serializers.Serializer):
+    """Used by participants clicking their payment link."""
+    pay_token = serializers.UUIDField()
 
 # In your serializers file
 class PaystackIntentSerializer(serializers.Serializer):

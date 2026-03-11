@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+from celery.schedules import crontab
 from decouple import config
 import dj_database_url
 import os
@@ -300,3 +301,15 @@ CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND")
 CELERY_ACCEPT_CONTENT = config("CELERY_ACCEPT_CONTENT", default=["json"], cast=lambda v: [s.strip() for s in v.split(",")])
 CELERY_TASK_SERIALIZER = config("CELERY_TASK_SERIALIZER", default="json")
 CELERY_RESULT_BACKEND = config("CELERY_RESULT_BACKEND", default="django-db")
+
+
+CELERY_BEAT_SCHEDULE = {
+    "expire-split-orders": {
+        "task":     "payments.tasks.expire_split_orders",
+        "schedule": crontab(minute="*/30"),  # every 30 minutes
+    },
+}
+
+
+
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5500")

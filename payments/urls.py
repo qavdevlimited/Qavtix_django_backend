@@ -1,16 +1,18 @@
 from django.urls import path
 from payments.views import (
-    CheckoutPaymentView,
     AddCardView,
-    CreatePaystackIntentView,
+    CheckoutView,
+    CompleteCheckoutView,
     ListCardsView,
     SetDefaultCardView,
-    DeleteCardView
+    DeleteCardView,
+    SplitPayView
 )
 
 urlpatterns = [
-    path("checkout/", CheckoutPaymentView.as_view(), name="checkout-payment"),
-    path("create-paystack-intent/", CreatePaystackIntentView.as_view()),
+    path("checkout/",              CheckoutView.as_view()),
+    path("complete/",              CompleteCheckoutView.as_view()),
+    path("split/pay/<uuid:pay_token>/", SplitPayView.as_view()),
     path("cards/add/", AddCardView.as_view(), name="add-card"),
     path("cards/list/", ListCardsView.as_view(), name="list-cards"),
     path("cards/set-default/", SetDefaultCardView.as_view(), name="set-default-card"),

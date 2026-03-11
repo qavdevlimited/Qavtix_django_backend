@@ -9,7 +9,6 @@ from django.contrib.auth import get_user_model
 
 from payments.models import PaymentCard, Payment
 from payments.services.factory import get_gateway
-from payments.services.paystack_service import PaystackGateway
 
 logger = logging.getLogger(__name__)
 User   = get_user_model()
@@ -48,18 +47,9 @@ class CheckoutService:
       2. Split payment (auth only)
       3. Marketplace purchase (auth only)
 
-    Flow for normal purchase:
-      validate → compute totals → initialize Paystack tx → return checkout_url
-      (fulfillment happens in CompleteCheckoutService after user pays)
-
-    Flow for split:
-      validate → validate split members → compute per-person amounts
-      → create SplitOrder + SplitParticipants
-      → initiator pays their share immediately (initialize Paystack tx)
-      → email others their payment links via Celery
-
-    Flow for marketplace:
-      validate listing → reserve it → initialize Paystack tx → return checkout_url
+    KEY: No metadata is sent to Paystack.
+    Flow + reference are stored in Order.metadata in our own DB.
+    CompleteCheckoutService looks up the order using the reference.
     """
 
     def __init__(self, user, email, data):
@@ -73,15 +63,11 @@ class CheckoutService:
         self.marketplace_listing_id = data.get("marketplace_listing_id")
         self.is_marketplace = bool(self.marketplace_listing_id)
 
-    # ── Entry point ───────────────────────────────────────────────────────────
-
     def run(self):
         if self.is_marketplace:
             return self._handle_marketplace()
-
         if self.is_split:
             return self._handle_split()
-
         return self._handle_normal()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -97,29 +83,25 @@ class CheckoutService:
         total      = max(subtotal - discount, Decimal("0.00"))
         reference  = self._generate_reference()
 
-        # Reserve tickets (lock sold_count)
         self._reserve_tickets(line_items)
 
-        # Create pending order
         order = self._create_order(
             event=event,
             line_items=line_items,
             total_amount=total,
             discount=discount,
-            reference=reference,
+            metadata={
+                "reference": reference,
+                "flow":      "normal",
+            },
         )
 
-        # Initialize Paystack — get checkout URL
+        # NO metadata sent to Paystack
         init = self.gateway.initialize_transaction(
             email=self.email,
             amount_kobo=int(total * 100),
             currency=self.data.get("currency", "NGN"),
             reference=reference,
-            metadata={
-                "order_id":   str(order.id),
-                "full_name":  self.full_name,
-                "flow":       "normal",
-            },
         )
 
         return {
@@ -151,29 +133,25 @@ class CheckoutService:
         subtotal   = sum(qty * price for _, qty, price in line_items)
         total      = max(subtotal - discount, Decimal("0.00"))
 
-        split_members = self.data.get("split_members", [])
+        if len(line_items) > 1:
+            raise CheckoutError("Split payment only supports one ticket type per order.", 400)
 
-        # Auto-inject initiator if not already in the list
+        split_members = list(self.data.get("split_members", []))
+
+        # Auto-inject initiator with the remaining percentage
         initiator_emails = [m["email"] for m in split_members]
         if self.user.email not in initiator_emails:
-            # Calculate initiator's percentage as remainder so it always sums to 100
-            others_pct = sum(Decimal(str(m["percentage"])) for m in split_members)
+            others_pct    = sum(Decimal(str(m["percentage"])) for m in split_members)
             initiator_pct = (Decimal("100") - others_pct).quantize(Decimal("0.01"))
-
             if initiator_pct <= 0:
                 raise CheckoutError(
-                    "Split percentages already sum to 100. "
-                    "Leave room for your own share or include your email explicitly.", 400
+                    "Split percentages already sum to 100. Leave room for your own share.", 400
                 )
-
             split_members = [
-                {"email": self.user.email, "percentage": initiator_pct},
+                {"email": self.user.email, "percentage": str(initiator_pct)},
                 *split_members,
             ]
-        # split_members = [{ "email": "x@y.com", "percentage": 33.33 }, ...]
-        # initiator is always included — their entry should be in the list too
 
-        # Validate total tickets = total participants
         total_tickets = sum(qty for _, qty, _ in line_items)
         if len(split_members) != total_tickets:
             raise CheckoutError(
@@ -182,19 +160,13 @@ class CheckoutService:
                 400,
             )
 
-        # Validate percentages sum to 100
         total_pct = sum(Decimal(str(m["percentage"])) for m in split_members)
         if abs(total_pct - Decimal("100")) > Decimal("0.01"):
             raise CheckoutError(
                 f"Split percentages must sum to 100 (got {total_pct}).", 400
             )
 
-        # Validate all members are registered users
-        # Also ensure only one ticket type in split
-        if len(line_items) > 1:
-            raise CheckoutError("Split payment only supports one ticket type per order.", 400)
-
-        member_users = []
+        member_users    = []
         initiator_found = False
         for m in split_members:
             try:
@@ -205,31 +177,29 @@ class CheckoutService:
                     f"All split members must have a QavTix account.",
                     400,
                 )
-            if u == self.user:
+            if u.email == self.user.email:
                 initiator_found = True
             member_users.append((u, Decimal(str(m["percentage"]))))
 
         if not initiator_found:
-            raise CheckoutError("Initiator's email must be included in split members.", 400)
+            raise CheckoutError("Could not resolve initiator in split members.", 400)
 
-        # Compute expiry
         expires_at = _split_expiry(event)
+        reference  = self._generate_reference()
 
-        # Reserve tickets
         self._reserve_tickets(line_items)
 
-        reference = self._generate_reference()
-
-        # Create pending order
         order = self._create_order(
             event=event,
             line_items=line_items,
             total_amount=total,
             discount=discount,
-            reference=reference,
+            metadata={
+                "reference": reference,
+                "flow":      "split",
+            },
         )
 
-        # Create SplitOrder
         split_order = SplitOrder.objects.create(
             order=order,
             initiated_by=self.user,
@@ -237,24 +207,26 @@ class CheckoutService:
             expires_at=expires_at,
         )
 
-        # Create SplitParticipants + reserved IssuedTickets
+        # Store split_order id in order metadata now that we have it
+        order.metadata["split_order_id"] = str(split_order.id)
+        order.save(update_fields=["metadata"])
+
         ticket, qty, _ = line_items[0]
         order_ticket   = OrderTicket.objects.get(order=order, ticket=ticket)
 
-        participants = []
+        participants          = []
         initiator_participant = None
 
         for user_obj, pct in member_users:
             amount = (total * pct / 100).quantize(Decimal("0.01"))
 
-            # Reserve an IssuedTicket for this participant
             issued = IssuedTicket.objects.create(
                 order=order,
                 order_ticket=order_ticket,
                 event=event,
                 owner=user_obj,
                 original_owner=self.user,
-                status="reserved",   # locked until split completes
+                status="reserved",
                 metadata={"split": True},
             )
 
@@ -263,50 +235,55 @@ class CheckoutService:
                 user=user_obj,
                 issued_ticket=issued,
                 amount=amount,
-                percentage=pct,
+                percentage=float(pct),
             )
             participants.append(part)
 
-            if user_obj == self.user:
+            if user_obj.email == self.user.email:
                 initiator_participant = part
 
+        if initiator_participant is None:
+            raise CheckoutError("Could not find initiator participant record.", 400)
+
+        # Store initiator reference on participant so CompleteCheckoutService can find it
+        initiator_reference = f"{reference}_init"
+        initiator_participant.payment_reference = initiator_reference
+        initiator_participant.save(update_fields=["payment_reference"])
+
+        # NO metadata sent to Paystack
         # Initiator pays immediately — initialize their Paystack transaction
-        initiator_amount_kobo = int(initiator_participant.amount * 100)
+        initiator_amount_kobo = int(float(initiator_participant.amount) * 100)
         init = self.gateway.initialize_transaction(
             email=self.user.email,
             amount_kobo=initiator_amount_kobo,
             currency=self.data.get("currency", "NGN"),
-            reference=f"{reference}_init",
-            metadata={
-                "order_id":        str(order.id),
-                "split_order_id":  str(split_order.id),
-                "participant_id":  str(initiator_participant.id),
-                "flow":            "split_initiator",
-            },
+            reference=initiator_reference,
         )
 
-        # Queue emails to other participants via Celery
         from payments.tasks import send_split_payment_emails
-        other_participants = [p for p in participants if p.user != self.user]
+        other_participants = [p for p in participants if p.user.email != self.user.email]
+       
         send_split_payment_emails.delay(
             split_order_id=str(split_order.id),
             participant_ids=[str(p.id) for p in other_participants],
         )
+        
+
 
         return {
-            "flow":             "split",
-            "order_id":         str(order.id),
-            "split_order_id":   str(split_order.id),
-            "reference":        f"{reference}_init",
-            "checkout_url":     init["checkout_url"],
-            "amount":           initiator_amount_kobo,
-            "currency":         self.data.get("currency", "NGN").upper(),
-            "expires_at":       expires_at.isoformat(),
+            "flow":              "split",
+            "order_id":          str(order.id),
+            "split_order_id":    str(split_order.id),
+            "reference":         initiator_reference,
+            "checkout_url":      init["checkout_url"],
+            "amount":            initiator_amount_kobo,
+            "currency":          self.data.get("currency", "NGN").upper(),
+            "expires_at":        expires_at.isoformat(),
             "total_participants": total_tickets,
-            "subtotal":         str(subtotal),
-            "discount":         str(discount),
-            "total":            str(total),
-            "your_share":       str(initiator_participant.amount),
+            "subtotal":          str(subtotal),
+            "discount":          str(discount),
+            "total":             str(total),
+            "your_share":        str(initiator_participant.amount),
         }
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -324,7 +301,7 @@ class CheckoutService:
             listing = (
                 MarketListing.objects
                 .select_for_update()
-                .select_related("ticket", "ticket__event", "ticket__order_ticket__ticket", "seller")
+                .select_related("ticket", "ticket__event", "seller")
                 .get(id=self.marketplace_listing_id)
             )
         except MarketListing.DoesNotExist:
@@ -332,41 +309,37 @@ class CheckoutService:
 
         if listing.status != "active":
             raise CheckoutError("This listing is no longer available.", 400)
-
         if listing.seller == self.user:
             raise CheckoutError("You cannot purchase your own listing.", 400)
-
         if listing.expires_at and timezone.now() > listing.expires_at:
             raise CheckoutError("This listing has expired.", 400)
 
-        # Reserve listing
         listing.status = "reserved"
         listing.save(update_fields=["status"])
 
-        event      = listing.ticket.event
-        total      = listing.price
-        reference  = self._generate_reference()
+        event     = listing.ticket.event
+        total     = listing.price
+        reference = self._generate_reference()
 
-        # Create pending order (no line_items for marketplace)
         order = self._create_order(
             event=event,
             line_items=None,
             total_amount=total,
             discount=Decimal("0.00"),
-            reference=reference,
+            metadata={
+                "reference":  reference,
+                "flow":       "marketplace",
+                "listing_id": str(listing.id),
+            },
             marketplace_listing=listing,
         )
 
+        # NO metadata sent to Paystack
         init = self.gateway.initialize_transaction(
             email=self.email,
             amount_kobo=int(total * 100),
             currency=self.data.get("currency", "NGN"),
             reference=reference,
-            metadata={
-                "order_id":    str(order.id),
-                "listing_id":  str(listing.id),
-                "flow":        "marketplace",
-            },
         )
 
         return {
@@ -400,7 +373,6 @@ class CheckoutService:
         from events.models import Ticket
         now        = timezone.now()
         line_items = []
-
         for item in self.data["tickets"]:
             try:
                 ticket = Ticket.objects.select_for_update().get(id=item["ticket_id"], event=event)
@@ -420,7 +392,6 @@ class CheckoutService:
                 raise CheckoutError(f"Ticket '{ticket.ticket_type}' is not on sale right now.", 400)
 
             line_items.append((ticket, qty, ticket.price))
-
         return line_items
 
     def _apply_promo(self, line_items):
@@ -445,16 +416,12 @@ class CheckoutService:
         return discount
 
     def _reserve_tickets(self, line_items):
-        """
-        Increments sold_count to lock inventory during pending payment.
-        Called inside atomic block — rolled back if anything fails.
-        """
         from events.models import Ticket
         from django.db.models import F
         for ticket, qty, _ in line_items:
             Ticket.objects.filter(id=ticket.id).update(sold_count=F("sold_count") + qty)
 
-    def _create_order(self, event, line_items, total_amount, discount, reference,
+    def _create_order(self, event, line_items, total_amount, discount, metadata,
                       marketplace_listing=None):
         from transactions.models import Order, OrderTicket
 
@@ -469,7 +436,7 @@ class CheckoutService:
             discount=discount,
             status="pending",
             marketplace_listing=marketplace_listing,
-            metadata={"reference": reference},
+            metadata=metadata,
         )
 
         if line_items:
@@ -496,15 +463,18 @@ class CheckoutService:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CompleteCheckoutService — called after Paystack popup/redirect completes
+# CompleteCheckoutService
 # ─────────────────────────────────────────────────────────────────────────────
 
 class CompleteCheckoutService:
     """
-    Called when user returns from Paystack with a reference.
-    Verifies payment, saves card if requested, issues tickets, completes order.
+    Called after Paystack popup completes.
+    Looks up order from OUR DB using reference — never reads Paystack metadata.
 
-    Handles all three flows based on metadata in the Paystack transaction.
+    Reference formats:
+      "qavtix_xxx"       → normal or marketplace (direct match on Order.metadata)
+      "qavtix_xxx_init"  → split initiator       (strip _init, match base ref)
+      anything else      → split participant     (match on SplitParticipant.payment_reference)
     """
 
     def __init__(self, user, email, reference, save_card=False, country="NG"):
@@ -516,51 +486,72 @@ class CompleteCheckoutService:
 
     @transaction.atomic
     def run(self):
-        # 1 — Verify with Paystack
+        # Verify with Paystack — confirms money received
         try:
             tx = self.gateway.verify_transaction(self.reference)
         except Exception as e:
             raise CheckoutError(f"Payment verification failed: {str(e)}", 402)
 
-        metadata = tx.get("metadata") or {}
-        flow     = metadata.get("flow", "normal")
+        # Find order + flow from our DB — no Paystack metadata needed
+        order, flow, participant = self._find_order_and_flow()
 
         if flow == "normal":
-            return self._complete_normal(tx, metadata)
-        elif flow == "split_initiator":
-            return self._complete_split_initiator(tx, metadata)
+            return self._complete_normal(tx, order)
+        elif flow == "split":
+            return self._complete_split_initiator(tx, order)
         elif flow == "split_participant":
-            return self._complete_split_participant(tx, metadata)
+            return self._complete_split_participant(tx, participant)
         elif flow == "marketplace":
-            return self._complete_marketplace(tx, metadata)
+            return self._complete_marketplace(tx, order)
         else:
             raise CheckoutError(f"Unknown payment flow: {flow}", 400)
 
+    def _find_order_and_flow(self):
+        """
+        Returns (order, flow, participant_or_None).
+        Tries three lookup strategies in order.
+        """
+        from transactions.models import Order, SplitParticipant
+
+        # 1 — Direct match: normal or marketplace
+        try:
+            order = Order.objects.select_for_update().get(
+                metadata__reference=self.reference
+            )
+            return order, order.metadata.get("flow", "normal"), None
+        except Order.DoesNotExist:
+            pass
+
+        # 2 — Split initiator: reference ends with _init
+        if self.reference.endswith("_init"):
+            base_ref = self.reference[:-5]  # strip "_init"
+            try:
+                order = Order.objects.select_for_update().get(
+                    metadata__reference=base_ref
+                )
+                return order, "split", None
+            except Order.DoesNotExist:
+                pass
+
+        # 3 — Split participant: reference stored on SplitParticipant
+        try:
+            participant = SplitParticipant.objects.select_for_update().select_related(
+                "split_order__order"
+            ).get(payment_reference=self.reference)
+            return participant.split_order.order, "split_participant", participant
+        except SplitParticipant.DoesNotExist:
+            pass
+
+        raise CheckoutError("Order not found for this reference.", 404)
+
     # ── Normal completion ─────────────────────────────────────────────────────
 
-    def _complete_normal(self, tx, metadata):
-        from transactions.models import Order
-
-        order_id = metadata.get("order_id")
-        try:
-            order = Order.objects.select_for_update().get(id=order_id)
-        except Order.DoesNotExist:
-            raise CheckoutError("Order not found.", 404)
-
+    def _complete_normal(self, tx, order):
         if order.status == "completed":
             return {"already_complete": True, "order_id": str(order.id)}
 
-        # Save card
-        card = self._maybe_save_card(tx)
-
-        # Persist payment record
-        payment = self._persist_payment(
-            order=order,
-            tx=tx,
-            card=card,
-        )
-
-        # Issue tickets + complete order
+        card    = self._maybe_save_card(tx)
+        payment = self._persist_payment(order=order, tx=tx, card=card)
         self._finalise_order(order, payment, card)
 
         return {
@@ -571,27 +562,23 @@ class CompleteCheckoutService:
 
     # ── Split initiator completion ────────────────────────────────────────────
 
-    def _complete_split_initiator(self, tx, metadata):
-        from transactions.models import SplitOrder, SplitParticipant
+    def _complete_split_initiator(self, tx, order):
+        from transactions.models import SplitParticipant
 
-        participant_id = metadata.get("participant_id")
+        split_order = order.split_order
+
         try:
-            participant = SplitParticipant.objects.select_for_update().select_related(
-                "split_order", "split_order__order"
-            ).get(id=participant_id)
+            participant = split_order.participants.select_for_update().get(
+                user__email=self.user.email if self.user else ""
+            )
         except SplitParticipant.DoesNotExist:
-            raise CheckoutError("Split participant not found.", 404)
+            raise CheckoutError("Initiator participant record not found.", 404)
 
         if participant.status == "paid":
             return {"already_paid": True}
 
-        card = self._maybe_save_card(tx)
-
-        payment = self._persist_payment(
-            order=participant.split_order.order,
-            tx=tx,
-            card=card,
-        )
+        card    = self._maybe_save_card(tx)
+        payment = self._persist_payment(order=order, tx=tx, card=card)
 
         participant.status            = "paid"
         participant.payment           = payment
@@ -599,7 +586,6 @@ class CompleteCheckoutService:
         participant.paid_at           = timezone.now()
         participant.save(update_fields=["status", "payment", "payment_reference", "paid_at"])
 
-        split_order = participant.split_order
         split_order.paid_count += 1
         split_order.save(update_fields=["paid_count"])
 
@@ -607,13 +593,11 @@ class CompleteCheckoutService:
         if completed:
             self._finalise_split(split_order)
 
-        # Send confirmation email to initiator
         from payments.tasks import send_split_initiator_confirmation
         send_split_initiator_confirmation.delay(str(participant.id))
 
         return {
             "flow":            "split",
-            "participant_id":  str(participant.id),
             "split_order_id":  str(split_order.id),
             "paid_count":      split_order.paid_count,
             "total":           split_order.total_participants,
@@ -622,32 +606,17 @@ class CompleteCheckoutService:
 
     # ── Split participant (non-initiator) completion ──────────────────────────
 
-    def _complete_split_participant(self, tx, metadata):
-        from transactions.models import SplitParticipant
-
-        participant_id = metadata.get("participant_id")
-        try:
-            participant = SplitParticipant.objects.select_for_update().select_related(
-                "split_order", "split_order__order"
-            ).get(id=participant_id)
-        except SplitParticipant.DoesNotExist:
-            raise CheckoutError("Split participant not found.", 404)
+    def _complete_split_participant(self, tx, participant):
+        split_order = participant.split_order
 
         if participant.status == "paid":
             return {"already_paid": True}
 
-        split_order = participant.split_order
-
         if split_order.is_expired():
             raise CheckoutError("This split payment has expired.", 400)
 
-        card = self._maybe_save_card(tx)
-
-        payment = self._persist_payment(
-            order=split_order.order,
-            tx=tx,
-            card=card,
-        )
+        card    = self._maybe_save_card(tx)
+        payment = self._persist_payment(order=split_order.order, tx=tx, card=card)
 
         participant.status            = "paid"
         participant.payment           = payment
@@ -663,47 +632,40 @@ class CompleteCheckoutService:
             self._finalise_split(split_order)
 
         return {
-            "flow":           "split",
+            "flow":           "split_participant",
             "participant_id": str(participant.id),
             "split_complete": completed,
         }
 
     # ── Marketplace completion ────────────────────────────────────────────────
 
-    def _complete_marketplace(self, tx, metadata):
-        from transactions.models import Order, IssuedTicket
+    def _complete_marketplace(self, tx, order):
         from marketplace.models import MarketListing
-
-        order_id   = metadata.get("order_id")
-        listing_id = metadata.get("listing_id")
-
-        try:
-            order   = Order.objects.select_for_update().get(id=order_id)
-            listing = MarketListing.objects.select_for_update().select_related(
-                "ticket", "ticket__event", "seller"
-            ).get(id=listing_id)
-        except (Order.DoesNotExist, MarketListing.DoesNotExist):
-            raise CheckoutError("Order or listing not found.", 404)
 
         if order.status == "completed":
             return {"already_complete": True, "order_id": str(order.id)}
 
+        listing_id = order.metadata.get("listing_id")
+        try:
+            listing = MarketListing.objects.select_for_update().select_related(
+                "ticket"
+            ).get(id=listing_id)
+        except MarketListing.DoesNotExist:
+            raise CheckoutError("Marketplace listing not found.", 404)
+
         card    = self._maybe_save_card(tx)
         payment = self._persist_payment(order=order, tx=tx, card=card)
 
-        # Transfer ticket ownership
-        issued_ticket              = listing.ticket
-        issued_ticket.original_owner = issued_ticket.owner   # preserve original
-        issued_ticket.owner        = self.user
-        issued_ticket.status       = "resold"
+        issued_ticket                = listing.ticket
+        issued_ticket.original_owner = issued_ticket.owner
+        issued_ticket.owner          = self.user
+        issued_ticket.status         = "resold"
         issued_ticket.transferred_at = timezone.now()
         issued_ticket.save(update_fields=["owner", "original_owner", "status", "transferred_at"])
 
-        # Mark listing as sold
         listing.status = "sold"
         listing.save(update_fields=["status"])
 
-        # Complete order
         order.status         = "completed"
         order.payment_method = "paystack"
         order.save(update_fields=["status", "payment_method"])
@@ -717,7 +679,6 @@ class CompleteCheckoutService:
     # ── Shared helpers ────────────────────────────────────────────────────────
 
     def _maybe_save_card(self, tx):
-        """Saves card from tx if user is auth and save_card=True. Returns card or None."""
         if self.user and self.save_card:
             card, _ = self.gateway.save_card_from_tx(self.user, tx)
             return card
@@ -725,7 +686,7 @@ class CompleteCheckoutService:
 
     def _persist_payment(self, order, tx, card):
         currency = tx.get("currency", "NGN")
-        amount   = Decimal(tx.get("amount", 0)) / 100   # kobo → naira
+        amount   = Decimal(str(tx.get("amount", 0))) / 100  # kobo → naira
 
         return Payment.objects.create(
             user=self.user,
@@ -747,10 +708,7 @@ class CompleteCheckoutService:
         )
 
     def _finalise_order(self, order, payment, card):
-        """Issues tickets and completes a normal order."""
-        from transactions.models import IssuedTicket, OrderTicket
-        from events.models import Ticket
-        from django.db.models import F
+        from transactions.models import IssuedTicket
 
         order.status         = "completed"
         order.payment_method = "paystack"
@@ -771,94 +729,71 @@ class CompleteCheckoutService:
                 )
 
     def _finalise_split(self, split_order):
-        """
-        Activates all reserved IssuedTickets and completes the order.
-        Called when all split participants have paid.
-        """
         from transactions.models import IssuedTicket
 
-        # Activate all reserved tickets
         IssuedTicket.objects.filter(
             order=split_order.order,
             status="reserved",
         ).update(status="active")
 
-        # Complete the order
-        order = split_order.order
+        order                = split_order.order
         order.status         = "completed"
         order.payment_method = "paystack"
         order.save(update_fields=["status", "payment_method"])
 
-        # Notify all participants
         from payments.tasks import send_split_completion_emails
         send_split_completion_emails.delay(str(split_order.id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SplitExpiry — run periodically via Celery beat to cancel expired splits
+# SplitExpiryService — called by periodic Celery task every 30 mins
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SplitExpiryService:
-    """
-    Called by a periodic Celery task.
-    Cancels expired SplitOrders, releases ticket inventory,
-    and creates Refund records for participants who already paid.
-    """
 
     @transaction.atomic
     def run(self):
-        from transactions.models import SplitOrder, IssuedTicket
-        from django.db.models import F
+        from transactions.models import SplitOrder
 
-        now     = timezone.now()
-        expired = SplitOrder.objects.filter(status="pending", expires_at__lt=now)
-
+        expired = SplitOrder.objects.filter(
+            status="pending",
+            expires_at__lt=timezone.now()
+        )
         for split_order in expired:
             self._cancel_split(split_order)
 
     def _cancel_split(self, split_order):
-        from transactions.models import SplitOrder, SplitParticipant, IssuedTicket, Refund
+        from transactions.models import IssuedTicket, Refund
         from events.models import Ticket
         from django.db.models import F
 
         logger.info(f"Cancelling expired split order {split_order.id}")
 
-        # Cancel reserved tickets
         IssuedTicket.objects.filter(
             order=split_order.order, status="reserved"
         ).update(status="cancelled")
 
-        # Release inventory back
-        order_tickets = split_order.order.tickets.select_related("ticket").all()
-        for ot in order_tickets:
+        for ot in split_order.order.tickets.select_related("ticket").all():
             Ticket.objects.filter(id=ot.ticket.id).update(
                 sold_count=F("sold_count") - ot.quantity
             )
 
-        # Refund participants who paid
-        paid_participants = split_order.participants.filter(status="paid")
-        for participant in paid_participants:
-            # Create refund record
-            from transactions.models import Refund
-            # Avoid duplicate refund records
-            if not hasattr(split_order.order, "refund"):
-                Refund.objects.get_or_create(
-                    order=split_order.order,
-                    defaults={
-                        "amount": participant.amount,
-                        "reason": "cancelled_event",
-                        "notes":  f"Split payment expired — participant {participant.user.email}",
-                        "status": "pending",
-                    },
-                )
+        for participant in split_order.participants.filter(status="paid"):
+            Refund.objects.get_or_create(
+                order=split_order.order,
+                defaults={
+                    "amount": participant.amount,
+                    "reason": "cancelled_event",
+                    "notes":  f"Split expired — {participant.user.email}",
+                    "status": "pending",
+                },
+            )
             participant.status = "refunded"
             participant.save(update_fields=["status"])
 
-            # Notify participant
             from payments.tasks import send_split_refund_notification
             send_split_refund_notification.delay(str(participant.id))
 
-        # Cancel the split and order
         split_order.status = "expired"
         split_order.save(update_fields=["status"])
 

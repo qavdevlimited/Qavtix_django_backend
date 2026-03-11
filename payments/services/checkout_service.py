@@ -9,6 +9,7 @@ from django.contrib.auth import get_user_model
 
 from payments.models import PaymentCard, Payment
 from payments.services.factory import get_gateway
+from transactions.models import SplitParticipant
 
 logger = logging.getLogger(__name__)
 User   = get_user_model()
@@ -492,6 +493,17 @@ class CompleteCheckoutService:
         except Exception as e:
             raise CheckoutError(f"Payment verification failed: {str(e)}", 402)
 
+        # Check if this is a split participant reference
+        try:
+            participant = SplitParticipant.objects.select_for_update().select_related(
+                "split_order__order"
+            ).get(payment_reference=self.reference)
+            return self._complete_split_participant(tx, participant)
+        except SplitParticipant.DoesNotExist:
+            pass
+
+        
+
         # Find order + flow from our DB — no Paystack metadata needed
         order, flow, participant = self._find_order_and_flow()
 
@@ -540,6 +552,28 @@ class CompleteCheckoutService:
             ).get(payment_reference=self.reference)
             return participant.split_order.order, "split_participant", participant
         except SplitParticipant.DoesNotExist:
+            pass
+
+        raise CheckoutError("Order not found for this reference.", 404)
+
+    def _find_order(self):
+        from transactions.models import Order
+
+        # Normal and marketplace — reference stored directly in metadata
+        try:
+            return Order.objects.select_for_update().get(
+                metadata__reference=self.reference
+            )
+        except Order.DoesNotExist:
+            pass
+
+        # Split initiator — reference has _init suffix, base reference in metadata
+        base_ref = self.reference.replace("_init", "")
+        try:
+            return Order.objects.select_for_update().get(
+                metadata__reference=base_ref
+            )
+        except Order.DoesNotExist:
             pass
 
         raise CheckoutError("Order not found for this reference.", 404)

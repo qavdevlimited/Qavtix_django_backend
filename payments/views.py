@@ -351,6 +351,9 @@ class SplitPayView(APIView):
         gateway   = get_gateway("NG")
         reference = f"qavtix_split_{participant.id.hex[:16]}"
 
+        participant.payment_reference = reference
+        participant.save(update_fields=["payment_reference"])
+
         try:
             init = gateway.initialize_transaction(
                 email=request.user.email,

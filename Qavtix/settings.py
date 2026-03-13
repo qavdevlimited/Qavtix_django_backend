@@ -314,3 +314,12 @@ CELERY_BEAT_SCHEDULE = {
 
 
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5500")
+
+
+
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]

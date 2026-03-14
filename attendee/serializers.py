@@ -195,8 +195,13 @@ class AffiliateLinkSerializer(serializers.ModelSerializer):
 
     def get_link(self, obj):
         request = self.context.get("request")
-        domain = request.build_absolute_uri("/")[:-1]  # remove traili
 
+        if not request:
+            return None
+
+        domain = request.build_absolute_uri("/")[:-1]
+
+        return f"{domain}/events/{obj.event.id}?ref={obj.code}"
 
 
 

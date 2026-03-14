@@ -57,7 +57,7 @@ class EventSerializer(serializers.ModelSerializer):
     permissions=EventPermissionSerializer(many=True,required=False)
     tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
     media = EventMediaNestedSerializer(many=True, required=False)
-    event_name=serializers.CharField(source="title", read_only=True)
+    event_name=serializers.CharField(source="title")
     event_status=serializers.CharField(source="status", read_only=True)
 
     class Meta:
@@ -88,7 +88,7 @@ class EventSerializer(serializers.ModelSerializer):
         host = request.user.host_profile  # automatically assign host
 
         tickets_data = validated_data.pop('tickets')
-        location_data = validated_data.pop('location')
+        location_data = validated_data.pop('event_location')
         permission_data=validated_data.pop('permissions', [])
         social_links_data = validated_data.pop('social_links', [])
         tags_data = validated_data.pop('tags', [])

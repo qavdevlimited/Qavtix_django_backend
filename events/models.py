@@ -106,7 +106,7 @@ class Event(models.Model):
 
 
 class EventLocation(models.Model):
-    event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name="location")
+    event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name="event_location")
 
     venue_name = models.CharField(max_length=255)
     address = models.TextField()

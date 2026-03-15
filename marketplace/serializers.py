@@ -5,6 +5,7 @@ from events.models import EventLocation, EventMedia
 from django.db.models import Sum
 from transactions.models import IssuedTicket
 from host.serializers import EventLocationNestedSerializer,OrganizerSocialLinkNestedSerializer,EventMediaNestedSerializer,EventDetailsSerializer
+from public.serializers import EventLocationSerializer
 
 class MarketListingSerializer(serializers.ModelSerializer):
     event_name = serializers.CharField(source="ticket.event.title", read_only=True)
@@ -48,9 +49,9 @@ class MarketListingSerializer(serializers.ModelSerializer):
         return obj.seller == request.user
     
     def get_event_location(self, obj):
-        location = getattr(obj.ticket.event, "location", None)
+        location = getattr(obj.ticket.event, "event_location", None)
         if location:
-            return location.venue_name
+            return EventLocationSerializer(location).data
         return None
 
     def get_event_image(self, obj):

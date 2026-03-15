@@ -53,7 +53,7 @@ class MarketListingListView(generics.ListAPIView):
     serializer_class = MarketListingSerializer
     permission_classes = [permissions.AllowAny]  # public listings
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    search_fields = ["ticket__event__title", "ticket__event__host__name"]
+    search_fields = ["ticket__event__title", "ticket__event__host__full_name"]
     filterset_class = MarketListingFilter
     pagination_class = generics.ListAPIView.pagination_class  # default DRF pagination
 

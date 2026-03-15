@@ -3,6 +3,7 @@ from rest_framework import generics, permissions, filters, status
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
+from marketplace.filter import MarketListingFilter
 from marketplace.models import MarketListing
 from .serializers import MarketListingSerializer,MarketEventDetailsSerializer
 from public.response import api_response
@@ -53,11 +54,7 @@ class MarketListingListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]  # public listings
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     search_fields = ["ticket__event__title", "ticket__event__host__name"]
-    filterset_fields = {
-        "ticket__event__category__id": ["exact"],
-        "price": ["gte", "lte"],
-        "ticket__event__start_datetime": ["gte", "lte"],
-    }
+    filterset_class = MarketListingFilter
     pagination_class = generics.ListAPIView.pagination_class  # default DRF pagination
 
     def get_queryset(self):

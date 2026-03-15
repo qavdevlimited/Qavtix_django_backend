@@ -1584,7 +1584,7 @@ class TicketReceiptView(APIView):
                     "owner__attendee_profile",
                     "event",
                     "event__category",
-                    "event__location",
+                    "event__event_location",
                     "order",
                     "order__user",
                     "order__user__attendee_profile",

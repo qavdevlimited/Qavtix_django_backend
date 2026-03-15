@@ -5,7 +5,7 @@ from .views import MarketListingCreateView, MarketListingListView, MarketListing
 urlpatterns = [
     path("create/", MarketListingCreateView.as_view(), name="marketplace-create"),
     path("list/", MarketListingListView.as_view(), name="marketplace-list"),
-    path("delete/<uuid:pk>/", MarketListingDeleteView.as_view(), name="marketplace-delete"),
+    path("delete/<int:pk>/", MarketListingDeleteView.as_view(), name="marketplace-delete"),
     path(
     "marketplace/<int:pk>/",
     MarketListingDetailView.as_view(),

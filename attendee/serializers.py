@@ -78,7 +78,7 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
         return first.image_url if first else None
 
     def get_event_location(self, obj):
-        location = getattr(obj.event, "location", None)
+        location = getattr(obj.event, "event_location", None)
         if location is None:
             return None
         return EventLocationSerializer(location).data  # already select_related, no query
@@ -88,7 +88,7 @@ class TicketDashboardSerializer(serializers.ModelSerializer):
 
 
 class FavoriteEventSerializer(serializers.ModelSerializer):
-    event_location = EventLocationSerializer(source="location",read_only=True)
+    event_location = EventLocationSerializer(read_only=True)
     event_image = serializers.SerializerMethodField()
     host = serializers.SerializerMethodField()
     event_status = serializers.SerializerMethodField()
@@ -144,7 +144,6 @@ class FavoriteEventSerializer(serializers.ModelSerializer):
 
     def get_attendees_count(self, obj):
         return obj.order_set.filter(status="completed").values("user").distinct().count()
-        
 
 
 
@@ -348,7 +347,7 @@ class TicketReceiptSerializer(serializers.Serializer):
             event.media.filter(is_featured=True).first()
             or event.media.first()
         )
-        location = getattr(event, "location", None)
+        location = getattr(event, "event_location", None)
         return {
             "id":           str(event.id),
             "event_name":         event.title,

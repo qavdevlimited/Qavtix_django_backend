@@ -58,7 +58,7 @@ class TicketDashboardView(generics.ListAPIView):
             .select_related(
                 "event",
                 "event__category",
-                "event__location",    # ← add
+                "event__event_location",    # ← add
                 "event__host",        # ← add
                 "order",
                 "order_ticket",
@@ -284,7 +284,7 @@ class FavoriteEventListView(generics.ListAPIView):
         return (
             Event.objects
             .filter(id__in=favorite_event_ids)
-            .select_related("category", "location", "host")
+            .select_related("category", "event_location", "host")
             .prefetch_related("media", "tickets")
             .annotate(attendees_count_annotated=Subquery(attendees))
             .distinct()

@@ -2,11 +2,10 @@
 
 import django_filters
 from django_filters import rest_framework as filters
-from events.models import Event
-
+from events.models import Event, EventLocation
 
 class EventFilter(django_filters.FilterSet):
-    # Filter by category ID (single or multiple)
+    # Filter by category
     category = django_filters.ModelMultipleChoiceFilter(
         field_name="category",
         queryset=Event.objects.values_list("category", flat=True).distinct()
@@ -22,7 +21,7 @@ class EventFilter(django_filters.FilterSet):
         lookup_expr="date__lte"
     )
 
-    # Filter by price range (min/max)
+    # Filter by price range
     min_price = django_filters.NumberFilter(
         field_name="tickets__price",
         lookup_expr="gte"
@@ -32,6 +31,28 @@ class EventFilter(django_filters.FilterSet):
         lookup_expr="lte"
     )
 
+    # Filter by location fields (via OneToOne relation)
+    city = django_filters.CharFilter(
+        field_name="event_location__city",
+        lookup_expr="icontains"
+    )
+    state = django_filters.CharFilter(
+        field_name="event_location__state",
+        lookup_expr="icontains"
+    )
+    country = django_filters.CharFilter(
+        field_name="event_location__country",
+        lookup_expr="icontains"
+    )
+    venue_name = django_filters.CharFilter(
+        field_name="event_location__venue_name",
+        lookup_expr="icontains"
+    )
+
     class Meta:
         model = Event
-        fields = ["category", "start_date", "end_date", "min_price", "max_price"]
+        fields = [
+            "category", "start_date", "end_date",
+            "min_price", "max_price",
+            "city", "state", "country", "venue_name"
+        ]

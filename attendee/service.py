@@ -105,16 +105,30 @@ def _month_filters(today):
     earn_cur  = dict(created_at__year=current_year, created_at__month=current_month)
     earn_prev = dict(created_at__year=prev_year,    created_at__month=prev_month)
 
-    graph_qs = (
+    # Pull all earnings for the month with their day
+    raw_earnings = (
         AffliateEarnings.objects
         .filter(created_at__year=current_year, created_at__month=current_month)
-        .annotate(bucket=ExtractDay("created_at"))
-        .values("bucket")
-        .annotate(total_earning=Sum("earning"))
-        .order_by("bucket")
+        .annotate(day=ExtractDay("created_at"))
+        .values("day", "earning")
     )
-    return link_cur, link_prev, earn_cur, earn_prev, graph_qs, range(1, days_in_month + 1), "day"
 
+    # Group into weeks: week 1 = days 1-7, week 2 = days 8-14, etc.
+    def day_to_week(day):
+        return (day - 1) // 7 + 1  # returns 1, 2, 3, or 4(+)
+
+    week_totals = {}
+    for row in raw_earnings:
+        w = day_to_week(row["day"])
+        week_totals[w] = week_totals.get(w, 0) + row["earning"]
+
+    # Figure out how many weeks this month has
+    total_weeks = (day_to_week(days_in_month))  # e.g. 4 or 5
+
+    # Build graph_qs-compatible list so _build_graph works as-is
+    graph_qs = [{"bucket": w, "total_earning": week_totals.get(w, 0)} for w in range(1, total_weeks + 1)]
+
+    return link_cur, link_prev, earn_cur, earn_prev, graph_qs, range(1, total_weeks + 1), "week"
 
 def _week_filters(today):
     week_start      = today - timedelta(days=today.weekday())       # Monday
@@ -191,8 +205,9 @@ def get_affiliate_dashboard(user, filter_by, year_param):
     else:
         return None, "Invalid filter. Use: month, week, day or ?year=YYYY"
 
-    # Scope graph_qs to this user
-    graph_qs = graph_qs.filter(link__user=user)
+    # Scope graph_qs to this user (only for real querysets, not pre-built lists)
+    if hasattr(graph_qs, 'filter'):
+        graph_qs = graph_qs.filter(link__user=user)
 
     earnings_graph = _build_graph(graph_qs, bucket_range, bucket_label)
 

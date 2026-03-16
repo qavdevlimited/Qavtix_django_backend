@@ -3,6 +3,8 @@ from events.models import Event,EventLocation
 from rest_framework import generics, permissions,status,filters
 from django.utils import timezone
 from django.db.models import Q
+
+from public.filters import EventFilter
 from .serializers import CategorySerializer, EventListSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer, event_list_queryset
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -30,6 +32,8 @@ from .utils import pagination_data
 class NearbyEventsView(generics.ListAPIView):
     serializer_class   = EventListSerializer
     permission_classes = [permissions.AllowAny]
+    filter_backends    = [DjangoFilterBackend]
+    filterset_class    = EventFilter  
 
     def get_queryset(self):
         user = self.request.user
@@ -40,7 +44,7 @@ class NearbyEventsView(generics.ListAPIView):
         if user.is_authenticated and hasattr(user, "profile"):
             user_city = getattr(user.profile, "city", None)
             if user_city:
-                base = base.filter(location__city__iexact=user_city)
+                base = base.filter(event_location__city__iexact=user_city)
 
         category   = self.request.query_params.get("category")
         start_date = self.request.query_params.get("start_date")
@@ -85,6 +89,8 @@ class NearbyEventsView(generics.ListAPIView):
 class FeaturedEventsView(generics.ListAPIView):
     serializer_class   = EventListSerializer
     permission_classes = [permissions.AllowAny]
+    filter_backends    = [DjangoFilterBackend]
+    filterset_class    = EventFilter  
 
     def get_queryset(self):
         now  = timezone.now()
@@ -170,7 +176,7 @@ class TrendingEventsView(generics.ListAPIView):
         end_date   = self.request.query_params.get("end_date")
 
         if location:
-            base = base.filter(location__city__iexact=location)
+            base = base.filter(event_location__city__iexact=location)
         if category:
             base = base.filter(category_id=category)
         if min_price:

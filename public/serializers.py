@@ -45,7 +45,7 @@ class EventListSerializer(serializers.ModelSerializer):
 
     # After — safe
     def get_event_location(self, obj):
-        location = getattr(obj, "location", None)
+        location = getattr(obj, "event_location", None)
         if location is None:
             return None
         return EventLocationSerializer(location).data
@@ -235,7 +235,7 @@ def event_list_queryset(base_qs=None):
 
     return (
         base_qs
-        .select_related("category", "location", "host")
+        .select_related("category", "event_location", "host")
         .prefetch_related(
             Prefetch("media", queryset=media_qs, to_attr="featured_media_list"),
             Prefetch("tickets", queryset=tickets_qs, to_attr="all_tickets"),

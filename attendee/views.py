@@ -1,9 +1,11 @@
+from dateutil.utils import today
 from drf_spectacular.types import OpenApiTypes
 from rest_framework import generics, permissions, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from django.db.models import OuterRef, Subquery, Sum, Count,Prefetch
 from django.http import Http404
+from attendee.service import get_affiliate_dashboard
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
 from .serializers import (TicketDashboardSerializer,FavoriteEventSerializer, TicketReceiptSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
@@ -31,6 +33,10 @@ from notification.models import NotificationSettings
 from drf_spectacular.utils import extend_schema, inline_serializer,OpenApiParameter
 from rest_framework import serializers
 from .utils import pagination_data
+from django.utils.timezone import now
+from datetime import timedelta
+from django.db.models.functions import ExtractMonth, ExtractDay, ExtractHour
+from django.db.models import Sum
 
 
 
@@ -583,103 +589,45 @@ class AffiliateEventsView(generics.ListAPIView):
         }
     )
 )
+
+
+@extend_schema(
+    description="Retrieve affiliate dashboard graph data for the current user",
+    parameters=[
+        OpenApiParameter(name="year",   description="Year to filter (default: current year)", required=False, type=int),
+        OpenApiParameter(name="filter", description="Filter mode: month | week | day. Omit for yearly view.", required=False, type=str, enum=["month", "week", "day"]),
+    ],
+    responses=inline_serializer(
+        name="AffiliateGraphResponse",
+        fields={
+            "filter":                     serializers.CharField(),
+            "earnings_graph":             serializers.ListField(child=serializers.DictField()),
+            "total_clicks":               serializers.IntegerField(),
+            "total_clicks_change_pct":    serializers.FloatField(),
+            "total_sales":                serializers.IntegerField(),
+            "total_sales_change_pct":     serializers.FloatField(),
+            "conversion_rate":            serializers.FloatField(),
+            "conversion_rate_change_pct": serializers.FloatField(),
+            "total_earnings":             serializers.FloatField(),
+            "total_earnings_change_pct":  serializers.FloatField(),
+        }
+    )
+)
 class AffiliateGraphView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        user = request.user
-        today = now()
-        current_year = today.year
-        current_month = today.month
+        filter_by  = request.query_params.get("filter", None)
+        year_param = request.query_params.get("year",   None)
+
+        data, error = get_affiliate_dashboard(request.user, filter_by, year_param)
+
+        if error:
+            return api_response(message=error, status_code=400, data={})
+
+        return api_response(message="Affiliate dashboard retrieved successfully", status_code=200, data=data)
 
         
-        monthly_data = (
-            AffliateEarnings.objects
-            .filter(link__user=user, created_at__year=current_year)
-            .annotate(month=ExtractMonth("created_at"))
-            .values("month")
-            .annotate(total_earning=Sum("earning"))
-            .order_by("month")
-        )
-
-        # Fill all months and calculate % change vs previous month
-        earnings_list = []
-        prev = None
-        for m in range(1, 13):
-            month_earning = next((x["total_earning"] for x in monthly_data if x["month"] == m), 0)
-            change_pct = ((month_earning - prev) / prev * 100) if prev and prev > 0 else 0
-            earnings_list.append({
-                "month": m,
-                "earning": month_earning,
-                "change_pct": round(change_pct, 2)
-            })
-            prev = month_earning
-
-        # Determine previous month/year
-        if current_month == 1:
-            prev_month = 12
-            prev_year = current_year - 1
-        else:
-            prev_month = current_month - 1
-            prev_year = current_year
-
-        # Current month aggregates
-        current_clicks = AffiliateLink.objects.filter(
-            user=user, created_at__year=current_year, created_at__month=current_month
-        ).aggregate(total=Sum("clicks"))["total"] or 0
-
-        current_sales = AffiliateLink.objects.filter(
-            user=user, created_at__year=current_year, created_at__month=current_month
-        ).aggregate(total=Sum("sales"))["total"] or 0
-
-        current_earnings = AffliateEarnings.objects.filter(
-            link__user=user, created_at__year=current_year, created_at__month=current_month
-        ).aggregate(total=Sum("earning"))["total"] or 0
-
-        current_conversion_rate = (current_sales / current_clicks * 100) if current_clicks > 0 else 0
-
-        # Previous month aggregates
-        prev_clicks = AffiliateLink.objects.filter(
-            user=user, created_at__year=prev_year, created_at__month=prev_month
-        ).aggregate(total=Sum("clicks"))["total"] or 0
-
-        prev_sales = AffiliateLink.objects.filter(
-            user=user, created_at__year=prev_year, created_at__month=prev_month
-        ).aggregate(total=Sum("sales"))["total"] or 0
-
-        prev_earnings = AffliateEarnings.objects.filter(
-            link__user=user, created_at__year=prev_year, created_at__month=prev_month
-        ).aggregate(total=Sum("earning"))["total"] or 0
-
-        prev_conversion_rate = (prev_sales / prev_clicks * 100) if prev_clicks > 0 else 0
-
-        # Helper to calculate % change
-        def pct_change(current, previous):
-            if previous > 0:
-                return round((current - previous) / previous * 100, 2)
-            return 0
-
-
-        # Prepare dashboard data
-        dashboard_data = {
-            "monthly_earnings": earnings_list,
-            "total_clicks": current_clicks,
-            "total_clicks_change_pct": pct_change(current_clicks, prev_clicks),
-            "total_sales": current_sales,
-            "total_sales_change_pct": pct_change(current_sales, prev_sales),
-            "conversion_rate": round(current_conversion_rate, 2),
-            "conversion_rate_change_pct": pct_change(current_conversion_rate, prev_conversion_rate),
-            "total_earnings": current_earnings,
-            "total_earnings_change_pct": pct_change(current_earnings, prev_earnings),
-        }
-
-        return api_response(
-            message="Affiliate dashboard retrieved successfully",
-            status_code=200,
-            data=dashboard_data
-        )
-    
-
 
 class AffiliateEarningHistoryView(generics.ListAPIView):
     serializer_class = AffiliateEarningHistorySerializer

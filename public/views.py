@@ -4,8 +4,8 @@ from rest_framework import generics, permissions,status,filters
 from django.utils import timezone
 from django.db.models import Q
 
-from public.filters import EventFilter
-from .serializers import CategorySerializer, EventListSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer, event_list_queryset
+from public.filters import CategoryEventFilter, EventFilter
+from .serializers import CategoryPageSerializer, CategorySerializer, CategorySubscriptionSerializer, EventListSerializer, LocationPageSerializer, LocationSubscriptionSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer, event_list_queryset
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Count
@@ -18,9 +18,9 @@ from datetime import timedelta
 from django.db.models.functions import NullIf,Coalesce
 from host.utils import EventDashboardFilter
 from host.models import Host
-from host.serializers import EventDetailsSerializer
+from host.serializers import EventDetailsSerializer, EventSerializer
 from django.shortcuts import get_object_or_404
-from .models import Category, Follow,Message
+from .models import Category, CategorySubscription, Follow, LocationSubscription,Message
 from attendee.models import AffiliateLink
 from .helpers import increment_event_views
 from django_filters.rest_framework import DjangoFilterBackend
@@ -461,3 +461,149 @@ class CategoryListView(APIView):
             status_code=200,
             data=CategorySerializer(categories, many=True).data,
         )
+
+
+
+class LocationPageView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class   = LocationPageSerializer
+    filter_backends    = [DjangoFilterBackend]
+    filterset_class    = EventFilter
+
+    def get_queryset(self):
+        return Event.objects.filter(status="active").select_related(
+            "category",
+            "event_location",
+            "host",
+        ).prefetch_related(
+            "tickets",
+            "media",
+            "tags",
+            "social_links",
+            "permissions",
+        )
+
+    def get(self, request, city):
+        city_name = city.strip().title()
+
+        events      = self.filter_queryset(
+            self.get_queryset().filter(event_location__city__iexact=city_name)
+        )
+
+        events_list       = list(events)   # evaluate once, reused everywhere
+        total_events      = len(events_list)
+        total_subscribers = LocationSubscription.objects.filter(city__iexact=city_name).count()
+
+        data = {
+            "city":              city_name,
+            "description":       f"All events happening in {city_name}.",
+            "total_events":      total_events,
+            "total_subscribers": total_subscribers,
+            "events":            events_list,
+        }
+
+        serializer = self.get_serializer(data)
+        return api_response(message=f"Location page for {city_name}", status_code=200, data=serializer.data)
+
+
+class SubscribeLocationView(generics.GenericAPIView):
+    serializer_class = LocationSubscriptionSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        city  = request.data.get("city")
+        email = request.data.get("email")
+
+        if not city:
+            return api_response(message="City is required", status_code=400, data={})
+        if not email:
+            return api_response(message="Email is required", status_code=400, data={})
+
+        city = city.strip().title()
+
+        subscription, created = LocationSubscription.objects.get_or_create(
+            city=city,
+            email=email
+        )
+
+        msg = f"Subscribed to {city} successfully" if created else f"{email} is already subscribed to {city}"
+        serializer = self.get_serializer(subscription)
+        return api_response(message=msg, status_code=200, data=serializer.data)
+
+
+
+
+class SubscribeCategoryView(generics.GenericAPIView):
+    serializer_class = CategorySubscriptionSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        category_id = request.data.get("category")
+        email = request.data.get("email")
+
+        if not category_id:
+            return api_response("Category is required", 400)
+
+        if not email:
+            return api_response("Email is required", 400)
+
+        try:
+            category = Category.objects.get(id=category_id)
+        except Category.DoesNotExist:
+            return api_response("Category not found", 404)
+
+        subscription, created = CategorySubscription.objects.get_or_create(
+            category=category,
+            email=email
+        )
+
+        msg = "Subscribed successfully" if created else "Already subscribed"
+
+        serializer = CategorySubscriptionSerializer(subscription)
+
+        return api_response(msg, 200, serializer.data)
+    
+
+
+
+class CategoryPageView(generics.GenericAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class   = CategoryPageSerializer
+    filter_backends    = [DjangoFilterBackend]
+    filterset_class    = EventFilter
+
+    def get_queryset(self):
+        return Event.objects.filter(status="active").select_related(
+            "category",
+            "event_location",
+            "host",
+        ).prefetch_related(
+            "tickets",
+            "media",
+            "tags",
+            "social_links",
+            "permissions",
+        )
+
+    def get(self, request, category_name):
+        category = get_object_or_404(Category, name__iexact=category_name)
+
+        # Base queryset scoped to this category, then additional filters on top
+        events = self.filter_queryset(
+            self.get_queryset().filter(category=category)
+        )
+
+        events_list       = list(events)
+        total_events      = len(events_list)
+        total_subscribers = CategorySubscription.objects.filter(category=category).count()
+
+        data = {
+            "name":              category.name,
+            "description":       category.description,
+            "total_events":      total_events,
+            "total_subscribers": total_subscribers,
+            "events":            events_list,
+        }
+
+        serializer = self.get_serializer(data)
+        return api_response(message="Category page retrieved successfully", status_code=200, data=serializer.data)

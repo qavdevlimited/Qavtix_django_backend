@@ -186,6 +186,8 @@ REST_FRAMEWORK = {
 SPECTACULAR_SETTINGS = {
     "TITLE": "Qavtix API",
     "DESCRIPTION": "Official API documentation for Qavtix",
+    "ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE": False,
+    "DISABLE_ERRORS_AND_WARNINGS": True,
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
      "COMPONENT_SPLIT_REQUEST": True,

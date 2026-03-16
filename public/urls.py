@@ -17,7 +17,16 @@ urlpatterns = [
    path("hosts/<int:id>/", HostPublicDetailView.as_view(),name="host_details"),
 
    path('message/',MessageCreateView.as_view(),name="create_message"),
-   path("categories/", CategoryListView.as_view(), name="category-list")
+   path("categories/", CategoryListView.as_view(), name="category-list"),
+
+   path("locations/subscribe/", SubscribeLocationView.as_view(), name="subscribe-location"),
+   path("locations/<str:city>/", LocationPageView.as_view(), name="location-page"),
+
+   path("categories/subscribe/", SubscribeCategoryView.as_view(), name="subscribe-category"),
+
+   path("categories/<str:category_name>/",CategoryPageView.as_view(),name="category-page",
+)
+   
 
 
     

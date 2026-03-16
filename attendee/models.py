@@ -106,8 +106,8 @@ class AffiliateLink(models.Model):
 class AffliateEarnings(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
-        ("succeeded", "Succeeded"),
-        ("failed", "Failed"),
+        ("paid", "Paid"),
+        ("hold", "Hold"),
     ]
     link = models.ForeignKey(AffiliateLink, on_delete=models.CASCADE, related_name="earnings",null=True)
     attendee=models.ForeignKey(Attendee,on_delete=models.DO_NOTHING)

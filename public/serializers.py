@@ -4,7 +4,9 @@ from host.models import Host
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count
-from .models import Category, Follow,Message
+
+from host.serializers import EventSerializer
+from .models import Category, CategorySubscription, Follow, LocationSubscription,Message
 
 from django.db.models import (
     Count, Prefetch, OuterRef, Subquery, Min
@@ -281,3 +283,45 @@ def host_detail_queryset(base_qs=None):
             ),
         )
     )
+
+
+class LocationPageSerializer(serializers.Serializer):
+    city              = serializers.CharField()
+    description       = serializers.CharField()
+    total_events      = serializers.IntegerField()
+    total_subscribers = serializers.IntegerField()
+    events            = serializers.SerializerMethodField()
+
+    def get_events(self, obj):
+        # already evaluated and prefetched — no extra queries
+        return EventListSerializer(obj["events"], many=True, context=self.context).data
+    
+
+
+class LocationSubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LocationSubscription
+        fields = ["city", "email", "subscribed_at"]
+
+
+class CategorySubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CategorySubscription
+        fields = ["category", "email", "subscribed_at"]
+
+
+
+class CategoryPageSerializer(serializers.Serializer):
+    name              = serializers.CharField()
+    description       = serializers.CharField()
+    total_events      = serializers.IntegerField()
+    total_subscribers = serializers.IntegerField()
+    events            = serializers.SerializerMethodField()
+
+    def get_events(self, obj):
+        # obj["events"] is already prefetched — no extra queries
+        return EventListSerializer(
+            obj["events"],
+            many=True,
+            context=self.context
+        ).data

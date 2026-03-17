@@ -980,6 +980,22 @@ class ToggleTwoFactorView(APIView):
         )
     
 
+class TwoFactorAuthDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        two_fa, created = TwoFactorAuths.objects.get_or_create(
+            user=request.user
+        )
+
+        serializer = TwoFactorToggleSerializer(two_fa)
+
+        return api_response(
+            message="Two-factor settings returned successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
 
 @extend_schema(
     request=ChangePasswordSerializer,

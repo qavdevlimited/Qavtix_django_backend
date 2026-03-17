@@ -61,6 +61,12 @@ class MarketListingListView(generics.ListAPIView):
         queryset = MarketListing.objects.filter(status="active")
         return queryset.order_by("price")
 
+    def get_filterset_kwargs(self, filterset_class):
+        """Pass request to filterset"""
+        kwargs = super().get_filterset_kwargs(filterset_class)
+        kwargs['request'] = self.request
+        return kwargs
+    
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
 

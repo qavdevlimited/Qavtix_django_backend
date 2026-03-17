@@ -259,7 +259,7 @@ class AttendeeProfileSerializer(serializers.ModelSerializer):
             "profile_picture",
             "role"
         ]
-        read_only_fields = ["email", "email_verified","id"]
+        read_only_fields = ["email", "email_verified","id","role"]
 
     
 

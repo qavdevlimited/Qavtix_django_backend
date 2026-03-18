@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from payments.services.add_card_service import AddCardConfirmService, AddCardInitiateService
+from payments.services.card_checkout_service import CardCheckoutService
 from payments.services.card_service import CardError, CardListService, DeleteCardService, SetDefaultCardService
 from payments.services.factory import get_gateway
 from payments.models import PaymentCard, Payment
@@ -572,3 +573,87 @@ class DeleteCardView(APIView):
             status_code=200,
             data=result,
         )
+
+
+
+class CardCheckoutView(APIView):
+    """
+    POST /payments/charge-card/
+ 
+    Charges a saved card directly — no Paystack popup needed.
+    Tickets are issued immediately in the same request.
+ 
+    Supports:
+      - Normal event ticket purchase
+      - Marketplace listing purchase
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    @extend_schema(
+        summary="Pay with saved card",
+        description=(
+            "Charges a previously saved card directly using Paystack charge_authorization. "
+            "No popup or redirect needed. Tickets are issued immediately on success. "
+            "Supports both normal event purchases and marketplace listings."
+        ),
+        request=CardCheckoutSerializer,
+        responses={
+            200: OpenApiResponse(description="Payment successful, tickets issued"),
+            400: OpenApiResponse(description="Validation error"),
+            402: OpenApiResponse(description="Card charge failed"),
+            404: OpenApiResponse(description="Card or event not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Normal purchase with saved card",
+                value={
+                    "country":      "NG",
+                    "currency":     "NGN",
+                    "full_name":    "John Doe",
+                    "phone_number": "08012345678",
+                    "card_id":      "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "event_id":     "7b20504d-6226-4587-b7c8-686520550150",
+                    "tickets":      [{"ticket_id": 1, "quantity": 2}],
+                    "promo_code":   "",
+                    "affiliate_code": None,
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Marketplace purchase with saved card",
+                value={
+                    "country":                "NG",
+                    "currency":               "NGN",
+                    "full_name":              "John Doe",
+                    "phone_number":           "08012345678",
+                    "card_id":                "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "marketplace_listing_id": 5,
+                },
+                request_only=True,
+            ),
+        ],
+    )
+    @transaction.atomic
+    def post(self, request):
+        serializer = CardCheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+ 
+        try:
+            result = CardCheckoutService(
+                user=request.user,
+                data=data,
+            ).run()
+        except CheckoutError as e:
+            transaction.set_rollback(True)
+            return api_response(message=e.message, status_code=e.status)
+        except Exception as e:
+            transaction.set_rollback(True)
+            return api_response(message=f"Charge failed: {str(e)}", status_code=500)
+ 
+        return api_response(
+            message="Payment successful. Tickets issued.",
+            status_code=200,
+            data=result,
+        )
+ 

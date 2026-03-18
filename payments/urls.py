@@ -2,6 +2,7 @@ from django.urls import path
 from payments.views import (
     AddCardConfirmView,
     AddCardInitiateView,
+    CardCheckoutView,
     CardListView,
     CheckoutView,
     CompleteCheckoutView,
@@ -14,6 +15,7 @@ urlpatterns = [
     path("checkout/",              CheckoutView.as_view()),
     path("complete/",              CompleteCheckoutView.as_view()),
     path("split/pay/<uuid:pay_token>/", SplitPayView.as_view()),
+    path("charge-card/",                    CardCheckoutView.as_view()),
 
     # Cards
     path("cards/",                          CardListView.as_view()),

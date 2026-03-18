@@ -133,3 +133,51 @@ class AddCardConfirmSerializer(serializers.Serializer):
     country     = serializers.CharField(default="NG")
     set_default = serializers.BooleanField(default=True)
  
+
+
+
+class TicketLineItemSerializer(serializers.Serializer):
+    ticket_id = serializers.IntegerField()
+    quantity  = serializers.IntegerField(min_value=1)
+ 
+ 
+class CardCheckoutSerializer(serializers.Serializer):
+    # Gateway
+    country  = serializers.CharField(default="NG")
+    currency = serializers.CharField(default="NGN")
+ 
+    # Buyer info
+    full_name    = serializers.CharField()
+    phone_number = serializers.CharField()
+ 
+    # Saved card — required
+    card_id = serializers.UUIDField()
+ 
+    # Normal purchase fields
+    event_id   = serializers.UUIDField(required=False, allow_null=True)
+    tickets    = TicketLineItemSerializer(many=True, required=False, default=list)
+    promo_code = serializers.CharField(required=False, allow_blank=True, default="")
+ 
+    # Affiliate
+    affiliate_code = serializers.UUIDField(required=False, allow_null=True)
+ 
+    # Marketplace purchase
+    marketplace_listing_id = serializers.IntegerField(required=False, allow_null=True)
+ 
+    def validate(self, data):
+        marketplace_id = data.get("marketplace_listing_id")
+        event_id       = data.get("event_id")
+        tickets        = data.get("tickets", [])
+ 
+        if marketplace_id and (event_id or tickets):
+            raise serializers.ValidationError(
+                "Provide either marketplace_listing_id OR event_id with tickets, not both."
+            )
+ 
+        if not marketplace_id and not (event_id and tickets):
+            raise serializers.ValidationError(
+                "Provide either marketplace_listing_id OR event_id with tickets."
+            )
+ 
+        return data
+ 

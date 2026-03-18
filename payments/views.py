@@ -14,10 +14,16 @@ from payments.services.checkout_service import CheckoutService, CheckoutError
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from decimal import Decimal
 from django.utils import timezone
+from payments.services.webhook_service import PaystackWebhookService
 from public.response import flatten_errors,api_response
 from stripe import StripeError, InvalidRequestError
 from drf_spectacular.utils import extend_schema, inline_serializer,OpenApiParameter
 from rest_framework import serializers
+import logging
+from rest_framework import status
+
+
+logger = logging.getLogger(__name__)
 
 
 class CheckoutView(APIView):
@@ -656,4 +662,49 @@ class CardCheckoutView(APIView):
             status_code=200,
             data=result,
         )
+ 
+
+class PaystackWebhookView(APIView):
+    """
+    POST /payments/webhook/paystack/
+ 
+    Receives and processes Paystack webhook events.
+    Must be publicly accessible — no authentication.
+    Must return 200 quickly so Paystack doesn't retry.
+ 
+    Paystack retries failed webhooks up to 5 times with exponential backoff.
+    We always return 200 even on errors to prevent unnecessary retries
+    on events we intentionally don't handle.
+ 
+    Setup in Paystack dashboard:
+      Webhook URL: https://yourdomain.com/payments/webhook/paystack/
+      Events:      charge.success (minimum required)
+    """
+    permission_classes = [AllowAny]
+    authentication_classes = []  # skip DRF auth entirely
+ 
+    def post(self, request):
+        # Get raw payload bytes for signature verification
+        payload   = request.body
+        signature = request.headers.get("X-Paystack-Signature", "")
+ 
+        if not signature:
+            logger.warning("Webhook received with no signature — ignoring")
+            return Response({"status": "ignored"}, status=status.HTTP_200_OK)
+ 
+        try:
+            service = PaystackWebhookService(payload=payload, signature=signature)
+            result  = service.handle()
+            return Response({"status": "ok", "result": result}, status=status.HTTP_200_OK)
+ 
+        except ValueError as e:
+            # Invalid signature — could be someone probing the endpoint
+            logger.warning(f"Webhook signature verification failed: {e}")
+            return Response({"status": "invalid_signature"}, status=status.HTTP_401_UNAUTHORIZED)
+ 
+        except Exception as e:
+            # Something unexpected — log it but still return 200
+            # so Paystack doesn't keep retrying an event we can't process
+            logger.error(f"Webhook processing error: {e}", exc_info=True)
+            return Response({"status": "error", "message": str(e)}, status=status.HTTP_200_OK)
  

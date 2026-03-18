@@ -6,6 +6,7 @@ from payments.views import (
     CardListView,
     CheckoutView,
     CompleteCheckoutView,
+    PaystackWebhookView,
     SetDefaultCardView,
     DeleteCardView,
     SplitPayView
@@ -16,6 +17,8 @@ urlpatterns = [
     path("complete/",              CompleteCheckoutView.as_view()),
     path("split/pay/<uuid:pay_token>/", SplitPayView.as_view()),
     path("charge-card/",                    CardCheckoutView.as_view()),
+
+    path("webhook/paystack/",               PaystackWebhookView.as_view()),
 
     # Cards
     path("cards/",                          CardListView.as_view()),

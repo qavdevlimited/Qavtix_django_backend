@@ -60,12 +60,15 @@ class PaystackWebhookService:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _verify_signature(self):
-        """
-        Verifies the Paystack-Signature header using HMAC-SHA512.
-        Raises ValueError if signature doesn't match.
-        """
-        secret    = settings.PAYSTACK_SECRET_KEY.encode("utf-8")
-        expected  = hmac.new(secret, self.payload, hashlib.sha512).hexdigest()
+        import hmac
+        import hashlib
+
+        secret   = settings.PAYSTACK_SECRET_KEY.encode("utf-8")
+        expected = hmac.new(
+            key=secret,
+            msg=self.payload,
+            digestmod=hashlib.sha512
+        ).hexdigest()
 
         if not hmac.compare_digest(expected, self.signature):
             raise ValueError("Invalid Paystack webhook signature.")

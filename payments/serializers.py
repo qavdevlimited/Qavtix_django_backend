@@ -39,6 +39,7 @@ class CheckoutSerializer(serializers.Serializer):
 
     # Split members — only used when is_split=True
     split_members = SplitMemberSerializer(many=True, required=False, default=list)
+    affiliate_code = serializers.UUIDField(required=False, allow_null=True)
 
     def validate(self, data):
         marketplace_id = data.get("marketplace_listing_id")

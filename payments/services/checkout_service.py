@@ -95,6 +95,7 @@ class CheckoutService:
             metadata={
                 "reference": reference,
                 "flow":      "normal",
+                 "affiliate_code": str(self.data.get("affiliate_code") or "").strip(),
             },
         )
 
@@ -778,6 +779,8 @@ class CompleteCheckoutService:
                     status="active",
                     metadata={},
                 )
+        self._credit_affiliate(order)
+
 
     def _finalise_split(self, split_order):
         from transactions.models import IssuedTicket
@@ -794,6 +797,67 @@ class CompleteCheckoutService:
 
         from payments.tasks import send_split_completion_emails
         send_split_completion_emails.delay(str(split_order.id))
+
+
+    def _credit_affiliate(self, order):
+        from attendee.models import AffiliateLink
+        from django.db.models import F
+
+        affiliate_code = order.metadata.get("affiliate_code", "").strip()
+        print(f"AFFILIATE CODE: '{affiliate_code}'")
+        if not affiliate_code:
+            print("NO CODE — returning early")
+            return
+
+        try:
+            link = AffiliateLink.objects.select_related(
+                "user__attendee_profile"
+            ).get(code=affiliate_code, event=order.event)
+            print(f"LINK FOUND: {link}")
+        except AffiliateLink.DoesNotExist:
+            print(f"LINK NOT FOUND for code={affiliate_code}, event={order.event_id}")
+            return
+        except Exception as e:
+            print(f"EXCEPTION: {e}")
+            return
+
+        event = order.event
+        print(f"affiliate_enabled={event.affiliate_enabled}, commission={event.commission_percentage}")
+
+        if not event.affiliate_enabled:
+            print("AFFILIATE DISABLED — returning")
+            return
+
+        now = timezone.now()
+        if event.affiliate_start and now < event.affiliate_start:
+            print("BEFORE START — returning")
+            return
+        if event.affiliate_end and now > event.affiliate_end:
+            print("AFTER END — returning")
+            return
+
+        commission_pct = Decimal(str(event.commission_percentage or 0))
+        if commission_pct <= 0:
+            print("ZERO COMMISSION — returning")
+            return
+
+        earning_amount = (order.total_amount * commission_pct / 100).quantize(Decimal("0.01"))
+        print(f"EARNING AMOUNT: {earning_amount}")
+
+        _, created = AffliateEarnings.objects.get_or_create(
+            marketplace_order = order,
+            earning_type      = "affiliate",
+            defaults={
+                "link":     link,
+                "attendee": link.user.attendee_profile,
+                "earning":  earning_amount,
+                "status":   "pending",
+            },
+        )
+        print(f"EARNING CREATED: {created}")
+
+        if created:
+            AffiliateLink.objects.filter(id=link.id).update(sales=F("sales") + 1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

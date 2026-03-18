@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.contrib.auth import get_user_model
 
+from attendee.models import AffliateEarnings
 from payments.models import PaymentCard, Payment
 from payments.services.factory import get_gateway
 from transactions.models import SplitParticipant
@@ -675,22 +676,29 @@ class CompleteCheckoutService:
 
     def _complete_marketplace(self, tx, order):
         from marketplace.models import MarketListing
+        from attendee.models import AffliateEarnings  # use your correct import
 
         if order.status == "completed":
             return {"already_complete": True, "order_id": str(order.id)}
 
         listing_id = order.metadata.get("listing_id")
         try:
-            listing = MarketListing.objects.select_for_update().select_related(
-                "ticket"
-            ).get(id=listing_id)
+            # select_for_update with no select_related — avoids outer join issue
+            listing = MarketListing.objects.select_for_update().get(id=listing_id)
         except MarketListing.DoesNotExist:
             raise CheckoutError("Marketplace listing not found.", 404)
+
+        if listing.status == "sold":
+            return {"already_complete": True, "order_id": str(order.id)}
+
+        # Fetch related objects separately after locking
+        issued_ticket   = listing.ticket
+        seller          = listing.seller
+        seller_attendee = seller.attendee_profile
 
         card    = self._maybe_save_card(tx)
         payment = self._persist_payment(order=order, tx=tx, card=card)
 
-        issued_ticket                = listing.ticket
         issued_ticket.original_owner = issued_ticket.owner
         issued_ticket.owner          = self.user
         issued_ticket.status         = "resold"
@@ -704,12 +712,21 @@ class CompleteCheckoutService:
         order.payment_method = "paystack"
         order.save(update_fields=["status", "payment_method"])
 
+        AffliateEarnings.objects.get_or_create(
+            attendee          = seller_attendee,
+            marketplace_order = order,
+            earning_type      = "marketplace",
+            defaults={
+                "earning": listing.price,
+                "status":  "pending",
+            },
+        )
+
         return {
             "flow":     "marketplace",
             "order_id": str(order.id),
             "status":   "completed",
         }
-
     # ── Shared helpers ────────────────────────────────────────────────────────
 
     def _maybe_save_card(self, tx):

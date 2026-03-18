@@ -4,6 +4,8 @@ from django.contrib.contenttypes.models import ContentType
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from payments.services.add_card_service import AddCardConfirmService, AddCardInitiateService
+from payments.services.card_service import CardError, CardListService, DeleteCardService, SetDefaultCardService
 from payments.services.factory import get_gateway
 from payments.models import PaymentCard, Payment
 from payments.serializers import *
@@ -379,182 +381,194 @@ class SplitPayView(APIView):
                 "amount":       init["amount_kobo"],
             },
         )
-
-
-@extend_schema(
-    request=AddCardSerializer,
-    responses={
-        201: PaymentCardSerializer,
-        400: None,
-        500: None
-    },
-    description="Add a new payment card for the authenticated user. Handles Stripe errors and prevents duplicate cards."
-)
-class AddCardView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @transaction.atomic
-    def post(self, request):
-        serializer = AddCardSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        user = request.user
-        country = serializer.validated_data["country"]
-        payment_method_id = serializer.validated_data["payment_method_id"]
-        set_default = serializer.validated_data["set_default"]
-
-        gateway = get_gateway(country)
-
-        try:
-            card = gateway.add_card(
-                user=user,
-                payment_method_id=payment_method_id,
-                email=user.email,
-            )
-        except InvalidRequestError as e:
-            # Stripe says the payment method doesn't exist
-            return api_response(
-                message="Invalid payment method. Please check your card details and try again.",
-                status_code=400,
-                data={}
-            )
-        except StripeError as e:
-            # Catch any other Stripe-related errors
-            return api_response(
-                message=f"Payment service error: {e.user_message or str(e)}",
-                status_code=400,
-                data={}
-            )
-        except Exception as e:
-            # Catch anything else
-            return api_response(
-                message="An unexpected error occurred while adding your card. Please try again later.",
-                status_code=500,
-                data={}
-            )
-        existing_card = PaymentCard.objects.filter(
-            user=user,
-            last4=card.last4,
-            exp_month=card.exp_month,
-            exp_year=card.exp_year,
-            brand=card.brand,
-            provider=card.provider
-        ).first()
-
-        if existing_card:
-            return api_response(
-                message=f"You already have this card: ****{existing_card.last4} ({existing_card.brand})",
-                status_code=400,
-                data={}
-            )
-
-        # Set default if needed
-        if set_default or not PaymentCard.objects.filter(user=user).exists():
-            PaymentCard.objects.filter(user=user).update(is_default=False)
-            card.is_default = True
-        else:
-            card.is_default = False
-
-        card.save()
-
-        return api_response(
-            message="Card added successfully",
-            status_code=201,
-            data=PaymentCardSerializer(card).data
-        )
-
-
-
-@extend_schema(
-    responses={200: PaymentCardSerializer(many=True)},
-    description="Retrieve all payment cards for the authenticated user."
-)
-class ListCardsView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        cards = PaymentCard.objects.filter(user=request.user)
-        return Response(PaymentCardSerializer(cards, many=True).data)
     
-    def list(self, request, *args, **kwargs):
-        queryset = self.get_queryset()
+    
 
-        serializer = self.get_serializer(queryset, many=True)
+class AddCardInitiateView(APIView):
+    """
+    POST /payments/cards/initiate/
 
-        return api_response(
-            message="cards retrieved successfully",
-            status_code=200,
-            data=serializer.data
-        )
-
-
-@extend_schema(
-    request=SetDefaultCardRequestSerializer,
-    responses={200: SetDefaultCardResponseSerializer, 400: None, 404: None},
-    description="Set a specific payment card as the default for the user."
-)
-class SetDefaultCardView(APIView):
+    Initializes a small ₦50 Paystack charge to tokenize the card.
+    Returns a checkout_url — open in Paystack popup.
+    After user pays, call POST /payments/cards/confirm/ with the reference.
+    """
     permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
-    def post(self, request):
-        card_id = request.data.get("card_id")
-        if not card_id:
-            return Response({"error": "card_id is required"}, status=400)
-
-        try:
-            card = PaymentCard.objects.get(id=card_id, user=request.user)
-        except PaymentCard.DoesNotExist:
-            return Response({"error": "Card not found"}, status=404)
-
-        PaymentCard.objects.filter(user=request.user).update(is_default=False)
-        card.is_default = True
-        card.save()
-
-        return api_response(
-            message="card default successfully",
-            status_code=200,
-            data=card.id
-        )
-
-
-
-@extend_schema(
-    description="Delete a payment card for the authenticated user. If the deleted card was default, the next card becomes default.",
-    request=inline_serializer(
-        name="DeleteCardRequest",
-        fields={
-            "card_id": serializers.UUIDField(),
-        }
-    ),
-    responses=inline_serializer(
-        name="DeleteCardResponse",
-        fields={
-            "status": serializers.CharField()
-        }
+    @extend_schema(
+        summary="Initiate add card",
+        description=(
+            "Creates a ₦50 Paystack verification charge. "
+            "Open the returned checkout_url in a Paystack popup. "
+            "The ₦50 is automatically refunded after the card is saved."
+        ),
+        request=AddCardInitiateSerializer,
+        responses={200: OpenApiResponse(description="Checkout URL returned")},
+        examples=[
+            OpenApiExample(
+                "Initiate add card",
+                value={"country": "NG", "currency": "NGN"},
+                request_only=True,
+            )
+        ],
     )
-)
-class DeleteCardView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @transaction.atomic
     def post(self, request):
-        card_id = request.data.get("card_id")
-        if not card_id:
-            return Response({"error": "card_id is required"}, status=400)
+        serializer = AddCardInitiateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
 
         try:
-            card = PaymentCard.objects.get(id=card_id, user=request.user)
-        except PaymentCard.DoesNotExist:
-            return Response({"error": "Card not found"}, status=404)
+            result = AddCardInitiateService(
+                user=request.user,
+                country=data.get("country", "NG"),
+                currency=data.get("currency", "NGN"),
+            ).run()
+        except Exception as e:
+            return api_response(message=str(e), status_code=500)
 
-        was_default = card.is_default
-        card.delete()
+        return api_response(
+            message="Open the checkout URL to add your card.",
+            status_code=200,
+            data=result,
+        )
 
-        if was_default:
-            next_card = PaymentCard.objects.filter(user=request.user).first()
-            if next_card:
-                next_card.is_default = True
-                next_card.save()
 
-        return Response({"status": "deleted"})
+class AddCardConfirmView(APIView):
+    """
+    POST /payments/cards/confirm/
+
+    Verifies the Paystack transaction, saves the card, refunds the ₦50.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Confirm add card",
+        description=(
+            "Verifies the Paystack transaction after popup completes. "
+            "Saves the card and automatically refunds the ₦50 verification charge."
+        ),
+        request=AddCardConfirmSerializer,
+        responses={
+            200: OpenApiResponse(description="Card saved successfully"),
+            402: OpenApiResponse(description="Payment verification failed"),
+        },
+        examples=[
+            OpenApiExample(
+                "Confirm add card",
+                value={
+                    "reference":   "qavtix_addcard_abc123def456",
+                    "country":     "NG",
+                    "set_default": True,
+                },
+                request_only=True,
+            )
+        ],
+    )
+    def post(self, request):
+        serializer = AddCardConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            result = AddCardConfirmService(
+                user=request.user,
+                reference=data["reference"],
+                country=data.get("country", "NG"),
+                set_default=data.get("set_default", True),
+            ).run()
+        except Exception as e:
+            return api_response(message=str(e), status_code=402)
+
+        return api_response(
+            message="Card added successfully." if result["is_new"] else "Card already saved.",
+            status_code=200,
+            data=result,
+        )
+
+
+class CardListView(APIView):
+    """
+    GET /payments/cards/
+
+    Returns all saved payment cards for the authenticated user.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="List saved cards",
+        description="Returns all saved payment cards ordered by default first.",
+        responses={200: OpenApiResponse(description="Cards returned")},
+    )
+    def get(self, request):
+        cards = CardListService(user=request.user).run()
+        return api_response(
+            message="Cards retrieved.",
+            status_code=200,
+            data=cards,
+        )
+
+
+class SetDefaultCardView(APIView):
+    """
+    POST /payments/cards/<card_id>/default/
+
+    Sets a saved card as the default payment method.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Set default card",
+        description="Sets the specified card as default. Unsets all others.",
+        responses={
+            200: OpenApiResponse(description="Default card updated"),
+            404: OpenApiResponse(description="Card not found"),
+        },
+    )
+    def post(self, request, card_id):
+        try:
+            result = SetDefaultCardService(
+                user=request.user,
+                card_id=card_id,
+            ).run()
+        except CardError as e:
+            return api_response(message=e.message, status_code=e.status)
+
+        return api_response(
+            message="Default card updated.",
+            status_code=200,
+            data=result,
+        )
+
+
+class DeleteCardView(APIView):
+    """
+    DELETE /payments/cards/<card_id>/
+
+    Deletes a saved card. If it was the default, the next card becomes default.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Delete card",
+        description=(
+            "Permanently deletes a saved card. "
+            "If deleted card was the default, the next available card is set as default."
+        ),
+        responses={
+            200: OpenApiResponse(description="Card deleted"),
+            404: OpenApiResponse(description="Card not found"),
+        },
+    )
+    def delete(self, request, card_id):
+        try:
+            result = DeleteCardService(
+                user=request.user,
+                card_id=card_id,
+            ).run()
+        except CardError as e:
+            return api_response(message=e.message, status_code=e.status)
+
+        return api_response(
+            message="Card deleted.",
+            status_code=200,
+            data=result,
+        )

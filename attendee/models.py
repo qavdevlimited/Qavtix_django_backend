@@ -109,9 +109,15 @@ class AffliateEarnings(models.Model):
         ("paid", "Paid"),
         ("hold", "Hold"),
     ]
-    link = models.ForeignKey(AffiliateLink, on_delete=models.CASCADE, related_name="earnings",null=True)
+    EARNING_TYPE_CHOICES = [
+        ("affiliate",   "Affiliate Commission"),
+        ("marketplace", "Marketplace Sale"),
+    ]
+    link = models.ForeignKey(AffiliateLink, on_delete=models.CASCADE, related_name="earnings",null=True,blank=True)
+    marketplace_order = models.ForeignKey("transactions.Order",on_delete=models.SET_NULL,null=True,blank=True,related_name="marketplace_earnings", )
     attendee=models.ForeignKey(Attendee,on_delete=models.DO_NOTHING)
     status=models.CharField(choices=STATUS_CHOICES,default="pending")
+    earning_type = models.CharField( max_length=20, choices=EARNING_TYPE_CHOICES, default="affiliate",)
     earning=models.PositiveIntegerField()
     created_at=models.DateField(auto_now=True)
 

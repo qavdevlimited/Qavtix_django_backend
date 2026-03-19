@@ -417,3 +417,11 @@ class TicketReceiptSerializer(serializers.Serializer):
             "total_amount":    str(order.total_amount),
             "status":          payment.status if payment else order.status,
         }
+
+
+
+
+class PrivacySettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Attendee
+        fields = ["show_events_attending", "show_favorites"]

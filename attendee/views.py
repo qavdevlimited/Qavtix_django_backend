@@ -8,7 +8,7 @@ from django.http import Http404
 from attendee.service import get_affiliate_dashboard
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
-from .serializers import (TicketDashboardSerializer,FavoriteEventSerializer, TicketReceiptSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
+from .serializers import (PrivacySettingsSerializer, TicketDashboardSerializer,FavoriteEventSerializer, TicketReceiptSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
                           AffiliateLinkSerializer,WithdrawalHistorySerializer,WithdrawalRequestSerializer,PayoutInformationSerializer,
                           AttendeeProfileSerializer,TwoFactorToggleSerializer,ChangePasswordSerializer,NotificationSettingsSerializer,
                           GroupMemberSerializer,TicketGroupSerializer)
@@ -1421,8 +1421,20 @@ class DownloadMyDataView(APIView):
         # )
 
         return api_response("Your data has been sent to your email", 200, {})
-    
 
+
+class PrivacySettingsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        attendee = Attendee.objects.get(user=request.user)
+        serializer = PrivacySettingsSerializer(attendee)
+        
+        return api_response(
+            message="Privacy settings retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
 
 @extend_schema(
     request=inline_serializer(

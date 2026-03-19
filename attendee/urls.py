@@ -35,6 +35,7 @@ urlpatterns = [
     path('privacy/activity/sharing/',ActivitySharingView.as_view(),name="actsharing"),
     path('privacy/data/download/',DownloadMyDataView.as_view(),name="download_data"),
     path('privacy/account/delete/',RequestAccountDeletionView.as_view(),name="account_deletion"),
+    path('privacy/settings/',PrivacySettingsView.as_view(),name="privacy_settings"),
 
     path("payouts/list/", ListPayoutAccountsView.as_view(), name="list-payouts"),
     path("payouts/add/", AddPayoutAccountView.as_view(), name="add-payout"),

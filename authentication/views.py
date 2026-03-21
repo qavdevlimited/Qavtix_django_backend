@@ -117,11 +117,15 @@ class HostRegisterView(APIView):
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
 
-        return Response({
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-            "email": user.email
-        }, status=201)
+        return api_response(
+            message="Registration Successful",
+            status_code=status.HTTP_201_CREATED,
+            data={
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "email": user.email
+            }
+        )
 
 
 @extend_schema(

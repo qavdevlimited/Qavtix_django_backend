@@ -28,16 +28,15 @@ class HostRegisterSerializer(serializers.Serializer):
 
     full_name = serializers.CharField()
     business_name = serializers.CharField()
-    business_type = serializers.CharField()
-    registration_number = serializers.CharField()
-    tax_id = serializers.CharField()
+    business_type = serializers.CharField(required=False, allow_blank=True)
+    registration_number = serializers.CharField(required=False, allow_blank=True)
+    tax_id = serializers.CharField(required=False, allow_blank=True)
     description = serializers.CharField(max_length=5000)
     phone_number = serializers.CharField()
-    companies_email = serializers.EmailField()
     country = serializers.CharField()
     state = serializers.CharField()
     city = serializers.CharField()
-    postal_code = serializers.CharField()
+    postal_code = serializers.CharField(required=False, allow_blank=True)
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )
@@ -50,22 +49,36 @@ class HostRegisterSerializer(serializers.Serializer):
     )
     agree_to_terms = serializers.BooleanField()
 
+    def validate(self, data):
+        optional_fields = ["business_type", "registration_number", "tax_id", "postal_code"]
+
+        for field in optional_fields:
+            if field in data and data[field] == "":
+                data[field] = None
+
+        return data
+
     def create(self, validated_data):
         categories = validated_data.pop("categories", [])
-
         email = validated_data.pop("email")
         password = validated_data.pop("password")
 
-        user = User.objects.create_user(
-            email=email,
-            username=email,
-            password=password
-        )
+        try:
+            user = User.objects.create_user(
+                email=email,
+                username=email,
+                password=password
+            )
+        except IntegrityError:
+            raise serializers.ValidationError({
+                "detail": "Registration failed. If you already have an account, please login."
+            })
 
         host = Host.objects.create(user=user, **validated_data)
         host.categories.set(categories)
 
         return user
+    
 
 
 

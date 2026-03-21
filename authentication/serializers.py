@@ -87,6 +87,7 @@ class AttendeeRegisterSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=8)
 
     full_name = serializers.CharField()
+    agree_to_terms = serializers.BooleanField()
 
     def validate_email(self, value):
         if User.objects.filter(username=value).exists():

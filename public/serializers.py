@@ -32,12 +32,13 @@ class EventListSerializer(serializers.ModelSerializer):
     event_description=serializers.CharField(source="short_description", read_only=True)
     price=serializers.SerializerMethodField()
     event_name=serializers.CharField(source="title", read_only=True)
+    is_favorite = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
         fields = [
             "id", "event_name", "category", "event_datetime", "end_datetime",
-            "event_location", "event_image", "host", "event_status", "attendees_count","event_description","price"
+            "event_location", "event_image", "host", "event_status", "attendees_count","event_description","price","is_favorite"
         ]
 
 
@@ -108,6 +109,13 @@ class EventListSerializer(serializers.ModelSerializer):
         if host is None:
             return None
         return getattr(host, "business_name", None)
+    
+    def get_is_favorite(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        # Check if the logged-in user has favorited this event
+        return obj.favorited_by.filter(user=request.user).exists()
 
 
 

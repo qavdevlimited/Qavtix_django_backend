@@ -10,12 +10,12 @@ class Attendee(models.Model):
         on_delete=models.CASCADE,
         related_name="attendee_profile"
     )
-    full_name=models.CharField(max_length=50)
-    phone_number= models.CharField(max_length=16)
-    country=models.CharField(max_length=30)
-    state=models.CharField(max_length=30)
-    city=models.CharField(max_length=30)
-    categories = models.ManyToManyField(Category,related_name="attendees", blank=True)
+    full_name=models.CharField(max_length=50, blank=True, null=True)
+    phone_number= models.CharField(max_length=16, blank=True, null=True)
+    country=models.CharField(max_length=30, blank=True, null=True)
+    state=models.CharField(max_length=30, blank=True, null=True)
+    city=models.CharField(max_length=30, blank=True, null=True)
+    categories = models.ManyToManyField(Category,related_name="attendees", blank=True, null=True)
     registration_date=models.DateTimeField(auto_now_add=True)
     agree_to_terms=models.BooleanField(default=False)
     role=models.CharField(max_length=20, default="attendee")

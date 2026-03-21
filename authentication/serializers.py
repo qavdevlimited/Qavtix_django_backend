@@ -5,6 +5,7 @@ from host.models import Host
 from attendee.models import Attendee
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
+from django.db import IntegrityError
 
 User = get_user_model()
 
@@ -73,29 +74,28 @@ class AttendeeRegisterSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=8)
 
     full_name = serializers.CharField()
-    phone_number = serializers.CharField()
-    country = serializers.CharField()
-    state = serializers.CharField()
-    city = serializers.CharField()
-    categories = serializers.PrimaryKeyRelatedField(
-        many=True, queryset=Category.objects.all(), required=False
-    )
-    agree_to_terms = serializers.BooleanField()
+
+    def validate_email(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Registration failed. If you already have an account, please login.")
+        return value
 
     def create(self, validated_data):
-        categories = validated_data.pop("categories", [])
 
         email = validated_data.pop("email")
         password = validated_data.pop("password")
-
-        user = User.objects.create_user(
-            email=email,
-            username=email,
-            password=password
-        )
+        try:
+            user = User.objects.create_user(
+                email=email,
+                username=email,
+                password=password
+            )
+        except IntegrityError:
+            raise serializers.ValidationError({
+                "email": "Registration failed. If you already have an account, please login."
+            })
 
         attendee = Attendee.objects.create(user=user, **validated_data)
-        attendee.categories.set(categories)
 
         return user
 

@@ -70,14 +70,14 @@ class EventSerializer(serializers.ModelSerializer):
             'order_confirmation', 'ticket_delivery', 'reminders', 'post_event_emails',
             'customize_sender_name', 'affiliate_enabled', 'commission_percentage',
             'affiliate_start', 'affiliate_end',
-            'event_location', 'social_links', 'tickets','permissions','event_status','media'
+            'event_location', 'social_links', 'tickets','permissions','event_status','media',"currency"
         ]
     
     def validate(self, attrs):
         instance = getattr(self, "instance", None)  # only exists on update
         if instance and str(instance.status).lower() == "banned":
             from .exceptions import EventBannedException
-            raise EventBannedException()  # <- this triggers your handler
+            raise EventBannedException()  
         return attrs
 
     def create(self, validated_data):

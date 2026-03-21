@@ -78,6 +78,8 @@ class Event(models.Model):
     affiliate_start = models.DateTimeField(null=True, blank=True)
     affiliate_end = models.DateTimeField(null=True, blank=True)
 
+    currency = models.CharField(max_length=10, default="NGN")
+
     host= models.ForeignKey(
         Host,
         on_delete=models.CASCADE,

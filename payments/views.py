@@ -953,3 +953,48 @@ class CompleteSubscriptionView(APIView):
             data=result,
         )
  
+
+class CancelSubscriptionView(APIView):
+    """
+    POST /payments/plans/cancel/
+
+    Marks subscription as cancelled but keeps it active until expires_at.
+    Host keeps all features until expiry — no immediate downgrade.
+    No email sent on cancellation.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        host = getattr(request.user, "host_profile", None)
+        if not host:
+            return api_response(message="You are not a host.", status_code=403)
+
+        sub = (
+            host.subscriptions
+            .filter(status="active")
+            .exclude(plan_slug="free")
+            .order_by("-started_at")
+            .first()
+        )
+
+        if not sub:
+            return api_response(
+                message="No active paid plan to cancel.",
+                status_code=400,
+            )
+
+        sub.status       = "cancelled"
+        sub.cancelled_at = timezone.now()
+        sub.save(update_fields=["status", "cancelled_at"])
+
+        return api_response(
+            message=f"Your {sub.plan.name} plan has been cancelled. "
+                    f"You will have access until {sub.expires_at.strftime('%d %b %Y')}.",
+            status_code=200,
+            data={
+                "plan":       sub.plan_slug,
+                "expires_at": sub.expires_at,
+                "status":     "cancelled",
+            },
+        )

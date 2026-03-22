@@ -2,6 +2,7 @@ from django.urls import path
 from payments.views import (
     AddCardConfirmView,
     AddCardInitiateView,
+    CancelSubscriptionView,
     CardCheckoutView,
     CardListView,
     CheckoutView,
@@ -45,4 +46,5 @@ urlpatterns = [
     path("plans/history/",    SubscriptionHistoryView.as_view()),
     path("plans/subscribe/",  SubscribeInitiateView.as_view()),
     path("plans/complete/",   CompleteSubscriptionView.as_view()),
+    path("plans/cancel/", CancelSubscriptionView.as_view()),
 ]

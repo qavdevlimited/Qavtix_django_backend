@@ -163,30 +163,22 @@ PLAN_LIMITS = {
 
 
 def get_host_plan_slug(host) -> str:
-    """
-    Returns the current active plan slug for a host.
-    Falls back to 'free' if no active subscription or expired.
-    """
     from django.utils import timezone
 
     sub = (
         host.subscriptions
-        .filter(status="active")
+        .filter(status__in=["active", "cancelled"])  # ← include cancelled
         .order_by("-started_at")
         .first()
     )
-    
+
     if not sub:
-        print("No active subscription found, defaulting to free plan.")
         return "free"
 
-    # Free plan has no expiry
     if sub.expires_at and timezone.now() > sub.expires_at:
-        print(f"Subscription expired on {sub.expires_at}, defaulting to free plan.")
         return "free"
 
     return sub.plan_slug
-
 
 
 def has_feature(plan_slug: str, feature: str) -> bool:

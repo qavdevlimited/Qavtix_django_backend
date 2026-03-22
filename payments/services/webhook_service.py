@@ -1,4 +1,4 @@
-# payments/services/webhook_service.py — COMPLETE FILE with featured flow added
+# payments/services/webhook_service.py — COMPLETE FILE
 
 import hashlib
 import hmac
@@ -86,6 +86,8 @@ class PaystackWebhookService:
             return self._complete_marketplace(data, obj)
         elif flow == "featured":
             return self._complete_featured(data, obj)
+        elif flow == "subscription":
+            return self._complete_subscription(data, obj)
         else:
             logger.warning(f"Webhook: unknown flow '{flow}' for reference {reference}")
             return {"handled": False, "reason": f"unknown_flow_{flow}"}
@@ -97,12 +99,17 @@ class PaystackWebhookService:
     def _resolve_flow(self, reference):
         """
         Returns (flow, obj, participant_or_None).
-        obj is Order for normal/split/marketplace, FeaturedEvent for featured.
+
+        Lookup order:
+          1. Order.metadata.reference          → normal / marketplace
+          2. reference ends with _init          → split initiator
+          3. SplitParticipant.payment_reference → split participant
+          4. FeaturedEvent.metadata.reference   → featured event
+          5. HostSubscription.metadata.reference → plan subscription
         """
         from transactions.models import Order, SplitParticipant
-        from events.models import FeaturedEvent
 
-        # 1 — Normal or marketplace: direct match on Order.metadata.reference
+        # 1 — Normal or marketplace
         try:
             order = Order.objects.get(metadata__reference=reference)
             flow  = order.metadata.get("flow", "normal")
@@ -110,7 +117,7 @@ class PaystackWebhookService:
         except Order.DoesNotExist:
             pass
 
-        # 2 — Split initiator: reference ends with _init
+        # 2 — Split initiator
         if reference.endswith("_init"):
             base_ref = reference[:-5]
             try:
@@ -119,7 +126,7 @@ class PaystackWebhookService:
             except Order.DoesNotExist:
                 pass
 
-        # 3 — Split participant: stored on SplitParticipant.payment_reference
+        # 3 — Split participant
         try:
             participant = SplitParticipant.objects.select_related(
                 "split_order__order"
@@ -128,11 +135,20 @@ class PaystackWebhookService:
         except SplitParticipant.DoesNotExist:
             pass
 
-        # 4 — Featured event: reference starts with qavtix_feat_
+        # 4 — Featured event
         try:
+            from events.models import FeaturedEvent
             featured = FeaturedEvent.objects.get(metadata__reference=reference)
             return "featured", featured, None
-        except FeaturedEvent.DoesNotExist:
+        except Exception:
+            pass
+
+        # 5 — Host subscription plan purchase
+        try:
+            from host.models import HostSubscription
+            sub = HostSubscription.objects.get(metadata__reference=reference)
+            return "subscription", sub, None
+        except Exception:
             pass
 
         return None, None, None
@@ -297,7 +313,7 @@ class PaystackWebhookService:
         return {"handled": True, "flow": "marketplace", "order_id": str(order.id)}
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Featured completion — NEW
+    # Featured completion
     # ─────────────────────────────────────────────────────────────────────────
 
     @transaction.atomic
@@ -311,7 +327,6 @@ class PaystackWebhookService:
         currency  = data.get("currency", "NGN")
         amount    = Decimal(str(data.get("amount", 0))) / 100
 
-        # Idempotency — don't create duplicate payment
         existing = Payment.objects.filter(provider_payment_id=reference).first()
         if not existing:
             Payment.objects.create(
@@ -334,18 +349,91 @@ class PaystackWebhookService:
                 },
             )
 
-        # Activate
         featured.status         = "active"
         featured.payment_method = "paystack"
         featured.metadata["completed_by"] = "webhook"
         featured.save(update_fields=["status", "payment_method", "metadata"])
 
-        # Send activation email
         from payments.tasks import send_featured_activation_email
         send_featured_activation_email.delay(str(featured.id))
 
         logger.info(f"Webhook: FeaturedEvent {featured.id} activated")
         return {"handled": True, "flow": "featured", "featured_id": str(featured.id)}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Subscription completion — NEW
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @transaction.atomic
+    def _complete_subscription(self, data, subscription):
+        """
+        Activates a pending host subscription after Paystack confirms payment.
+        Cancels any other active non-free subscriptions for the same host.
+        Sends activation email.
+        """
+        from payments.models import Payment
+        from host.models import HostSubscription
+
+        if subscription.status == "active":
+            return {"handled": True, "skipped": True, "reason": "already_active"}
+
+        reference = data.get("reference", "")
+        currency  = data.get("currency", "NGN")
+        amount    = Decimal(str(data.get("amount", 0))) / 100
+
+        # Persist payment linked to subscription via GenericForeignKey
+        existing = Payment.objects.filter(provider_payment_id=reference).first()
+        if not existing:
+            Payment.objects.create(
+                user=subscription.host.user,
+                email=subscription.host.user.email,
+                card=None,
+                provider="paystack",
+                provider_payment_id=reference,
+                amount=amount,
+                currency=currency,
+                status="succeeded",
+                content_type=ContentType.objects.get_for_model(subscription),
+                object_id=subscription.id,
+                metadata={
+                    "reference":        reference,
+                    "gateway_response": data.get("gateway_response"),
+                    "channel":          data.get("channel"),
+                    "paid_at":          data.get("paid_at"),
+                    "source":           "webhook",
+                },
+            )
+
+        # Cancel any other active non-free subscriptions for this host
+        # (handles upgrade case where webhook fires instead of /complete/)
+        HostSubscription.objects.filter(
+            host=subscription.host,
+            status="active",
+        ).exclude(
+            id=subscription.id,
+        ).exclude(
+            plan_slug="free",
+        ).update(
+            status="cancelled",
+            cancelled_at=timezone.now(),
+        )
+
+        # Activate
+        subscription.status = "active"
+        subscription.metadata["completed_by"] = "webhook"
+        subscription.save(update_fields=["status", "metadata"])
+
+        # Send activation email
+        from payments.tasks import send_plan_activated_email
+        send_plan_activated_email.delay(str(subscription.id))
+
+        logger.info(f"Webhook: subscription {subscription.id} activated — plan: {subscription.plan_slug}")
+        return {
+            "handled":         True,
+            "flow":            "subscription",
+            "subscription_id": str(subscription.id),
+            "plan":            subscription.plan_slug,
+        }
 
     # ─────────────────────────────────────────────────────────────────────────
     # Shared helpers

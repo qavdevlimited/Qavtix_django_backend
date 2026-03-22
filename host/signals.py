@@ -264,3 +264,49 @@ def _create_notification(host_user, notification_type, title, message):
         title=title,
         message=message,
     )
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@receiver(post_save, sender="host.Host")
+def create_free_subscription(sender, instance, created, **kwargs):
+    """
+    Automatically creates a free HostSubscription whenever a new Host is created.
+    This ensures every host always has an active subscription record so
+    the PlanFeatureMixin never gets a None subscription.
+    """
+    if not created:
+        return
+
+    from host.models import HostSubscription
+    from payments.models import HostPlan
+
+    try:
+        free_plan = HostPlan.objects.get(slug="free")
+    except HostPlan.DoesNotExist:
+        logger.warning(
+            f"Free plan not found when creating subscription for host {instance.id}. "
+            f"Run the plan seed command to fix this."
+        )
+        return
+
+    subscription, was_created = HostSubscription.objects.get_or_create(
+        host=instance,
+        plan_slug="free",
+        status="active",
+        defaults={
+            "plan":          free_plan,
+            "billing_cycle": "free",
+            "expires_at":    None,
+            "amount_paid":   0,
+            "metadata":      {},
+        },
+    )
+
+    if was_created:
+        logger.info(f"Free subscription created for host {instance.id}")
+    else:
+        logger.info(f"Free subscription already exists for host {instance.id}")

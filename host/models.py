@@ -229,6 +229,7 @@ class HostSubscription(models.Model):
     )
     billing_cycle = models.CharField(max_length=10, choices=BILLING_CHOICES, default="free")
     status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    amount_paid   = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     started_at    = models.DateTimeField(auto_now_add=True)
     expires_at    = models.DateTimeField(null=True, blank=True)
     cancelled_at  = models.DateTimeField(null=True, blank=True)

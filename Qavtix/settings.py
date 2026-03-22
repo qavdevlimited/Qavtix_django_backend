@@ -319,6 +319,14 @@ CELERY_BEAT_SCHEDULE = {
         "task":     "payments.tasks.send_featured_expiry_reminders",
         "schedule": crontab(minute=0),       # every hour
     },
+    "expire-host-subscriptions": {
+        "task":     "payments.tasks.expire_host_subscriptions",
+        "schedule": crontab(minute="*/30"),
+    },
+    "send-plan-expiry-reminders": {
+        "task":     "payments.tasks.send_plan_expiry_reminders",
+        "schedule": crontab(minute=0),
+    },
 }
 
 

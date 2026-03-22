@@ -14,6 +14,7 @@ from payments.services.checkout_service import CheckoutService, CheckoutError
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from decimal import Decimal
 from django.utils import timezone
+from payments.services.subscription_service import CompleteSubscriptionService, SubscriptionError, SubscriptionInitiateService
 from payments.services.webhook_service import PaystackWebhookService
 from public.response import flatten_errors,api_response
 from stripe import StripeError, InvalidRequestError
@@ -707,4 +708,248 @@ class PaystackWebhookView(APIView):
             # so Paystack doesn't keep retrying an event we can't process
             logger.error(f"Webhook processing error: {e}", exc_info=True)
             return Response({"status": "error", "message": str(e)}, status=status.HTTP_200_OK)
+ 
+
+
+
+
+class HostPlanListView(APIView):
+    """
+    GET /payments/plans/
+ 
+    Returns all available host plans with pricing.
+    Public — no auth needed. Used on the pricing page.
+    """
+    permission_classes = [AllowAny]
+ 
+    @extend_schema(
+        summary="List host plans",
+        description="Returns all available host subscription plans with monthly and annual pricing.",
+        responses={200: OpenApiResponse(description="Plans returned")},
+    )
+    def get(self, request):
+        from payments.models import HostPlan
+ 
+        plans = HostPlan.objects.filter(is_active=True).order_by("monthly_price")
+        serializer = HostPlanSerializer(plans, many=True)
+ 
+        return api_response(
+            message="Plans retrieved successfully.",
+            status_code=200,
+            data=serializer.data,
+        )
+ 
+ 
+class CurrentSubscriptionView(APIView):
+    """
+    GET /payments/plans/current/
+ 
+    Returns the host's current active subscription.
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    def get(self, request):
+        host = getattr(request.user, "host_profile", None)
+        if not host:
+            return api_response(message="You are not a host.", status_code=403)
+ 
+        sub = (
+            host.subscriptions
+            .filter(status="active")
+            .order_by("-started_at")
+            .first()
+        )
+ 
+        if not sub:
+            return api_response(
+                message="No active subscription found.",
+                status_code=200,
+                data={"plan": "free", "status": "active", "expires_at": None},
+            )
+ 
+        now            = timezone.now()
+        days_remaining = (
+            (sub.expires_at - now).days
+            if sub.expires_at else None
+        )
+ 
+        return api_response(
+            message="Current subscription retrieved.",
+            status_code=200,
+            data={
+                "subscription_id": str(sub.id),
+                "plan":            sub.plan_slug,
+                "plan_name":       sub.plan.name,
+                "billing_cycle":   sub.billing_cycle,
+                "status":          sub.status,
+                "amount_paid":     str(sub.amount_paid),
+                "started_at":      sub.started_at,
+                "expires_at":      sub.expires_at,
+                "days_remaining":  days_remaining,
+            },
+        )
+ 
+ 
+class SubscriptionHistoryView(APIView):
+    """
+    GET /payments/plans/history/
+ 
+    Returns all subscription records for the host.
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    def get(self, request):
+        host = getattr(request.user, "host_profile", None)
+        if not host:
+            return api_response(message="You are not a host.", status_code=403)
+ 
+        subs = host.subscriptions.select_related("plan").order_by("-started_at")
+ 
+        data = [
+            {
+                "subscription_id": str(s.id),
+                "plan":            s.plan_slug,
+                "plan_name":       s.plan.name,
+                "billing_cycle":   s.billing_cycle,
+                "status":          s.status,
+                "amount_paid":     str(s.amount_paid),
+                "started_at":      s.started_at,
+                "expires_at":      s.expires_at,
+                "cancelled_at":    s.cancelled_at,
+            }
+            for s in subs
+        ]
+ 
+        return api_response(
+            message="Subscription history retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+class SubscribeInitiateView(APIView):
+    """
+    POST /payments/plans/subscribe/
+ 
+    Initiates a plan purchase.
+ 
+    With card_id:    charges saved card directly → activates immediately
+    Without card_id: returns checkout_url → FE opens popup → call /complete/
+ 
+    Upgrade rules:
+      - Cannot buy same plan you already have
+      - Cannot downgrade while current plan is active
+      - Upgrading cancels current plan and activates new one immediately
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    @extend_schema(
+        summary="Initiate plan subscription",
+        request=SubscribeInitiateSerializer,
+        responses={
+            200: OpenApiResponse(description="Payment initiated or plan activated"),
+            400: OpenApiResponse(description="Already on this plan or downgrade attempt"),
+            402: OpenApiResponse(description="Card charge failed"),
+            403: OpenApiResponse(description="Not a host"),
+            404: OpenApiResponse(description="Plan or card not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Popup flow",
+                value={
+                    "plan_slug":     "pro",
+                    "billing_cycle": "monthly",
+                    "country":       "NG",
+                    "currency":      "NGN",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Saved card flow",
+                value={
+                    "plan_slug":     "enterprise",
+                    "billing_cycle": "annual",
+                    "country":       "NG",
+                    "currency":      "NGN",
+                    "card_id":       "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                },
+                request_only=True,
+            ),
+        ],
+    )
+    @transaction.atomic
+    def post(self, request):
+        serializer = SubscribeInitiateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+ 
+        try:
+            result = SubscriptionInitiateService(
+                user=request.user,
+                data=serializer.validated_data,
+            ).run()
+        except SubscriptionError as e:
+            transaction.set_rollback(True)
+            return api_response(message=e.message, status_code=e.status)
+        except Exception as e:
+            transaction.set_rollback(True)
+            return api_response(message=f"Failed: {str(e)}", status_code=500)
+ 
+        msg = "Plan activated." if result.get("status") == "active" else "Proceed to payment."
+        return api_response(message=msg, status_code=200, data=result)
+ 
+ 
+class CompleteSubscriptionView(APIView):
+    """
+    POST /payments/plans/complete/
+ 
+    Called after Paystack popup completes for plan purchase.
+    Not needed if card_id was used in initiate.
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    @extend_schema(
+        summary="Complete plan subscription payment",
+        request=CompleteSubscriptionSerializer,
+        responses={
+            200: OpenApiResponse(description="Plan activated"),
+            402: OpenApiResponse(description="Payment verification failed"),
+            404: OpenApiResponse(description="Subscription record not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Complete plan payment",
+                value={
+                    "reference": "qavtix_sub_abc123def456",
+                    "save_card": True,
+                    "country":   "NG",
+                },
+                request_only=True,
+            )
+        ],
+    )
+    @transaction.atomic
+    def post(self, request):
+        serializer = CompleteSubscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+ 
+        try:
+            result = CompleteSubscriptionService(
+                user=request.user,
+                reference=data["reference"],
+                save_card=data.get("save_card", False),
+                country=data.get("country", "NG"),
+            ).run()
+        except SubscriptionError as e:
+            transaction.set_rollback(True)
+            return api_response(message=e.message, status_code=e.status)
+        except Exception as e:
+            transaction.set_rollback(True)
+            return api_response(message=f"Completion failed: {str(e)}", status_code=500)
+ 
+        return api_response(
+            message="Your plan is now active!",
+            status_code=200,
+            data=result,
+        )
  

@@ -6,10 +6,15 @@ from payments.views import (
     CardListView,
     CheckoutView,
     CompleteCheckoutView,
+    CompleteSubscriptionView,
+    CurrentSubscriptionView,
+    HostPlanListView,
     PaystackWebhookView,
     SetDefaultCardView,
     DeleteCardView,
-    SplitPayView
+    SplitPayView,
+    SubscribeInitiateView,
+    SubscriptionHistoryView
 )
 from transactions.views import CompleteFeaturedView, FeaturedInitiateView, FeaturedPlanListView
 
@@ -33,4 +38,11 @@ urlpatterns = [
     path("featured/plans/",     FeaturedPlanListView.as_view()),
     path("featured/initiate/",  FeaturedInitiateView.as_view()),
     path("featured/complete/",  CompleteFeaturedView.as_view()),
+
+
+    path("plans/",            HostPlanListView.as_view()),
+    path("plans/current/",    CurrentSubscriptionView.as_view()),
+    path("plans/history/",    SubscriptionHistoryView.as_view()),
+    path("plans/subscribe/",  SubscribeInitiateView.as_view()),
+    path("plans/complete/",   CompleteSubscriptionView.as_view()),
 ]

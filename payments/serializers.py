@@ -181,3 +181,40 @@ class CardCheckoutSerializer(serializers.Serializer):
  
         return data
  
+
+
+class HostPlanSerializer(serializers.Serializer):
+    """Read-only — returned when listing available plans."""
+    slug          = serializers.CharField()
+    name          = serializers.CharField()
+    monthly_price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    annual_price  = serializers.DecimalField(max_digits=10, decimal_places=2)
+    features      = serializers.DictField()
+
+
+class SubscribeInitiateSerializer(serializers.Serializer):
+    plan_slug     = serializers.ChoiceField(choices=["pro", "enterprise"])
+    billing_cycle = serializers.ChoiceField(choices=["monthly", "annual"], default="monthly")
+    country       = serializers.CharField(default="NG")
+    currency      = serializers.CharField(default="NGN")
+    card_id       = serializers.UUIDField(required=False, allow_null=True)
+    save_card     = serializers.BooleanField(default=False)
+
+
+class CompleteSubscriptionSerializer(serializers.Serializer):
+    reference = serializers.CharField()
+    save_card = serializers.BooleanField(default=False)
+    country   = serializers.CharField(default="NG")
+
+
+class CurrentSubscriptionSerializer(serializers.Serializer):
+    """Returned on GET /payments/plans/current/"""
+    subscription_id = serializers.UUIDField()
+    plan            = serializers.CharField()
+    plan_name       = serializers.CharField()
+    billing_cycle   = serializers.CharField()
+    status          = serializers.CharField()
+    amount_paid     = serializers.DecimalField(max_digits=10, decimal_places=2)
+    started_at      = serializers.DateTimeField()
+    expires_at      = serializers.DateTimeField(allow_null=True)
+    days_remaining  = serializers.IntegerField(allow_null=True)

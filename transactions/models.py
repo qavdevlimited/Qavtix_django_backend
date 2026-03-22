@@ -30,6 +30,90 @@ class FeaturedEvent(models.Model):
 
     def __str__(self):
         return f"{self.event.title} featured by {self.user.username}"
+    
+
+
+class FeaturedPlan(models.Model):
+    """
+    Available featured event pricing tiers.
+    Admin manages these — no code changes needed to update prices.
+    """
+ 
+    PLAN_CHOICES = [
+        ("basic",    "Basic"),
+        ("standard", "Standard"),
+        ("advanced", "Advanced"),
+        ("premium",  "Premium"),
+    ]
+ 
+    slug           = models.CharField(max_length=20, choices=PLAN_CHOICES, unique=True)
+    name           = models.CharField(max_length=50)
+    duration_days  = models.PositiveIntegerField()
+    price          = models.DecimalField(max_digits=10, decimal_places=2)
+    original_price = models.DecimalField(max_digits=10, decimal_places=2)
+    features       = models.JSONField(default=list)
+    is_active      = models.BooleanField(default=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        ordering = ["duration_days"]
+ 
+    def __str__(self):
+        return f"{self.name} — ₦{self.price} / {self.duration_days} day(s)"
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# Seed data — run once in shell after migration:
+# from transactions.models import FeaturedPlan, FEATURED_PLANS_SEED
+# for p in FEATURED_PLANS_SEED:
+#     FeaturedPlan.objects.get_or_create(slug=p["slug"], defaults=p)
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+FEATURED_PLANS_SEED = [
+    {
+        "slug": "basic", "name": "Basic", "duration_days": 1,
+        "price": 45000, "original_price": 50000,
+        "features": [
+            "Featured in Top Events for 24 hours",
+            "Priority placement in event feed",
+            '"Featured" badge on your post',
+        ],
+    },
+    {
+        "slug": "standard", "name": "Standard", "duration_days": 3,
+        "price": 85000, "original_price": 130000,
+        "features": [
+            "Featured for 72 hours",
+            "Higher visibility across homepage & search",
+            "Featured badge + boosted impressions",
+            "Social media story promotion",
+        ],
+    },
+    {
+        "slug": "advanced", "name": "Advanced", "duration_days": 7,
+        "price": 165000, "original_price": 300000,
+        "features": [
+            "Featured for 7 days",
+            "Maximum visibility & sustained reach",
+            "Featured badge + boosted impressions",
+            "Weekly main social media post + story promotion",
+            "Performance insights",
+        ],
+    },
+    {
+        "slug": "premium", "name": "Premium", "duration_days": 30,
+        "price": 600000, "original_price": 1300000,
+        "features": [
+            "Featured for 30 days",
+            "Dominant visibility across homepage, event feed & search",
+            "Featured badge + continuous boosted impressions",
+            "Monthly main social media post + story promotion",
+            "Email / newsletter feature",
+            "Advanced performance insights & engagement analytics",
+        ],
+    },
+]
+ 
 
 
 class Order(models.Model):

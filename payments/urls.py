@@ -11,6 +11,8 @@ from payments.views import (
     DeleteCardView,
     SplitPayView
 )
+from transactions.views import CompleteFeaturedView, FeaturedInitiateView, FeaturedPlanListView
+
 
 urlpatterns = [
     path("checkout/",              CheckoutView.as_view()),
@@ -28,8 +30,7 @@ urlpatterns = [
     path("cards/<uuid:card_id>/",           DeleteCardView.as_view()),
 
 
-    # path("cards/add/", AddCardView.as_view(), name="add-card"),
-    # path("cards/list/", ListCardsView.as_view(), name="list-cards"),
-    # path("cards/set-default/", SetDefaultCardView.as_view(), name="set-default-card"),
-    # path("cards/delete/", DeleteCardView.as_view(), name="delete-card"),
+    path("featured/plans/",     FeaturedPlanListView.as_view()),
+    path("featured/initiate/",  FeaturedInitiateView.as_view()),
+    path("featured/complete/",  CompleteFeaturedView.as_view()),
 ]

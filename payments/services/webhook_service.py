@@ -1,4 +1,5 @@
-# payments/services/webhook_service.py
+# payments/services/webhook_service.py — COMPLETE FILE with featured flow added
+
 import hashlib
 import hmac
 import logging
@@ -12,23 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class PaystackWebhookService:
-    """
-    Handles all incoming Paystack webhook events.
-
-    Events handled:
-      - charge.success  → normal purchase, split initiator, split participant, marketplace
-      - transfer.success / transfer.failed → payout notifications (future use)
-
-    Security:
-      - Verifies Paystack-Signature header using HMAC-SHA512
-      - Idempotent — safe to receive the same event multiple times
-      - All DB writes are atomic per event
-
-    Flow:
-      Paystack → POST /payments/webhook/
-      WebhookView → verify signature → PaystackWebhookService.handle()
-      Service → route by event type + metadata → complete the order
-    """
 
     def __init__(self, payload: bytes, signature: str):
         self.payload   = payload
@@ -42,7 +26,7 @@ class PaystackWebhookService:
         self._verify_signature()
 
         import json
-        event = json.loads(self.payload)
+        event      = json.loads(self.payload)
         event_type = event.get("event")
         data       = event.get("data", {})
 
@@ -51,7 +35,6 @@ class PaystackWebhookService:
         if event_type == "charge.success":
             return self._handle_charge_success(data)
 
-        # Other events — acknowledge but don't process yet
         logger.info(f"Unhandled webhook event type: {event_type}")
         return {"handled": False, "event": event_type}
 
@@ -60,21 +43,18 @@ class PaystackWebhookService:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _verify_signature(self):
-        import hmac
-        import hashlib
-
         secret   = settings.PAYSTACK_SECRET_KEY.encode("utf-8")
         expected = hmac.new(
             key=secret,
             msg=self.payload,
-            digestmod=hashlib.sha512
+            digestmod=hashlib.sha512,
         ).hexdigest()
 
         if not hmac.compare_digest(expected, self.signature):
             raise ValueError("Invalid Paystack webhook signature.")
 
     # ─────────────────────────────────────────────────────────────────────────
-    # charge.success handler
+    # charge.success — routes to correct flow
     # ─────────────────────────────────────────────────────────────────────────
 
     def _handle_charge_success(self, data):
@@ -84,43 +64,45 @@ class PaystackWebhookService:
             logger.error("Webhook charge.success received with no reference")
             return {"handled": False, "reason": "no_reference"}
 
-        # Idempotency check — if we already processed this reference, skip
+        # Idempotency — already processed
         from payments.models import Payment
         if Payment.objects.filter(provider_payment_id=reference).exists():
-            logger.info(f"Webhook already processed for reference: {reference} — skipping")
+            logger.info(f"Webhook already processed: {reference} — skipping")
             return {"handled": True, "skipped": True, "reason": "already_processed"}
 
-        # Route to the correct flow
-        flow, order, participant = self._resolve_flow(reference)
+        flow, obj, participant = self._resolve_flow(reference)
 
         if flow is None:
-            logger.warning(f"Webhook: no order found for reference {reference}")
-            return {"handled": False, "reason": "order_not_found"}
+            logger.warning(f"Webhook: no record found for reference {reference}")
+            return {"handled": False, "reason": "record_not_found"}
 
         if flow == "normal":
-            return self._complete_normal(data, order)
+            return self._complete_normal(data, obj)
         elif flow == "split_initiator":
-            return self._complete_split_initiator(data, order, participant)
+            return self._complete_split_initiator(data, obj, participant)
         elif flow == "split_participant":
             return self._complete_split_participant(data, participant)
         elif flow == "marketplace":
-            return self._complete_marketplace(data, order)
+            return self._complete_marketplace(data, obj)
+        elif flow == "featured":
+            return self._complete_featured(data, obj)
         else:
             logger.warning(f"Webhook: unknown flow '{flow}' for reference {reference}")
             return {"handled": False, "reason": f"unknown_flow_{flow}"}
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Flow resolution — same logic as CompleteCheckoutService._find_order_and_flow
+    # Flow resolution
     # ─────────────────────────────────────────────────────────────────────────
 
     def _resolve_flow(self, reference):
         """
-        Returns (flow, order, participant_or_None).
-        Tries four lookup strategies matching all reference formats.
+        Returns (flow, obj, participant_or_None).
+        obj is Order for normal/split/marketplace, FeaturedEvent for featured.
         """
         from transactions.models import Order, SplitParticipant
+        from events.models import FeaturedEvent
 
-        # 1 — Direct match on Order.metadata.reference (normal or marketplace)
+        # 1 — Normal or marketplace: direct match on Order.metadata.reference
         try:
             order = Order.objects.get(metadata__reference=reference)
             flow  = order.metadata.get("flow", "normal")
@@ -137,13 +119,20 @@ class PaystackWebhookService:
             except Order.DoesNotExist:
                 pass
 
-        # 3 — Split participant: reference stored on SplitParticipant
+        # 3 — Split participant: stored on SplitParticipant.payment_reference
         try:
             participant = SplitParticipant.objects.select_related(
                 "split_order__order"
             ).get(payment_reference=reference)
             return "split_participant", participant.split_order.order, participant
         except SplitParticipant.DoesNotExist:
+            pass
+
+        # 4 — Featured event: reference starts with qavtix_feat_
+        try:
+            featured = FeaturedEvent.objects.get(metadata__reference=reference)
+            return "featured", featured, None
+        except FeaturedEvent.DoesNotExist:
             pass
 
         return None, None, None
@@ -157,7 +146,7 @@ class PaystackWebhookService:
         if order.status == "completed":
             return {"handled": True, "skipped": True, "reason": "already_completed"}
 
-        payment = self._persist_payment(data, order)
+        payment = self._persist_payment_for_order(data, order)
         self._finalise_order(order, payment)
         self._credit_affiliate(order)
 
@@ -174,14 +163,12 @@ class PaystackWebhookService:
 
         split_order = order.split_order
 
-        # Find initiator participant if not passed
         if participant is None:
             try:
                 participant = split_order.participants.get(
                     payment_reference=data.get("reference")
                 )
             except SplitParticipant.DoesNotExist:
-                # Fall back to finding by split_order initiated_by
                 try:
                     participant = split_order.participants.get(
                         user=split_order.initiated_by
@@ -193,7 +180,7 @@ class PaystackWebhookService:
         if participant.status == "paid":
             return {"handled": True, "skipped": True, "reason": "already_paid"}
 
-        payment = self._persist_payment(data, order)
+        payment = self._persist_payment_for_order(data, order)
 
         participant.status            = "paid"
         participant.payment           = payment
@@ -231,10 +218,10 @@ class PaystackWebhookService:
             return {"handled": True, "skipped": True, "reason": "already_paid"}
 
         if split_order.is_expired():
-            logger.warning(f"Webhook: split order {split_order.id} expired — ignoring payment")
+            logger.warning(f"Webhook: split order {split_order.id} expired")
             return {"handled": False, "reason": "split_expired"}
 
-        payment = self._persist_payment(data, split_order.order)
+        payment = self._persist_payment_for_order(data, split_order.order)
 
         participant.status            = "paid"
         participant.payment           = payment
@@ -279,14 +266,11 @@ class PaystackWebhookService:
         if listing.status == "sold":
             return {"handled": True, "skipped": True, "reason": "already_sold"}
 
-        # Find buyer — the order user
-        buyer = order.user
-
-        payment = self._persist_payment(data, order)
+        payment = self._persist_payment_for_order(data, order)
 
         issued_ticket                = listing.ticket
         issued_ticket.original_owner = issued_ticket.owner
-        issued_ticket.owner          = buyer
+        issued_ticket.owner          = order.user
         issued_ticket.status         = "resold"
         issued_ticket.transferred_at = timezone.now()
         issued_ticket.save(update_fields=["owner", "original_owner", "status", "transferred_at"])
@@ -298,7 +282,6 @@ class PaystackWebhookService:
         order.payment_method = "paystack"
         order.save(update_fields=["status", "payment_method"])
 
-        # Credit seller
         seller_attendee = listing.seller.attendee_profile
         AffliateEarnings.objects.get_or_create(
             attendee          = seller_attendee,
@@ -314,17 +297,68 @@ class PaystackWebhookService:
         return {"handled": True, "flow": "marketplace", "order_id": str(order.id)}
 
     # ─────────────────────────────────────────────────────────────────────────
+    # Featured completion — NEW
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @transaction.atomic
+    def _complete_featured(self, data, featured):
+        from payments.models import Payment
+
+        if featured.status == "active":
+            return {"handled": True, "skipped": True, "reason": "already_active"}
+
+        reference = data.get("reference", "")
+        currency  = data.get("currency", "NGN")
+        amount    = Decimal(str(data.get("amount", 0))) / 100
+
+        # Idempotency — don't create duplicate payment
+        existing = Payment.objects.filter(provider_payment_id=reference).first()
+        if not existing:
+            Payment.objects.create(
+                user=featured.user,
+                email=featured.user.email,
+                card=None,
+                provider="paystack",
+                provider_payment_id=reference,
+                amount=amount,
+                currency=currency,
+                status="succeeded",
+                content_type=ContentType.objects.get_for_model(featured),
+                object_id=featured.id,
+                metadata={
+                    "reference":        reference,
+                    "gateway_response": data.get("gateway_response"),
+                    "channel":          data.get("channel"),
+                    "paid_at":          data.get("paid_at"),
+                    "source":           "webhook",
+                },
+            )
+
+        # Activate
+        featured.status         = "active"
+        featured.payment_method = "paystack"
+        featured.metadata["completed_by"] = "webhook"
+        featured.save(update_fields=["status", "payment_method", "metadata"])
+
+        # Send activation email
+        from payments.tasks import send_featured_activation_email
+        send_featured_activation_email.delay(str(featured.id))
+
+        logger.info(f"Webhook: FeaturedEvent {featured.id} activated")
+        return {"handled": True, "flow": "featured", "featured_id": str(featured.id)}
+
+    # ─────────────────────────────────────────────────────────────────────────
     # Shared helpers
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _persist_payment(self, data, order):
+    def _persist_payment_for_order(self, data, order):
+        """Creates Payment linked to an Order via GenericForeignKey."""
         from payments.models import Payment
 
-        currency = data.get("currency", "NGN")
-        amount   = Decimal(str(data.get("amount", 0))) / 100  # kobo → naira
         reference = data.get("reference", "")
+        currency  = data.get("currency", "NGN")
+        amount    = Decimal(str(data.get("amount", 0))) / 100
 
-        # Idempotency — don't create duplicate payment records
         existing = Payment.objects.filter(provider_payment_id=reference).first()
         if existing:
             return existing
@@ -332,7 +366,7 @@ class PaystackWebhookService:
         return Payment.objects.create(
             user=order.user,
             email=order.email,
-            card=None,   # webhook doesn't have card context
+            card=None,
             provider="paystack",
             provider_payment_id=reference,
             amount=amount,

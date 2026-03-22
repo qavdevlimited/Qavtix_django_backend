@@ -1009,16 +1009,17 @@ class SalesGraphService:
         base = (
             Order.objects
             .filter(event__host=host, status="completed")
-            .filter(event__location__isnull=False)
+            .filter(event__event_location__isnull=False)  # JOIN — no subquery needed
         )
+
         if event_id:
             base = base.filter(event_id=event_id)
 
         rows = (
             base
             .values(
-                city=F("event__location__city"),
-                state=F("event__location__state"),
+                city=F("event__event_location__city"),
+                state=F("event__event_location__state"),
             )
             .annotate(
                 tickets=Sum("tickets__quantity"),
@@ -1027,13 +1028,13 @@ class SalesGraphService:
             .order_by("-tickets")
         )
 
-        # Map clicks (views_count) per city from events
-        ev_qs = Event.objects.filter(host=host).select_related("location")
+        ev_qs = Event.objects.filter(host=host).select_related("event_location")
         if event_id:
             ev_qs = ev_qs.filter(id=event_id)
+
         click_map = {}
         for ev in ev_qs:
-            loc = getattr(ev, "location", None)
+            loc = getattr(ev, "event_location", None)
             if loc:
                 key = (loc.city, loc.state)
                 click_map[key] = click_map.get(key, 0) + ev.views_count
@@ -1047,6 +1048,7 @@ class SalesGraphService:
                 "clicks":  click_map.get((r["city"], r["state"]), 0),
             }
             for r in rows
+            if r["city"]
         ]
 
         best = max(locations, key=lambda x: x["tickets"], default=None)
@@ -1062,6 +1064,39 @@ class SalesGraphService:
 
         return {"locations": locations, "best_location": best_location}
 
+    @staticmethod
+    def get_all_graphs(host, filter_type, year, event_id, plan_slug):
+        """
+        Combined method for SalesGraphsView.
+        Handles plan-based feature gating — locked features return None
+        so no unnecessary DB queries run for plans that can't access them.
+        """
+        from host.plan_limits import has_feature
+
+        # sales_breakdown is free for all plans — always compute
+        breakdown = SalesGraphService.get_sales_breakdown(host, event_id=event_id)
+
+        # revenue_chart — enterprise only
+        revenue = (
+            SalesGraphService.get_revenue_chart(
+                host, filter_type=filter_type, year=year, event_id=event_id
+            )
+            if has_feature(plan_slug, "revenue_chart") else None
+        )
+
+        # week_analysis — enterprise only
+        week = (
+            SalesGraphService.get_week_analysis(host, event_id=event_id)
+            if has_feature(plan_slug, "week_analysis") else None
+        )
+
+        # geo_breakdown — enterprise only
+        geo = (
+            SalesGraphService.get_geo_breakdown(host, event_id=event_id)
+            if has_feature(plan_slug, "geo_breakdown") else None
+        )
+
+        return breakdown, revenue, week, geo
 
 # ── Endpoint 3: Transactions ───────────────────────────────────────────────────
 

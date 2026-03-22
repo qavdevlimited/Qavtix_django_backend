@@ -204,3 +204,45 @@ class HostNotification(models.Model):
 
     def __str__(self):
         return f"{self.notification_type} — {self.title}"
+
+
+
+# host/models.py
+
+class HostSubscription(models.Model):
+    STATUS_CHOICES = [
+        ("active",    "Active"),
+        ("expired",   "Expired"),
+        ("cancelled", "Cancelled"),
+    ]
+    BILLING_CHOICES = [
+        ("monthly", "Monthly"),
+        ("annual",  "Annual"),
+        ("free",    "Free"),
+    ]
+
+    host          = models.ForeignKey(
+        Host, on_delete=models.CASCADE, related_name="subscriptions"
+    )
+    plan          = models.ForeignKey(
+        "payments.HostPlan", on_delete=models.PROTECT
+    )
+    billing_cycle = models.CharField(max_length=10, choices=BILLING_CHOICES, default="free")
+    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
+    started_at    = models.DateTimeField(auto_now_add=True)
+    expires_at    = models.DateTimeField(null=True, blank=True)
+    cancelled_at  = models.DateTimeField(null=True, blank=True)
+    plan_slug     = models.CharField(max_length=20, default="free")
+    metadata      = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def is_expired(self):
+        if self.expires_at is None:
+            return False
+        from django.utils import timezone
+        return timezone.now() > self.expires_at
+
+    def __str__(self):
+        return f"{self.host} — {self.plan_slug} — {self.status}"

@@ -40,13 +40,19 @@ from datetime import date, timedelta
 
 from drf_spectacular.utils import extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
+from .mixin import PlanFeatureMixin
 
 
-
-class EventCreateView(generics.CreateAPIView):
+class EventCreateView(PlanFeatureMixin,generics.CreateAPIView):
     queryset = Event.objects.all()
     serializer_class = EventSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    check_active_events    = True
+    check_ticket_types     = True
+    check_promo_codes      = True
+    check_team_permissions = True
+    check_affiliate = True
 
     def get_serializer_context(self):
         # pass request to serializer so it can access user
@@ -55,6 +61,8 @@ class EventCreateView(generics.CreateAPIView):
         return context
    
     def create(self, request, *args, **kwargs):
+        if getattr(self, "_blocked_response", None):
+            return self._blocked_response
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=False)  
         if not serializer.is_valid():
@@ -184,7 +192,7 @@ class EventDashboardView(generics.ListAPIView):
     ],
     responses=CustomerListSerializer(many=True),
 )
-class CustomerListView(generics.ListAPIView):
+class CustomerListView(PlanFeatureMixin,generics.ListAPIView):
     """
     GET /customers/
 
@@ -197,6 +205,7 @@ class CustomerListView(generics.ListAPIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = CustomerListSerializer  # satisfies drf-spectacular introspection
+    required_feature = "customer_profile_insights"
 
     def _get_host(self):
         return getattr(self.request.user, "host_profile", None)
@@ -313,7 +322,7 @@ class CustomerListView(generics.ListAPIView):
     ],
     responses=CustomerOrderHistorySerializer(many=True),
 )
-class CustomerDetailView(generics.ListAPIView):
+class CustomerDetailView(PlanFeatureMixin,generics.ListAPIView):
     """
     GET /customers/<user_id>/
 
@@ -329,6 +338,7 @@ class CustomerDetailView(generics.ListAPIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = CustomerOrderHistorySerializer  # satisfies drf-spectacular introspection
+    required_feature = "customer_profile_insights"
 
     def _get_host(self):
         return getattr(self.request.user, "host_profile", None)
@@ -873,9 +883,11 @@ class ChangePasswordView(APIView):
     ],
     responses=PromoCodeListSerializer(many=True),
 )
-class PromoCodeListView(generics.ListAPIView):
+class PromoCodeListView(PlanFeatureMixin,generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class   = PromoCodeListSerializer
+    required_feature = "promo_codes"
+
 
     def list(self, request, *args, **kwargs):
         host = _get_host(request)
@@ -907,8 +919,10 @@ class PromoCodeListView(generics.ListAPIView):
     operation_id="host_promo_code_create",
     request=PromoCodeCreateSerializer,
 )
-class PromoCodeCreateView(APIView):
+class PromoCodeCreateView(PlanFeatureMixin,APIView):
     permission_classes = [permissions.IsAuthenticated]
+    required_feature       = "promo_codes"       # blocks free plan entirely
+    check_promo_code_limit = True                   # checks limit but doesn't block — allows custom error handling
 
     def post(self, request):
         host = _get_host(request)
@@ -950,9 +964,10 @@ class PromoCodeCreateView(APIView):
     ],
     responses=AffiliateListSerializer(many=True),
 )
-class AffiliateListView(generics.ListAPIView):
+class AffiliateListView(PlanFeatureMixin,generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class   = AffiliateListSerializer
+    required_feature = "affiliate"
 
     def list(self, request, *args, **kwargs):
         host = _get_host(request)
@@ -993,7 +1008,7 @@ class AffiliateListView(generics.ListAPIView):
     ],
     responses=EmailCampaignListSerializer(many=True),
 )
-class EmailCampaignListView(generics.ListAPIView):
+class EmailCampaignListView(PlanFeatureMixin,generics.ListAPIView):
     """
     GET /campaigns/
 
@@ -1007,6 +1022,7 @@ class EmailCampaignListView(generics.ListAPIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class   = EmailCampaignListSerializer
+    required_feature = "email_campaigns"
 
     def list(self, request, *args, **kwargs):
         host = _get_host(request)
@@ -1086,7 +1102,7 @@ class EmailCampaignCreateAndSendView(APIView):
     ],
     responses=CheckInCardSerializer,
 )
-class CheckInOverviewView(generics.ListAPIView):
+class CheckInOverviewView(PlanFeatureMixin,generics.ListAPIView):
     """
     GET /checkins/overview/
 
@@ -1102,6 +1118,7 @@ class CheckInOverviewView(generics.ListAPIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class   = CheckInCardSerializer
+    required_feature = "qr_checkin"
 
     def list(self, request, *args, **kwargs):
         host = _get_host(request)
@@ -1132,7 +1149,7 @@ class CheckInOverviewView(generics.ListAPIView):
     ],
     responses=CheckInAttendeeSerializer(many=True),
 )
-class CheckInAttendeeListView(generics.ListAPIView):
+class CheckInAttendeeListView(PlanFeatureMixin,generics.ListAPIView):
     """
     GET /checkins/attendees/
 
@@ -1147,6 +1164,7 @@ class CheckInAttendeeListView(generics.ListAPIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class   = CheckInAttendeeSerializer
+    required_feature = "qr_checkin"
 
     def list(self, request, *args, **kwargs):
         host = _get_host(request)
@@ -1181,7 +1199,7 @@ class CheckInAttendeeListView(generics.ListAPIView):
     request=ScanInputSerializer,
     responses=ScanResultSerializer,
 )
-class CheckInScanView(APIView):
+class CheckInScanView(PlanFeatureMixin,APIView):
     """
     POST /checkins/scan/
 
@@ -1203,6 +1221,7 @@ class CheckInScanView(APIView):
     # may use a separate auth mechanism (e.g. a dedicated scanner token).
     # Add your preferred auth when integrating with your scanner app.
     permission_classes = [permissions.IsAuthenticated]
+    required_feature = "qr_checkin"
 
     def post(self, request):
         serializer = ScanInputSerializer(data=request.data)
@@ -1391,7 +1410,7 @@ class SalesCardsView(APIView):
     ],
     responses=RevenuePointSerializer(many=True),
 )
-class SalesGraphsView(APIView):
+class SalesGraphsView(PlanFeatureMixin,APIView):
     """
     GET /sales/graphs/
 
@@ -1419,21 +1438,31 @@ class SalesGraphsView(APIView):
         year        = request.query_params.get("year")
         year        = int(year) if year else timezone.now().year
 
-        revenue     = SalesGraphService.get_revenue_chart(
-            host, filter_type=chart, year=year, event_id=event_id
+        breakdown, revenue, week, geo = SalesGraphService.get_all_graphs(
+            host=host,
+            filter_type=chart,
+            year=year,
+            event_id=event_id,
+            plan_slug=self.get_host_plan(),
         )
-        breakdown   = SalesGraphService.get_sales_breakdown(host, event_id=event_id)
-        week        = SalesGraphService.get_week_analysis(host, event_id=event_id)
-        geo         = SalesGraphService.get_geo_breakdown(host, event_id=event_id)
 
         return api_response(
             message="Sales graphs retrieved successfully",
             status_code=200,
             data={
-                "revenue_chart":   RevenuePointSerializer(revenue, many=True).data,
                 "sales_breakdown": SalesBreakdownSerializer(breakdown).data,
-                "week_analysis":   WeekAnalysisSerializer(week).data,
-                "geo_breakdown":   GeoBreakdownSerializer(geo).data,
+                "revenue_chart":   self.get_locked_response(
+                    "revenue_chart",
+                    RevenuePointSerializer(revenue, many=True).data if revenue is not None else None,
+                ),
+                "week_analysis":   self.get_locked_response(
+                    "week_analysis",
+                    WeekAnalysisSerializer(week).data if week is not None else None,
+                ),
+                "geo_breakdown":   self.get_locked_response(
+                    "geo_breakdown",
+                    GeoBreakdownSerializer(geo).data if geo is not None else None,
+                ),
             },
         )
 

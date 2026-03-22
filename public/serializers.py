@@ -122,10 +122,13 @@ class EventListSerializer(serializers.ModelSerializer):
 class TrendingHostSerializer(serializers.ModelSerializer):
     events_count = serializers.IntegerField()
     trending_score = serializers.FloatField()
+    is_following = serializers.BooleanField()
 
     class Meta:
         model = Host
-        fields = ["id", "business_name", "followers", "events_count", "trending_score"]
+        fields = ["id", "business_name", "followers", "events_count", "trending_score","is_following"]
+
+    
 
 
 

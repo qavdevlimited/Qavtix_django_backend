@@ -25,6 +25,7 @@ from attendee.models import AffiliateLink
 from .helpers import increment_event_views
 from django_filters.rest_framework import DjangoFilterBackend
 from .utils import pagination_data
+from django.db.models import Exists, OuterRef, Value, BooleanField
 
 
 # ── Nearby Events ──────────────────────────────────────────────────────────────
@@ -248,12 +249,27 @@ class TrendingHostsView(generics.ListAPIView):
     def get_queryset(self):
         now = timezone.now()
         location = self.request.query_params.get("location")
+        user = self.request.user
 
         queryset = Host.objects.all()
 
         # Filter hosts who have events in this location
         if location:
             queryset = queryset.filter(hoster__status="active", hoster__location__city__iexact=location)
+
+        if user.is_authenticated:
+            follow_subquery = Follow.objects.filter(
+                user=user,
+                host=OuterRef("pk")
+            )
+
+            queryset = queryset.annotate(
+                is_following=Exists(follow_subquery)
+            )
+        else:
+            queryset = queryset.annotate(
+                is_following=Value(False, output_field=BooleanField())
+            )
 
         # Annotate totals
         queryset = queryset.annotate(

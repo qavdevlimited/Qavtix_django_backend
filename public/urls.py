@@ -24,8 +24,10 @@ urlpatterns = [
 
    path("categories/subscribe/", SubscribeCategoryView.as_view(), name="subscribe-category"),
 
-   path("categories/<str:category_name>/",CategoryPageView.as_view(),name="category-page",
-)
+   path("categories/<str:category_name>/",CategoryPageView.as_view(),name="category-page"),
+        
+   path("search/", SearchEventsView.as_view(), name="search-events"),
+
    
 
 

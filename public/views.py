@@ -1,10 +1,12 @@
 from django.shortcuts import render
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from events.models import Event,EventLocation
 from rest_framework import generics, permissions,status,filters
 from django.utils import timezone
 from django.db.models import Q
 
-from public.filters import CategoryEventFilter, EventFilter
+from public.filters import CategoryEventFilter, EventFilter, SearchFilter
 from .serializers import CategoryPageSerializer, CategorySerializer, CategorySubscriptionSerializer, EventListSerializer, LocationPageSerializer, LocationSubscriptionSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer, event_list_queryset
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -623,3 +625,64 @@ class CategoryPageView(generics.GenericAPIView):
 
         serializer = self.get_serializer(data)
         return api_response(message="Category page retrieved successfully", status_code=200, data=serializer.data)
+
+
+
+class SearchEventsView(generics.ListAPIView):
+    serializer_class = EventListSerializer
+    permission_classes = [permissions.AllowAny]
+
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+
+    filterset_class = SearchFilter
+
+    search_fields = [
+        "title",
+        "short_description",
+        "event_location__city",
+        "event_location__state",
+        "event_location__country",
+    ]
+
+    ordering_fields = [
+        "start_datetime",
+        "created_at",
+        "views_count",
+    ]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        now = timezone.now()
+
+        base = Event.objects.filter(
+            status="active",
+            start_datetime__gte=now
+        ).distinct()
+
+        return event_list_queryset(base)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page     = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return api_response(
+                message="Search results retrieved successfully",
+                status_code=200,
+                data={
+                    **pagination_data(self.paginator),
+                    "results": serializer.data,
+                },
+            )
+
+        serializer = self.get_serializer(queryset, many=True)
+        return api_response(
+            message="Search results retrieved successfully",
+            status_code=200,
+            data=serializer.data,
+        )

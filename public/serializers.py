@@ -198,13 +198,13 @@ class HostPublicDetailSerializer(serializers.ModelSerializer):
 
     def get_is_following(self, obj):
         request = self.context.get("request")
+
         if request and request.user.is_authenticated:
-            attendee = getattr(request.user, "attendee", None)
-            if attendee:
-                return Follow.objects.filter(
-                    attendee=attendee,
-                    host=obj
-                ).exists()
+            return Follow.objects.filter(
+                user=request.user,
+                host=obj
+            ).exists()
+
         return False
 
 

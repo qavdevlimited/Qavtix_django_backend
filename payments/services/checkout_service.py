@@ -370,6 +370,19 @@ class CheckoutService:
             raise CheckoutError(f"Event is not available for purchase (status: {event.status}).", 400)
         if event.end_datetime < timezone.now():
             raise CheckoutError("This event has already ended.", 400)
+        if event.age_restriction:
+            dob = self.data.get("date_of_birth")
+
+            if not dob:
+                raise CheckoutError("Date of birth is required for this event.", 400)
+
+            from datetime import date
+
+            today = date.today()
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+            if age < 18:
+                raise CheckoutError("You must be 18+ to purchase this event.", 403)
         return event
 
     def _validate_tickets(self, event):

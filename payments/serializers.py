@@ -3,6 +3,7 @@ from rest_framework import serializers
 from decimal import Decimal
 from payments.models import PaymentCard, Payment
 from events.models import Ticket
+from datetime import date
 
 
 class TicketLineItemSerializer(serializers.Serializer):
@@ -41,6 +42,8 @@ class CheckoutSerializer(serializers.Serializer):
     split_members = SplitMemberSerializer(many=True, required=False, default=list)
     affiliate_code = serializers.UUIDField(required=False, allow_null=True)
 
+    date_of_birth = serializers.DateField(required=False)
+
     def validate(self, data):
         marketplace_id = data.get("marketplace_listing_id")
         event_id       = data.get("event_id")
@@ -69,6 +72,29 @@ class CheckoutSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     "Split payment is not available for marketplace purchases."
                 )
+        if event_id:
+            from events.models import Event
+
+            try:
+                event = Event.objects.get(id=event_id)
+            except Event.DoesNotExist:
+                raise serializers.ValidationError("Event not found.")
+
+            if event.age_restriction:
+                dob = data.get("date_of_birth")
+
+                if not dob:
+                    raise serializers.ValidationError(
+                        {"date_of_birth": "This event requires your date of birth."}
+                    )
+
+                today = date.today()
+                age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+                if age < 18:
+                    raise serializers.ValidationError(
+                        {"date_of_birth": "You must be 18+ to purchase tickets for this event."}
+                    )
 
         return data
 

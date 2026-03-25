@@ -8,6 +8,7 @@ from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, 
 from public.models import Follow
 from transactions.models import Withdrawal
 from django.db.models import Sum
+from datetime import timedelta
 
 # Ticket promo codes
 class PromoCodeNestedSerializer(serializers.ModelSerializer):
@@ -204,7 +205,7 @@ class EventDetailsSerializer(serializers.ModelSerializer):
     tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
     event_image = EventMediaNestedSerializer(many=True, required=False)
     attendees_count = serializers.SerializerMethodField()
-    event_status= serializers.CharField(source="status", read_only=True)
+    event_status=serializers.SerializerMethodField()
     is_favorite = serializers.SerializerMethodField()
     category= serializers.CharField(source="category.name", read_only=True)
     is_following = serializers.SerializerMethodField()
@@ -278,6 +279,20 @@ class EventDetailsSerializer(serializers.ModelSerializer):
         fill_percentage = (total_sold / total_capacity) * 100
 
         return fill_percentage >= 70 
+
+    # Replace get_event_status:
+    def get_event_status(self, obj):
+        tickets = getattr(obj, "all_tickets", None) or list(obj.tickets.all())
+        total_quantity = sum(t.quantity for t in tickets)
+        sold_quantity  = sum(getattr(t, "sold_count", 0) for t in tickets)
+
+        if sold_quantity >= total_quantity:
+            return "sold-out"
+        elif total_quantity > 0 and sold_quantity / total_quantity >= 0.75:
+            return "fast-selling"
+        elif obj.created_at >= timezone.now() - timedelta(days=7):
+            return "new"
+        return "normal"
     
 
 

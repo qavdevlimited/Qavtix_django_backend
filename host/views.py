@@ -11,7 +11,7 @@ from host.helpers import _apply_date_range, _available_balance, _base_orders, _g
 from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,DownloadEventAttendeeSerializer
+from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, SingleEmailCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,DownloadEventAttendeeSerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -38,7 +38,7 @@ from .serializers import (
 )
 from datetime import date, timedelta
 
-from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter
 from drf_spectacular.types import OpenApiTypes
 from .mixin import PlanFeatureMixin
 
@@ -1092,7 +1092,53 @@ class EmailCampaignCreateAndSendView(APIView):
             data=EmailCampaignListSerializer(campaign).data,
         )
 
+@extend_schema(
+    operation_id="host_campaign_send_single",
+    request=SingleEmailCampaignSerializer,
+    responses={200: OpenApiResponse(description="Email sent successfully")},
+)
+class SingleEmailSendView(PlanFeatureMixin, APIView):
+    """
+    POST /campaigns/send-single/
 
+    Sends a one-off email to a single recipient.
+    Does not create a campaign record — just sends the email.
+
+    Body
+    ────
+    recipient_email : email  — who to send to
+    subject         : string
+    html_content    : string
+    sender_name     : string  (optional)
+    sender_email    : email   (optional)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    required_feature   = "email_campaigns"
+
+    def post(self, request):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        serializer = SingleEmailCampaignSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+
+        data = serializer.validated_data
+
+        try:
+            CampaignService.send_single_email(
+                host=host,
+                data=data,
+            )
+        except CampaignError as e:
+            return api_response(message=e.message, status_code=e.status)
+
+        return api_response(
+            message=f"Email sent to {data['recipient_email']} successfully.",
+            status_code=200,
+            data={"recipient": data["recipient_email"]},
+        )
 
 
 #CHECK IN FEATURE VIEWS

@@ -197,6 +197,28 @@ class CampaignService:
                 },
             })
         return contacts
+    
+
+    @staticmethod
+    def send_single_email(host, data):
+        """
+        Sends a one-off transactional email to a single recipient.
+        No campaign record created — purely a direct send.
+        """
+        
+
+        try:
+            brevo.send_transactional_email(
+            to_email      = data["recipient_email"],
+            subject       = data["subject"],
+            html_content  = data["html_content"],
+            sender_name   = data.get("sender_name", "QavTix"),
+            sender_email  = data.get("sender_email", "savieztech@gmail.com"),
+        )
+        except Exception as exc:
+            logger.exception("Single email send failed: %s", exc)
+            raise CampaignError("Failed to send email. Please try again.", 500)
+        
 
 
 class CampaignError(Exception):

@@ -540,6 +540,13 @@ class EmailCampaignCreateSerializer(serializers.Serializer):
     sender_name   = serializers.CharField(max_length=255, required=False)
     sender_email  = serializers.EmailField(required=False)
 
+class SingleEmailCampaignSerializer(serializers.Serializer):
+    recipient_email = serializers.EmailField()
+    subject      = serializers.CharField(max_length=255)
+    html_content = serializers.CharField()
+    sender_name  = serializers.CharField(max_length=255, required=False)
+    sender_email = serializers.EmailField(required=False)
+
 
 class EmailCampaignSendSerializer(serializers.Serializer):
     """Body is empty — campaign_id comes from the URL."""

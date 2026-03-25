@@ -135,3 +135,27 @@ def get_bulk_campaign_stats(campaign_ids: list[int]) -> dict[int, dict]:
     Returns {campaign_id: {open_rate, click_rate}}.
     """
     return {cid: get_campaign_stats(cid) for cid in campaign_ids}
+
+
+def send_transactional_email(
+    to_email:     str,
+    sender_name:  str,
+    sender_email: str,
+    subject:      str,
+    html_content: str,
+):
+    """
+    Sends a one-off transactional email to a single recipient via Brevo.
+    Uses /smtp/email endpoint — not campaign-based, instant delivery.
+    """
+    response = requests.post(
+        f"{BREVO_API_BASE}/smtp/email",
+        headers=_headers(),
+        json={
+            "sender":      {"name": sender_name, "email": sender_email},
+            "to":          [{"email": to_email}],
+            "subject":     subject,
+            "htmlContent": html_content,
+        },
+    )
+    response.raise_for_status()

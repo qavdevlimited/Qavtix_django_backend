@@ -413,6 +413,24 @@ class CheckInService:
                 "event_name":       ticket.event.title,
                 "checked_in_at":    None,
             }
+    
+        if ticket.status in ["cancelled", "used"]:
+            CheckIn.objects.create(
+                issued_ticket=ticket,
+                scanned_token=token,
+                status="invalid",
+                scanned_by=scanned_by,
+                notes=f"Attempted check-in with invalid ticket status: {ticket.status}",
+            )
+            return {
+                "status":           "invalid",
+                "message":          f"This ticket is {ticket.status} and cannot be used.",
+                "issued_ticket_id": str(ticket.id),
+                "full_name":        None,
+                "ticket_type":      None,
+                "event_name":       ticket.event.title,
+                "checked_in_at":    None,
+            }
 
         attendee = getattr(ticket.owner, "attendee_profile", None)
         full_name   = attendee.full_name if attendee else ticket.owner.email

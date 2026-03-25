@@ -7,9 +7,10 @@ from django.utils import timezone
 from django.db.models import Q
 
 from public.filters import CategoryEventFilter, EventFilter, SearchFilter
+from transactions.models import IssuedTicket
 from .serializers import CategoryPageSerializer, CategorySerializer, CategorySubscriptionSerializer, EventListSerializer, LocationPageSerializer, LocationSubscriptionSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer, event_list_queryset
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from rest_framework.views import APIView, PermissionDenied
 from django.db.models import Count
 from .response import api_response
 from rest_framework import generics, permissions
@@ -685,4 +686,39 @@ class SearchEventsView(generics.ListAPIView):
             message="Search results retrieved successfully",
             status_code=200,
             data=serializer.data,
+        )
+
+
+
+class CancelIssuedTicketView(generics.GenericAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, ticket_id):
+        ticket = get_object_or_404(
+            IssuedTicket.objects.select_related("owner", "event"),
+            id=ticket_id
+        )
+
+    
+        if ticket.owner_id != request.user.id:
+            raise PermissionDenied("You cannot cancel this ticket.")
+
+
+        if ticket.status in ["cancelled", "used"]:
+            return api_response(
+                message=f"Ticket already {ticket.status}",
+                status_code=400,
+                data=None
+            )
+
+        ticket.status = "cancelled"
+        ticket.save(update_fields=["status"])
+
+        return api_response(
+            message="Ticket cancelled successfully",
+            status_code=200,
+            data={
+                "ticket_id": str(ticket.id),
+                "status": ticket.status
+            }
         )

@@ -28,8 +28,7 @@ urlpatterns = [
         
    path("search/", SearchEventsView.as_view(), name="search-events"),
 
-   
-
+   path("tickets/<int:ticket_id>/cancel/", CancelIssuedTicketView.as_view()),
 
     
 ]

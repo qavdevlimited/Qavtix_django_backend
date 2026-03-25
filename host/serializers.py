@@ -1,3 +1,4 @@
+import django
 from django.utils import timezone
 from decimal import Decimal
 from django.contrib.auth.password_validation import validate_password
@@ -6,6 +7,7 @@ from payments.models import PayoutInformation
 from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
 from public.models import Follow
 from transactions.models import Withdrawal
+from django.db.models import Sum
 
 # Ticket promo codes
 class PromoCodeNestedSerializer(serializers.ModelSerializer):
@@ -206,6 +208,8 @@ class EventDetailsSerializer(serializers.ModelSerializer):
     is_favorite = serializers.SerializerMethodField()
     category= serializers.CharField(source="category.name", read_only=True)
     is_following = serializers.SerializerMethodField()
+    is_trending=serializers.SerializerMethodField()
+    is_filling_fast=serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -213,7 +217,7 @@ class EventDetailsSerializer(serializers.ModelSerializer):
             'id', 'title', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
             'location_type', 'short_description', 'full_description',
             'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
-            'event_location', 'social_links', 'tickets','event_status','event_image','attendees_count','age_restriction','is_favorite','is_following'
+            'event_location', 'social_links', 'tickets','event_status','event_image','attendees_count','age_restriction','is_favorite','is_following','is_trending','is_filling_fast',
         ]
     
     def get_attendees_count(self, obj):
@@ -247,6 +251,33 @@ class EventDetailsSerializer(serializers.ModelSerializer):
             ).exists()
 
         return False
+    
+    
+
+    def get_total_sold(self, obj):
+        return obj.tickets.aggregate(
+            total_sold=Sum("sold_count")
+        )["total_sold"] or 0
+
+    def get_total_capacity(self, obj):
+        return obj.tickets.aggregate(
+            total=Sum("quantity")
+        )["total"] or 0
+
+    def get_is_trending(self, obj):
+        total_sold = self.get_total_sold(obj)
+        return total_sold >= 1000
+    
+    def get_is_filling_fast(self, obj):
+        total_sold = self.get_total_sold(obj)
+        total_capacity = self.get_total_capacity(obj)
+
+        if total_capacity == 0:
+            return False
+
+        fill_percentage = (total_sold / total_capacity) * 100
+
+        return fill_percentage >= 70 
     
 
 

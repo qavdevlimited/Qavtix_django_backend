@@ -54,6 +54,8 @@ PLAN_LIMITS = {
         "group_sharing":         False,
 
         "customer_profile_insights": False,
+
+        "event_ticket_limit":       750,     # max tickets per event
     },
 
     "pro": {
@@ -106,6 +108,8 @@ PLAN_LIMITS = {
         "dedicated_manager":     False,   # enterprise only
 
         "customer_profile_insights": False,
+
+        "event_ticket_limit":       2500,
     },
 
     "enterprise": {
@@ -158,6 +162,8 @@ PLAN_LIMITS = {
         "dedicated_manager":     True,
 
         "customer_profile_insights": True,
+
+        "event_ticket_limit":       None,    # unlimited
     },
 }
 

@@ -46,6 +46,7 @@ class PlanFeatureMixin:
     check_affiliate        = False
     check_team_permissions = False
     check_promo_code_limit = False
+    check_ticket_limit = False
 
     # ── Core helpers ──────────────────────────────────────────────────────────
 
@@ -114,6 +115,7 @@ class PlanFeatureMixin:
             self.check_affiliate,
             self.check_team_permissions,
             self.check_promo_code_limit, 
+            self.check_ticket_limit,
         ]):
             self._run_create_limits(request)
 
@@ -198,6 +200,24 @@ class PlanFeatureMixin:
             )
             self._raise_if_limited("promo_code_limit", existing_count, plan_slug)
 
+        # 8 — Total ticket quantity limit per event
+        if self.check_ticket_limit:
+            tickets = data.get("tickets", [])
+            total_quantity = sum(
+                int(t.get("quantity", 0)) for t in tickets
+            )
+            self._raise_if_limited("event_ticket_limit", total_quantity, plan_slug)
+
+        # 9 — QRCode check-in
+        if self.check_team_permissions and not has_feature(plan_slug, "advanced_event_setup"):
+            if data.get("qr_enabled"):
+                raise PermissionDenied(detail={
+                    "message":    "QR code check-in is not available on your plan. Upgrade to Pro.",
+                    "feature":    "advanced_event_setup",
+                    "your_plan":  plan_slug,
+                    "upgrade_to": which_plan_unlocks("advanced_event_setup"),
+                })
+
     # ── _raise_if_limited ─────────────────────────────────────────────────────
 
     def _raise_if_limited(self, feature: str, current_count: int, plan_slug: str):
@@ -220,6 +240,7 @@ class PlanFeatureMixin:
                 "team_permissions":      f"Your plan allows a maximum of {limit} team member(s).",
                 "email_campaign_limit":  f"You have reached your monthly email campaign limit of {limit}.",
                 "attendee_export_limit": f"Your plan allows exporting up to {limit} attendees.",
+                "event_ticket_limit": f"Your plan allows a maximum of {limit} total tickets per event.",
             }
             raise PermissionDenied(detail={
                 "message":       messages.get(

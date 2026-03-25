@@ -53,6 +53,7 @@ class EventCreateView(PlanFeatureMixin,generics.CreateAPIView):
     check_promo_codes      = True
     check_team_permissions = True
     check_affiliate = True
+    check_ticket_limit     = True
 
     def get_serializer_context(self):
         # pass request to serializer so it can access user

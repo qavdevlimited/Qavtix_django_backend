@@ -4,6 +4,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from payments.models import PayoutInformation
 from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
+from public.models import Follow
 from transactions.models import Withdrawal
 
 # Ticket promo codes
@@ -202,6 +203,9 @@ class EventDetailsSerializer(serializers.ModelSerializer):
     event_image = EventMediaNestedSerializer(many=True, required=False)
     attendees_count = serializers.SerializerMethodField()
     event_status= serializers.CharField(source="status", read_only=True)
+    is_favorite = serializers.SerializerMethodField()
+    category= serializers.CharField(source="category.name", read_only=True)
+    is_following = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -209,7 +213,7 @@ class EventDetailsSerializer(serializers.ModelSerializer):
             'id', 'title', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
             'location_type', 'short_description', 'full_description',
             'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
-            'event_location', 'social_links', 'tickets','event_status','event_image','attendees_count'
+            'event_location', 'social_links', 'tickets','event_status','event_image','attendees_count','age_restriction','is_favorite','is_following'
         ]
     
     def get_attendees_count(self, obj):
@@ -224,6 +228,25 @@ class EventDetailsSerializer(serializers.ModelSerializer):
             .distinct()                   # Unique users
             .count()                      # Count of unique attendees
         )
+    
+    def get_is_favorite(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        # Check if the logged-in user has favorited this event
+        return obj.favorited_by.filter(user=request.user).exists()
+
+    
+    def get_is_following(self, obj):
+        request = self.context.get("request")
+
+        if request and request.user.is_authenticated:
+            return Follow.objects.filter(
+                user=request.user,
+                host=obj.host
+            ).exists()
+
+        return False
     
 
 

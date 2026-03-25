@@ -1,13 +1,21 @@
 from django.shortcuts import render
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminLoginSerializer, AdminOTPVerifySerializer
+from administrator.serializers import AdminLoginSerializer, AdminOTPVerifySerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer
 from administrator.services import AdminAuthService, AuthError
+from administrator.service.dashboard_service import ActivityService, AdminDashboardService, RevenueService, TicketAnalyticsService
+from administrator.service.uptime_service import UptimeService
 from authentication.serializers import CustomLoginSerializer
+from public.pagination import CustomPagination
 from public.response import api_response
 from rest_framework.views import APIView
+
+from rest_framework.generics import GenericAPIView, ListAPIView
+from rest_framework.permissions import IsAdminUser, IsAuthenticated
+
+from public.response import api_response
 # Create your views here.
 
 
@@ -123,4 +131,134 @@ class AdminOTPVerifyView(APIView):
                     "refresh": str(refresh),
                 },
             },
+        )
+
+
+
+
+#Dasboard Service
+class AdminDashboardView(GenericAPIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        uptime = UptimeService.get_uptime()
+
+        data = AdminDashboardService.get_dashboard(
+            uptime_value=uptime
+        )
+
+        return api_response(
+            message="Dashboard retrieved successfully",
+            status_code=200,
+            data=data
+        )
+
+
+class AdminRevenueView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="period",
+                type=str,
+                description="Time range: week | month | year",
+                required=False
+            )
+        ],
+        responses=RevenueAnalyticsResponseSerializer,
+        summary="Admin Revenue Analytics",
+        description="Returns total revenue and daily breakdown filtered by period (rolling window ending today)"
+    )
+    def get(self, request):
+        period = request.query_params.get("period", "week")
+
+        data = RevenueService.get_revenue(
+            period=period
+        )
+
+        return api_response(
+            message="Revenue analytics retrieved successfully",
+            status_code=200,
+            data=data
+        )
+
+
+class AdminTicketAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Ticket Analytics",
+        description="Returns ticket distribution. Week groups by Day, Month by Week, Year by Month.",
+        parameters=[
+            OpenApiParameter(
+                name="period",
+                type=str,
+                description="Options: week, month, year",
+                required=False
+            ),
+            OpenApiParameter(
+                name="event_id",
+                type=int,
+                description="Optional event ID filter",
+                required=False
+            )
+        ]
+    )
+    def get(self, request):
+        period = request.query_params.get("period", "week").lower()
+        event_id = request.query_params.get("event_id")
+
+        # Basic validation
+        if period not in ["week", "month", "year"]:
+            period = "week"
+
+        data = TicketAnalyticsService.get_sales_breakdown(
+            period=period,
+            event_id=event_id
+        )
+
+        return api_response(
+            message=f"Ticket analytics for the last {period} fetched successfully",
+            status_code=200,
+            data=data
+        )
+
+
+class AdminActivityView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = HostActivitySerializer
+    pagination_class = CustomPagination
+
+    @extend_schema(
+        summary="Admin Activity Feed",
+        description="Returns recent activities (sales, refunds, check-ins, etc.)",
+        parameters=[
+            OpenApiParameter(
+                name="period",
+                type=str,
+                description="week | month | year",
+                required=False
+            )
+        ],
+    )
+    def get_queryset(self):
+        period = self.request.query_params.get("period", "week")
+
+        return ActivityService.get_activities(
+            period=period
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True)
+
+        return api_response(
+            message="Activities retrieved successfully",
+            status_code=200,
+            data={
+                **self.paginator.get_paginated_response(serializer.data).data
+            }
         )

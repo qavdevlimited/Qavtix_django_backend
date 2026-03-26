@@ -17,6 +17,8 @@ import dj_database_url
 import os
 from datetime import timedelta
 
+from authentication.utils import generate_apple_client_secret
+
 
 
 
@@ -71,6 +73,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.facebook',
+    'allauth.socialaccount.providers.apple',
     'rest_framework_simplejwt', 
     'dj_rest_auth',
     'dj_rest_auth.registration',
@@ -229,6 +232,13 @@ SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 
 CALLBACK_URL= config("CALLBACK_URL")
 
+APPLE_CLIENT_ID = os.getenv("APPLE_CLIENT_ID")
+APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID")
+APPLE_KEY_ID = os.getenv("APPLE_KEY_ID")
+APPLE_PRIVATE_KEY = os.getenv("APPLE_PRIVATE_KEY")
+APPLE_CLIENT_SECRET = os.getenv("APPLE_CLIENT_SECRET")
+# APPLE_CLIENT_SECRET = generate_apple_client_secret()
+
 
 SOCIALACCOUNT_PROVIDERS = {
     "google": {
@@ -254,6 +264,14 @@ SOCIALACCOUNT_PROVIDERS = {
             "client_id": config("FACEBOOK_APP_ID"),
             "secret": config("FACEBOOK_APP_SECRET"),
             "key": ""
+        }
+    },
+    "apple": {
+        "APP": {
+            "client_id": APPLE_CLIENT_ID,
+            "secret": APPLE_CLIENT_SECRET,
+            "key": APPLE_KEY_ID,
+            "certificate_key": APPLE_PRIVATE_KEY,
         }
     }
 }

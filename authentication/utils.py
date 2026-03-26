@@ -59,3 +59,37 @@ def flatten_errors_login(errors):
 
 def generate_otp(length=6):
     return "".join(str(random.randint(0, 9)) for _ in range(length))
+
+
+
+
+import jwt
+import time
+import os
+
+def generate_apple_client_secret():
+    team_id = os.getenv("APPLE_TEAM_ID")
+    client_id = os.getenv("APPLE_CLIENT_ID")
+    key_id = os.getenv("APPLE_KEY_ID")
+    private_key = os.getenv("APPLE_PRIVATE_KEY").replace("\\n", "\n")
+
+    headers = {
+        "kid": key_id
+    }
+
+    payload = {
+        "iss": team_id,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 15777000,  # ~6 months
+        "aud": "https://appleid.apple.com",
+        "sub": client_id,
+    }
+
+    client_secret = jwt.encode(
+        payload,
+        private_key,
+        algorithm="ES256",
+        headers=headers
+    )
+
+    return client_secret

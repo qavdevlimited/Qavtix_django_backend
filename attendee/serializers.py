@@ -306,6 +306,33 @@ class TicketGroupSerializer(serializers.ModelSerializer):
         return obj.group_members.count()
 
 
+class TicketGroupMemberSerializer(serializers.ModelSerializer):
+    """Serialize a group member with user details"""
+    email = serializers.EmailField(source="user.email", read_only=True)
+    name = serializers.CharField(source="user.attendee_profile.full_name", read_only=True)
+    phone_number = serializers.CharField(source="user.attendee_profile.phone_number", read_only=True)
+
+    class Meta:
+        model = GroupMember
+        fields = ["id", "email", "name", "phone_number", "joined_at"]
+
+
+class ListTicketGroupSerializer(serializers.ModelSerializer):
+    member_count = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TicketGroup
+        fields = ["id", "name", "member_count", "members"]
+
+    def get_member_count(self, obj):
+        return obj.group_members.count()
+
+    def get_members(self, obj):
+        # Use prefetched group_members to avoid N+1
+        return TicketGroupMemberSerializer(obj.group_members.all(), many=True).data
+
+
 class AccountDeletionRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountDeletionRequest

@@ -9,7 +9,7 @@ from attendee.service import get_affiliate_dashboard
 from payments.services.currency_utils import get_currency_for_country, get_currency_for_event
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
-from .serializers import (PrivacySettingsSerializer, TicketDashboardSerializer,FavoriteEventSerializer, TicketReceiptSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
+from .serializers import (ListTicketGroupSerializer, PrivacySettingsSerializer, TicketDashboardSerializer,FavoriteEventSerializer, TicketReceiptSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
                           AffiliateLinkSerializer,WithdrawalHistorySerializer,WithdrawalRequestSerializer,PayoutInformationSerializer,
                           AttendeeProfileSerializer,TwoFactorToggleSerializer,ChangePasswordSerializer,NotificationSettingsSerializer,
                           GroupMemberSerializer,TicketGroupSerializer)
@@ -1181,7 +1181,7 @@ class CreateGroupView(APIView):
         )
 
 class MyGroupsView(generics.ListAPIView):
-    serializer_class = TicketGroupSerializer
+    serializer_class = ListTicketGroupSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):

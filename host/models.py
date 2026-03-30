@@ -234,6 +234,11 @@ class HostSubscription(models.Model):
     expires_at    = models.DateTimeField(null=True, blank=True)
     cancelled_at  = models.DateTimeField(null=True, blank=True)
     plan_slug     = models.CharField(max_length=20, default="free")
+    currency = models.CharField(
+        max_length=3,
+        default="NGN",
+        help_text="Currency used for this subscription (NGN, USD, GHS, KES, ZAR, etc.)"
+    )
     metadata      = models.JSONField(default=dict)
 
     class Meta:

@@ -221,10 +221,19 @@ class HostPlanSerializer(serializers.Serializer):
 class SubscribeInitiateSerializer(serializers.Serializer):
     plan_slug     = serializers.ChoiceField(choices=["pro", "enterprise"])
     billing_cycle = serializers.ChoiceField(choices=["monthly", "annual"], default="monthly")
-    country       = serializers.CharField(default="NG")
     currency      = serializers.CharField(default="NGN")
     card_id       = serializers.UUIDField(required=False, allow_null=True)
     save_card     = serializers.BooleanField(default=False)
+
+    def validate_currency(self, value):
+        value = value.upper().strip()
+        supported_currencies = {"NGN", "USD", "GHS", "KES", "ZAR"}
+        if value not in supported_currencies:
+            raise serializers.ValidationError(
+                f"Currency '{value}' is not supported. Supported: NGN, USD, GHS, KES, ZAR"
+            )
+        return value
+    
 
 
 class CompleteSubscriptionSerializer(serializers.Serializer):

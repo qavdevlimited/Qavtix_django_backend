@@ -8,32 +8,24 @@ from django.contrib.contenttypes.models import ContentType
 
 from payments.services.factory import get_gateway
 from payments.models import Payment, PaymentCard
+from payments.services.currency_utils import get_gateway_country_code
 
 logger = logging.getLogger(__name__)
 
 
 class SubscriptionInitiateService:
     """
-    Initiates a host plan purchase.
+    Initiates a host plan purchase with user-selected currency support.
 
-    Rules:
-      - Free plan cannot be purchased (it's the default)
-      - If host already has an active non-free plan → upgrade flow:
-          * Old subscription marked cancelled immediately
-          * New subscription created active from today
-          * Host gets new features immediately
-      - If no active plan or on free → fresh purchase
-
-    Two payment modes:
-      A) card_id provided → charges saved card directly, activates immediately
-      B) no card_id       → returns Paystack checkout_url for popup
+    Frontend can now pass "currency": "USD" or "NGN" etc.
+    The chosen currency is used for Paystack and stored in the subscription.
     """
 
     def __init__(self, user, data):
-        self.user     = user
-        self.data     = data
-        self.gateway  = get_gateway(data.get("country", "NG"))
-        self.currency = data.get("currency", "NGN")
+        self.user      = user
+        self.data      = data
+        self.currency  = data.get("currency", "NGN").upper()          # ← User chosen
+        self.gateway   = get_gateway(get_gateway_country_code(self.currency))
 
     @transaction.atomic
     def run(self):
@@ -44,7 +36,6 @@ class SubscriptionInitiateService:
         if not host:
             raise SubscriptionError("Only hosts can purchase plans.", 403)
 
-        # Load plan
         plan_slug     = self.data.get("plan_slug")
         billing_cycle = self.data.get("billing_cycle", "monthly")
 
@@ -56,7 +47,7 @@ class SubscriptionInitiateService:
         except HostPlan.DoesNotExist:
             raise SubscriptionError("Plan not found.", 404)
 
-        # Determine price based on billing cycle
+        # Determine base price (you can later add currency conversion here if needed)
         if billing_cycle == "annual":
             amount    = plan.annual_price
             days      = 365
@@ -67,7 +58,7 @@ class SubscriptionInitiateService:
         if amount <= 0:
             raise SubscriptionError("Invalid plan price.", 400)
 
-        # Check for existing active non-free subscription
+        # === Existing Plan Validation (unchanged) ===
         existing = (
             host.subscriptions
             .filter(status="active")
@@ -77,27 +68,24 @@ class SubscriptionInitiateService:
         )
 
         if existing:
-            # Prevent purchasing same plan again
             if existing.plan_slug == plan_slug and existing.billing_cycle == billing_cycle:
                 raise SubscriptionError(
                     f"You already have an active {plan.name} {billing_cycle} plan. "
                     f"It expires on {existing.expires_at.strftime('%d %b %Y')}.",
                     400,
                 )
-            # Downgrade not allowed mid-cycle
+
             plan_rank = {"free": 0, "pro": 1, "enterprise": 2}
             if plan_rank.get(plan_slug, 0) < plan_rank.get(existing.plan_slug, 0):
                 raise SubscriptionError(
-                    f"You cannot downgrade to {plan.name} while your {existing.plan.name} plan is active. "
-                    f"Downgrade will be available after {existing.expires_at.strftime('%d %b %Y')}.",
+                    f"You cannot downgrade to {plan.name} while your {existing.plan.name} plan is active.",
                     400,
                 )
 
-        reference  = f"qavtix_sub_{uuid.uuid4().hex[:16]}"
-        amount_kobo = int(float(amount) * 100)
+        reference   = f"qavtix_sub_{uuid.uuid4().hex[:16]}"
         expires_at  = timezone.now() + timezone.timedelta(days=days)
 
-        # Create pending subscription
+        # Create pending subscription with chosen currency
         subscription = HostSubscription.objects.create(
             host=host,
             plan=plan,
@@ -105,27 +93,35 @@ class SubscriptionInitiateService:
             billing_cycle=billing_cycle,
             status="pending",
             amount_paid=amount,
+            currency=self.currency,                    # ← Store chosen currency
             expires_at=expires_at,
             metadata={
-                "reference":    reference,
+                "reference":     reference,
                 "billing_cycle": billing_cycle,
                 "days":          days,
+                "currency":      self.currency,
             },
         )
 
-        # Mode A — saved card: charge directly, activate now
+        # Mode A — Direct charge with saved card
         card_id = self.data.get("card_id")
         if card_id:
             return self._charge_saved_card(
-                subscription, plan, card_id, amount_kobo, amount, reference, existing
+                subscription, plan, card_id, amount, reference, existing
             )
 
-        # Mode B — popup
+        # Mode B — Paystack Popup
+        amount_in_smallest_unit = int(float(amount) * 100)   # Paystack expects kobo/pesewas/cents
+
         init = self.gateway.initialize_transaction(
             email=self.user.email,
-            amount_kobo=amount_kobo,
-            currency=self.currency,
+            amount_kobo=amount_in_smallest_unit,
+            currency=self.currency,                       # ← Use user-selected currency
             reference=reference,
+            metadata={
+                "flow": "subscription",
+                "subscription_id": str(subscription.id),
+            }
         )
 
         return {
@@ -133,14 +129,14 @@ class SubscriptionInitiateService:
             "subscription_id": str(subscription.id),
             "reference":       reference,
             "checkout_url":    init["checkout_url"],
-            "amount":          amount_kobo,
-            "currency":        self.currency.upper(),
+            "amount":          amount,                    # base amount
+            "currency":        self.currency,
             "plan":            plan_slug,
             "billing_cycle":   billing_cycle,
             "expires_at":      expires_at.isoformat(),
         }
 
-    def _charge_saved_card(self, subscription, plan, card_id, amount_kobo, amount, reference, existing):
+    def _charge_saved_card(self, subscription, plan, card_id, amount, reference, existing):
         try:
             card = PaymentCard.objects.get(id=card_id, user=self.user)
         except PaymentCard.DoesNotExist:
@@ -149,7 +145,7 @@ class SubscriptionInitiateService:
         result = self.gateway.charge_saved_card(
             card=card,
             email=self.user.email,
-            amount_kobo=amount_kobo,
+            amount_kobo=int(float(amount) * 100),
             currency=self.currency,
         )
 
@@ -159,7 +155,7 @@ class SubscriptionInitiateService:
                 402,
             )
 
-        # Persist payment
+        # Persist payment with correct currency
         Payment.objects.create(
             user=self.user,
             email=self.user.email,
@@ -167,17 +163,15 @@ class SubscriptionInitiateService:
             provider="paystack",
             provider_payment_id=result.reference,
             amount=amount,
-            currency=self.currency.upper(),
+            currency=self.currency,
             status="succeeded",
             content_type=ContentType.objects.get_for_model(subscription),
             object_id=subscription.id,
             metadata=result.metadata,
         )
 
-        # Activate subscription
         self._activate_subscription(subscription, existing)
 
-        # Send activation email
         from payments.tasks import send_plan_activated_email
         send_plan_activated_email.delay(str(subscription.id))
 
@@ -188,18 +182,16 @@ class SubscriptionInitiateService:
             "plan":            plan.slug,
             "billing_cycle":   subscription.billing_cycle,
             "expires_at":      subscription.expires_at.isoformat(),
+            "currency":        self.currency,
         }
 
     def _activate_subscription(self, subscription, existing):
-        """Activates new subscription and cancels old one if upgrading."""
-        # Cancel existing active non-free plan
         if existing:
             existing.status       = "cancelled"
             existing.cancelled_at = timezone.now()
             existing.save(update_fields=["status", "cancelled_at"])
-            logger.info(f"Cancelled existing subscription {existing.id} for upgrade")
 
-        # Also deactivate any other active subscriptions for this host
+        # Deactivate any other active subscriptions
         from host.models import HostSubscription
         HostSubscription.objects.filter(
             host=subscription.host,
@@ -215,8 +207,8 @@ class SubscriptionInitiateService:
 
 class CompleteSubscriptionService:
     """
-    Called after Paystack popup completes for plan purchase.
-    Verifies payment, activates subscription, sends email.
+    Completes subscription after Paystack popup.
+    Now respects the currency stored in the subscription.
     """
 
     def __init__(self, user, reference, save_card=False, country="NG"):
@@ -229,29 +221,27 @@ class CompleteSubscriptionService:
     def run(self):
         from host.models import HostSubscription
 
-        # Idempotency
+        # Idempotency check
         if Payment.objects.filter(provider_payment_id=self.reference).exists():
             sub = HostSubscription.objects.filter(
                 metadata__reference=self.reference
             ).first()
             return {
                 "already_complete": True,
-                "subscription_id":  str(sub.id) if sub else None,
+                "subscription_id": str(sub.id) if sub else None,
             }
 
-        # Verify with Paystack
         try:
             tx = self.gateway.verify_transaction(self.reference)
         except Exception as e:
             raise SubscriptionError(f"Payment verification failed: {str(e)}", 402)
 
-        # Find subscription
         try:
             subscription = HostSubscription.objects.select_for_update().get(
                 metadata__reference=self.reference
             )
         except HostSubscription.DoesNotExist:
-            raise SubscriptionError("Subscription record not found for this reference.", 404)
+            raise SubscriptionError("Subscription record not found.", 404)
 
         if subscription.status == "active":
             return {"already_complete": True, "subscription_id": str(subscription.id)}
@@ -261,10 +251,10 @@ class CompleteSubscriptionService:
             try:
                 self.gateway.save_card_from_tx(self.user, tx)
             except Exception as e:
-                logger.warning(f"Card save failed during subscription completion: {e}")
+                logger.warning(f"Failed to save card: {e}")
 
-        # Persist payment
-        currency = tx.get("currency", "NGN")
+        # Use currency from transaction (Paystack) or fallback to stored one
+        currency = tx.get("currency") or subscription.currency or "NGN"
         amount   = Decimal(str(tx.get("amount", 0))) / 100
 
         Payment.objects.create(
@@ -285,21 +275,9 @@ class CompleteSubscriptionService:
             },
         )
 
-        # Cancel any existing active non-free subscriptions
-        from host.models import HostSubscription as HS
-        HS.objects.filter(
-            host=subscription.host,
-            status="active",
-        ).exclude(id=subscription.id).update(
-            status="cancelled",
-            cancelled_at=timezone.now(),
-        )
+        # Activate subscription
+        self._activate_subscription(subscription)
 
-        # Activate
-        subscription.status = "active"
-        subscription.save(update_fields=["status"])
-
-        # Send activation email
         from payments.tasks import send_plan_activated_email
         send_plan_activated_email.delay(str(subscription.id))
 
@@ -309,7 +287,23 @@ class CompleteSubscriptionService:
             "plan":            subscription.plan_slug,
             "billing_cycle":   subscription.billing_cycle,
             "expires_at":      subscription.expires_at.isoformat(),
+            "currency":        currency,
         }
+
+    def _activate_subscription(self, subscription):
+        from host.models import HostSubscription
+
+        # Cancel all other active subscriptions
+        HostSubscription.objects.filter(
+            host=subscription.host,
+            status="active",
+        ).exclude(id=subscription.id).update(
+            status="cancelled",
+            cancelled_at=timezone.now(),
+        )
+
+        subscription.status = "active"
+        subscription.save(update_fields=["status"])
 
 
 class SubscriptionError(Exception):

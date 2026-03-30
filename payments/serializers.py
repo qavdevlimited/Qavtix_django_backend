@@ -14,6 +14,7 @@ class TicketLineItemSerializer(serializers.Serializer):
 class SplitMemberSerializer(serializers.Serializer):
     email      = serializers.EmailField()
     percentage = serializers.DecimalField(max_digits=5, decimal_places=2)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
 
 
 class CheckoutSerializer(serializers.Serializer):
@@ -78,20 +79,22 @@ class CheckoutSerializer(serializers.Serializer):
                 raise serializers.ValidationError("Event not found.")
 
             if event.age_restriction:
-                dob = data.get("date_of_birth")
+                if not is_split:
+                    # ← NORMAL FLOW (unchanged)
+                    dob = data.get("date_of_birth")
 
-                if not dob:
-                    raise serializers.ValidationError(
-                        {"date_of_birth": "This event requires your date of birth."}
-                    )
+                    if not dob:
+                        raise serializers.ValidationError(
+                            {"date_of_birth": "This event requires your date of birth."}
+                        )
 
-                today = date.today()
-                age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+                    today = date.today()
+                    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
-                if age < 18:
-                    raise serializers.ValidationError(
-                        {"date_of_birth": "You must be 18+ to purchase tickets for this event."}
-                    )
+                    if age < 18:
+                        raise serializers.ValidationError(
+                            {"date_of_birth": "You must be 18+ to purchase tickets for this event."}
+                        )
 
         return data
 

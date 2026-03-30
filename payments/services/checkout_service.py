@@ -12,6 +12,7 @@ from payments.models import PaymentCard, Payment
 from payments.services.factory import get_gateway
 from payments.services.currency_utils import get_currency_for_event, get_gateway_country_code
 from transactions.models import SplitParticipant
+from datetime import date
 
 logger = logging.getLogger(__name__)
 User   = get_user_model()
@@ -114,6 +115,45 @@ class CheckoutService:
             raise CheckoutError("Authentication required for split payment.", 401)
 
         event      = self._get_event()
+
+        if event.age_restriction:
+            # 1. Initiator (the logged-in user who started the split)
+            initiator_dob = self.data.get("date_of_birth")
+            if not initiator_dob:
+                raise CheckoutError(
+                    "This event requires your date of birth (as the initiator).", 400
+                )
+
+            today = date.today()
+            initiator_age = (
+                today.year - initiator_dob.year -
+                ((today.month, today.day) < (initiator_dob.month, initiator_dob.day))
+            )
+            if initiator_age < 18:
+                raise CheckoutError(
+                    "You (as initiator) must be 18+ to purchase tickets for this event.", 400
+                )
+
+            # 2. Every other split member (the ones sent in the request)
+            split_members = self.data.get("split_members", [])
+            for member in split_members:
+                member_dob = member.get("date_of_birth")
+                if not member_dob:
+                    raise CheckoutError(
+                        f"Date of birth is required for split member with email {member.get('email')}. "
+                        "This event has age restriction.", 400
+                    )
+
+                member_age = (
+                    today.year - member_dob.year -
+                    ((today.month, today.day) < (member_dob.month, member_dob.day))
+                )
+                if member_age < 18:
+                    raise CheckoutError(
+                        f"The user with email {member.get('email')} does not meet the age requirement "
+                        "(must be 18+) for this event.", 400
+                    )
+                
         currency   = get_currency_for_event(event)   # ← derived from host country
         line_items = self._validate_tickets(event)
         discount   = self._apply_promo(line_items)

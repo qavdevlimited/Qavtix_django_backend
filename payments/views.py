@@ -81,9 +81,9 @@ Use marketplace_listing_id instead of event_id + tickets.
                     "promo_code": "",
                     "save_card": True,
                     "split_members": [
-                        {"email": "john@example.com",  "percentage": "33.34"},
-                        {"email": "jane@example.com",  "percentage": "33.33"},
-                        {"email": "mark@example.com",  "percentage": "33.33"},
+                        {"email": "john@example.com",  "percentage": "33.34","date_of_birth": "2000-01-01",},
+                        {"email": "jane@example.com",  "percentage": "33.33","date_of_birth": "2000-01-01",},
+                        {"email": "mark@example.com",  "percentage": "33.33","date_of_birth": "2000-01-01",},
                     ],
                     "date_of_birth": "2000-01-01",
                 },

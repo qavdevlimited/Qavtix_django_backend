@@ -39,6 +39,7 @@ urlpatterns = [
 
     path("payouts/list/", ListPayoutAccountsView.as_view(), name="list-payouts"),
     path("payouts/add/", AddPayoutAccountView.as_view(), name="add-payout"),
+    path("payouts/remove/<uuid:payout_id>/", PayoutInformationDeleteView.as_view(), name="remove-payout"),
 
 
 ]

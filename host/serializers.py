@@ -98,6 +98,9 @@ class EventSerializer(serializers.ModelSerializer):
         tags_data = validated_data.pop('tags', [])
         media_data = validated_data.pop('media', [])
 
+        from payments.services.currency_utils import get_currency_for_host
+        validated_data["currency"] = get_currency_for_host(host)
+
         from django.db import transaction
 
         with transaction.atomic():

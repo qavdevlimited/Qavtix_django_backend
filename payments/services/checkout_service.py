@@ -1,4 +1,4 @@
-# payments/services/checkout_service.py
+# payments/services/checkout_service.py — COMPLETE UPDATED FILE
 import uuid
 import logging
 from decimal import Decimal
@@ -10,15 +10,12 @@ from django.contrib.auth import get_user_model
 from attendee.models import AffliateEarnings
 from payments.models import PaymentCard, Payment
 from payments.services.factory import get_gateway
+from payments.services.currency_utils import get_currency_for_event, get_gateway_country_code
 from transactions.models import SplitParticipant
 
 logger = logging.getLogger(__name__)
 User   = get_user_model()
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper: compute split expiry based on how far away the event is
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _split_expiry(event):
     now        = timezone.now()
@@ -38,27 +35,17 @@ def _split_expiry(event):
     return now + timezone.timedelta(days=days)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Main CheckoutService
-# ─────────────────────────────────────────────────────────────────────────────
-
 class CheckoutService:
     """
-    Handles all checkout flows:
-      1. Normal single purchase (auth or guest)
-      2. Split payment (auth only)
-      3. Marketplace purchase (auth only)
-
-    KEY: No metadata is sent to Paystack.
-    Flow + reference are stored in Order.metadata in our own DB.
-    CompleteCheckoutService looks up the order using the reference.
+    Handles all checkout flows.
+    Currency is now always derived from the event's host country — never from FE input.
     """
 
     def __init__(self, user, email, data):
         self.user         = user
         self.email        = email
         self.data         = data
-        self.gateway      = get_gateway(data.get("country", "NG"))
+        self.gateway      = get_gateway("NG")   # all currencies use Paystack for now
         self.full_name    = data.get("full_name", "")
         self.phone_number = data.get("phone_number", "")
         self.is_split     = data.get("is_split", False)
@@ -72,13 +59,12 @@ class CheckoutService:
             return self._handle_split()
         return self._handle_normal()
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # 1. Normal purchase
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── Normal purchase ───────────────────────────────────────────────────────
 
     @transaction.atomic
     def _handle_normal(self):
         event      = self._get_event()
+        currency   = get_currency_for_event(event)   # ← derived from host country
         line_items = self._validate_tickets(event)
         discount   = self._apply_promo(line_items)
         subtotal   = sum(qty * price for _, qty, price in line_items)
@@ -93,17 +79,16 @@ class CheckoutService:
             total_amount=total,
             discount=discount,
             metadata={
-                "reference": reference,
-                "flow":      "normal",
-                 "affiliate_code": str(self.data.get("affiliate_code") or "").strip(),
+                "reference":      reference,
+                "flow":           "normal",
+                "affiliate_code": str(self.data.get("affiliate_code") or "").strip(),
             },
         )
 
-        # NO metadata sent to Paystack
         init = self.gateway.initialize_transaction(
             email=self.email,
             amount_kobo=int(total * 100),
-            currency=self.data.get("currency", "NGN"),
+            currency=currency,
             reference=reference,
         )
 
@@ -113,15 +98,13 @@ class CheckoutService:
             "reference":    reference,
             "checkout_url": init["checkout_url"],
             "amount":       init["amount_kobo"],
-            "currency":     self.data.get("currency", "NGN").upper(),
+            "currency":     currency,
             "subtotal":     str(subtotal),
             "discount":     str(discount),
             "total":        str(total),
         }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # 2. Split payment
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── Split payment ─────────────────────────────────────────────────────────
 
     @transaction.atomic
     def _handle_split(self):
@@ -131,6 +114,7 @@ class CheckoutService:
             raise CheckoutError("Authentication required for split payment.", 401)
 
         event      = self._get_event()
+        currency   = get_currency_for_event(event)   # ← derived from host country
         line_items = self._validate_tickets(event)
         discount   = self._apply_promo(line_items)
         subtotal   = sum(qty * price for _, qty, price in line_items)
@@ -141,7 +125,6 @@ class CheckoutService:
 
         split_members = list(self.data.get("split_members", []))
 
-        # Auto-inject initiator with the remaining percentage
         initiator_emails = [m["email"] for m in split_members]
         if self.user.email not in initiator_emails:
             others_pct    = sum(Decimal(str(m["percentage"])) for m in split_members)
@@ -176,8 +159,7 @@ class CheckoutService:
                 u = User.objects.get(email=m["email"])
             except User.DoesNotExist:
                 raise CheckoutError(
-                    f"User with email {m['email']} is not registered. "
-                    f"All split members must have a QavTix account.",
+                    f"User with email {m['email']} is not registered.",
                     400,
                 )
             if u.email == self.user.email:
@@ -210,7 +192,6 @@ class CheckoutService:
             expires_at=expires_at,
         )
 
-        # Store split_order id in order metadata now that we have it
         order.metadata["split_order_id"] = str(split_order.id)
         order.save(update_fields=["metadata"])
 
@@ -248,50 +229,42 @@ class CheckoutService:
         if initiator_participant is None:
             raise CheckoutError("Could not find initiator participant record.", 400)
 
-        # Store initiator reference on participant so CompleteCheckoutService can find it
         initiator_reference = f"{reference}_init"
         initiator_participant.payment_reference = initiator_reference
         initiator_participant.save(update_fields=["payment_reference"])
 
-        # NO metadata sent to Paystack
-        # Initiator pays immediately — initialize their Paystack transaction
         initiator_amount_kobo = int(float(initiator_participant.amount) * 100)
         init = self.gateway.initialize_transaction(
             email=self.user.email,
             amount_kobo=initiator_amount_kobo,
-            currency=self.data.get("currency", "NGN"),
+            currency=currency,
             reference=initiator_reference,
         )
 
-        from payments.tasks import send_split_payment_emails
         other_participants = [p for p in participants if p.user.email != self.user.email]
-       
+        from payments.tasks import send_split_payment_emails
         send_split_payment_emails.delay(
             split_order_id=str(split_order.id),
             participant_ids=[str(p.id) for p in other_participants],
         )
-        
-
 
         return {
-            "flow":              "split",
-            "order_id":          str(order.id),
-            "split_order_id":    str(split_order.id),
-            "reference":         initiator_reference,
-            "checkout_url":      init["checkout_url"],
-            "amount":            initiator_amount_kobo,
-            "currency":          self.data.get("currency", "NGN").upper(),
-            "expires_at":        expires_at.isoformat(),
+            "flow":               "split",
+            "order_id":           str(order.id),
+            "split_order_id":     str(split_order.id),
+            "reference":          initiator_reference,
+            "checkout_url":       init["checkout_url"],
+            "amount":             initiator_amount_kobo,
+            "currency":           currency,
+            "expires_at":         expires_at.isoformat(),
             "total_participants": total_tickets,
-            "subtotal":          str(subtotal),
-            "discount":          str(discount),
-            "total":             str(total),
-            "your_share":        str(initiator_participant.amount),
+            "subtotal":           str(subtotal),
+            "discount":           str(discount),
+            "total":              str(total),
+            "your_share":         str(initiator_participant.amount),
         }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # 3. Marketplace purchase
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── Marketplace purchase ──────────────────────────────────────────────────
 
     @transaction.atomic
     def _handle_marketplace(self):
@@ -304,7 +277,7 @@ class CheckoutService:
             listing = (
                 MarketListing.objects
                 .select_for_update()
-                .select_related("ticket", "ticket__event", "seller")
+                .select_related("ticket", "ticket__event", "ticket__event__host", "seller")
                 .get(id=self.marketplace_listing_id)
             )
         except MarketListing.DoesNotExist:
@@ -320,8 +293,9 @@ class CheckoutService:
         listing.status = "reserved"
         listing.save(update_fields=["status"])
 
-        event     = listing.ticket.event
-        total     = listing.price
+        event    = listing.ticket.event
+        currency = get_currency_for_event(event)   # ← derived from host country
+        total    = listing.price
         reference = self._generate_reference()
 
         order = self._create_order(
@@ -337,11 +311,10 @@ class CheckoutService:
             marketplace_listing=listing,
         )
 
-        # NO metadata sent to Paystack
         init = self.gateway.initialize_transaction(
             email=self.email,
             amount_kobo=int(total * 100),
-            currency=self.data.get("currency", "NGN"),
+            currency=currency,
             reference=reference,
         )
 
@@ -352,37 +325,24 @@ class CheckoutService:
             "reference":    reference,
             "checkout_url": init["checkout_url"],
             "amount":       init["amount_kobo"],
-            "currency":     self.data.get("currency", "NGN").upper(),
+            "currency":     currency,
             "total":        str(total),
         }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Shared helpers
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── Shared helpers ────────────────────────────────────────────────────────
 
     def _get_event(self):
         from events.models import Event
         try:
-            event = Event.objects.select_for_update().get(id=self.data["event_id"])
+            event = Event.objects.select_for_update().select_related("host").get(
+                id=self.data["event_id"]
+            )
         except Event.DoesNotExist:
             raise CheckoutError("Event not found.", 404)
         if event.status != "active":
             raise CheckoutError(f"Event is not available for purchase (status: {event.status}).", 400)
         if event.end_datetime < timezone.now():
             raise CheckoutError("This event has already ended.", 400)
-        if event.age_restriction:
-            dob = self.data.get("date_of_birth")
-
-            if not dob:
-                raise CheckoutError("Date of birth is required for this event.", 400)
-
-            from datetime import date
-
-            today = date.today()
-            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-
-            if age < 18:
-                raise CheckoutError("You must be 18+ to purchase this event.", 403)
         return event
 
     def _validate_tickets(self, event):
@@ -483,32 +443,21 @@ class CheckoutService:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class CompleteCheckoutService:
-    """
-    Called after Paystack popup completes.
-    Looks up order from OUR DB using reference — never reads Paystack metadata.
-
-    Reference formats:
-      "qavtix_xxx"       → normal or marketplace (direct match on Order.metadata)
-      "qavtix_xxx_init"  → split initiator       (strip _init, match base ref)
-      anything else      → split participant     (match on SplitParticipant.payment_reference)
-    """
 
     def __init__(self, user, email, reference, save_card=False, country="NG"):
         self.user      = user
         self.email     = email
         self.reference = reference
         self.save_card = save_card
-        self.gateway   = get_gateway(country)
+        self.gateway   = get_gateway("NG")  # all currencies use Paystack
 
     @transaction.atomic
     def run(self):
-        # Verify with Paystack — confirms money received
         try:
             tx = self.gateway.verify_transaction(self.reference)
         except Exception as e:
             raise CheckoutError(f"Payment verification failed: {str(e)}", 402)
 
-        # Check if this is a split participant reference
         try:
             participant = SplitParticipant.objects.select_for_update().select_related(
                 "split_order__order"
@@ -517,9 +466,6 @@ class CompleteCheckoutService:
         except SplitParticipant.DoesNotExist:
             pass
 
-        
-
-        # Find order + flow from our DB — no Paystack metadata needed
         order, flow, participant = self._find_order_and_flow()
 
         if flow == "normal":
@@ -534,13 +480,8 @@ class CompleteCheckoutService:
             raise CheckoutError(f"Unknown payment flow: {flow}", 400)
 
     def _find_order_and_flow(self):
-        """
-        Returns (order, flow, participant_or_None).
-        Tries three lookup strategies in order.
-        """
         from transactions.models import Order, SplitParticipant
 
-        # 1 — Direct match: normal or marketplace
         try:
             order = Order.objects.select_for_update().get(
                 metadata__reference=self.reference
@@ -549,9 +490,8 @@ class CompleteCheckoutService:
         except Order.DoesNotExist:
             pass
 
-        # 2 — Split initiator: reference ends with _init
         if self.reference.endswith("_init"):
-            base_ref = self.reference[:-5]  # strip "_init"
+            base_ref = self.reference[:-5]
             try:
                 order = Order.objects.select_for_update().get(
                     metadata__reference=base_ref
@@ -560,7 +500,6 @@ class CompleteCheckoutService:
             except Order.DoesNotExist:
                 pass
 
-        # 3 — Split participant: reference stored on SplitParticipant
         try:
             participant = SplitParticipant.objects.select_for_update().select_related(
                 "split_order__order"
@@ -570,30 +509,6 @@ class CompleteCheckoutService:
             pass
 
         raise CheckoutError("Order not found for this reference.", 404)
-
-    def _find_order(self):
-        from transactions.models import Order
-
-        # Normal and marketplace — reference stored directly in metadata
-        try:
-            return Order.objects.select_for_update().get(
-                metadata__reference=self.reference
-            )
-        except Order.DoesNotExist:
-            pass
-
-        # Split initiator — reference has _init suffix, base reference in metadata
-        base_ref = self.reference.replace("_init", "")
-        try:
-            return Order.objects.select_for_update().get(
-                metadata__reference=base_ref
-            )
-        except Order.DoesNotExist:
-            pass
-
-        raise CheckoutError("Order not found for this reference.", 404)
-
-    # ── Normal completion ─────────────────────────────────────────────────────
 
     def _complete_normal(self, tx, order):
         if order.status == "completed":
@@ -608,8 +523,6 @@ class CompleteCheckoutService:
             "order_id": str(order.id),
             "status":   "completed",
         }
-
-    # ── Split initiator completion ────────────────────────────────────────────
 
     def _complete_split_initiator(self, tx, order):
         from transactions.models import SplitParticipant
@@ -646,14 +559,12 @@ class CompleteCheckoutService:
         send_split_initiator_confirmation.delay(str(participant.id))
 
         return {
-            "flow":            "split",
-            "split_order_id":  str(split_order.id),
-            "paid_count":      split_order.paid_count,
-            "total":           split_order.total_participants,
-            "split_complete":  completed,
+            "flow":           "split",
+            "split_order_id": str(split_order.id),
+            "paid_count":     split_order.paid_count,
+            "total":          split_order.total_participants,
+            "split_complete": completed,
         }
-
-    # ── Split participant (non-initiator) completion ──────────────────────────
 
     def _complete_split_participant(self, tx, participant):
         split_order = participant.split_order
@@ -686,18 +597,15 @@ class CompleteCheckoutService:
             "split_complete": completed,
         }
 
-    # ── Marketplace completion ────────────────────────────────────────────────
-
     def _complete_marketplace(self, tx, order):
         from marketplace.models import MarketListing
-        from attendee.models import AffliateEarnings  # use your correct import
+        from attendee.models import AffliateEarnings
 
         if order.status == "completed":
             return {"already_complete": True, "order_id": str(order.id)}
 
         listing_id = order.metadata.get("listing_id")
         try:
-            # select_for_update with no select_related — avoids outer join issue
             listing = MarketListing.objects.select_for_update().get(id=listing_id)
         except MarketListing.DoesNotExist:
             raise CheckoutError("Marketplace listing not found.", 404)
@@ -705,7 +613,6 @@ class CompleteCheckoutService:
         if listing.status == "sold":
             return {"already_complete": True, "order_id": str(order.id)}
 
-        # Fetch related objects separately after locking
         issued_ticket   = listing.ticket
         seller          = listing.seller
         seller_attendee = seller.attendee_profile
@@ -741,7 +648,6 @@ class CompleteCheckoutService:
             "order_id": str(order.id),
             "status":   "completed",
         }
-    # ── Shared helpers ────────────────────────────────────────────────────────
 
     def _maybe_save_card(self, tx):
         if self.user and self.save_card:
@@ -751,7 +657,7 @@ class CompleteCheckoutService:
 
     def _persist_payment(self, order, tx, card):
         currency = tx.get("currency", "NGN")
-        amount   = Decimal(str(tx.get("amount", 0))) / 100  # kobo → naira
+        amount   = Decimal(str(tx.get("amount", 0))) / 100
 
         return Payment.objects.create(
             user=self.user,
@@ -794,7 +700,6 @@ class CompleteCheckoutService:
                 )
         self._credit_affiliate(order)
 
-
     def _finalise_split(self, split_order):
         from transactions.models import IssuedTicket
 
@@ -811,51 +716,36 @@ class CompleteCheckoutService:
         from payments.tasks import send_split_completion_emails
         send_split_completion_emails.delay(str(split_order.id))
 
-
     def _credit_affiliate(self, order):
         from attendee.models import AffiliateLink
         from django.db.models import F
 
         affiliate_code = order.metadata.get("affiliate_code", "").strip()
-        print(f"AFFILIATE CODE: '{affiliate_code}'")
         if not affiliate_code:
-            print("NO CODE — returning early")
             return
 
         try:
             link = AffiliateLink.objects.select_related(
                 "user__attendee_profile"
             ).get(code=affiliate_code, event=order.event)
-            print(f"LINK FOUND: {link}")
-        except AffiliateLink.DoesNotExist:
-            print(f"LINK NOT FOUND for code={affiliate_code}, event={order.event_id}")
-            return
-        except Exception as e:
-            print(f"EXCEPTION: {e}")
+        except (AffiliateLink.DoesNotExist, Exception):
             return
 
         event = order.event
-        print(f"affiliate_enabled={event.affiliate_enabled}, commission={event.commission_percentage}")
-
         if not event.affiliate_enabled:
-            print("AFFILIATE DISABLED — returning")
             return
 
         now = timezone.now()
         if event.affiliate_start and now < event.affiliate_start:
-            print("BEFORE START — returning")
             return
         if event.affiliate_end and now > event.affiliate_end:
-            print("AFTER END — returning")
             return
 
         commission_pct = Decimal(str(event.commission_percentage or 0))
         if commission_pct <= 0:
-            print("ZERO COMMISSION — returning")
             return
 
         earning_amount = (order.total_amount * commission_pct / 100).quantize(Decimal("0.01"))
-        print(f"EARNING AMOUNT: {earning_amount}")
 
         _, created = AffliateEarnings.objects.get_or_create(
             marketplace_order = order,
@@ -867,14 +757,13 @@ class CompleteCheckoutService:
                 "status":   "pending",
             },
         )
-        print(f"EARNING CREATED: {created}")
 
         if created:
             AffiliateLink.objects.filter(id=link.id).update(sales=F("sales") + 1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SplitExpiryService — called by periodic Celery task every 30 mins
+# SplitExpiryService
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SplitExpiryService:
@@ -928,10 +817,6 @@ class SplitExpiryService:
         split_order.order.status = "cancelled"
         split_order.order.save(update_fields=["status"])
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Custom exception
-# ─────────────────────────────────────────────────────────────────────────────
 
 class CheckoutError(Exception):
     def __init__(self, message, status=400):

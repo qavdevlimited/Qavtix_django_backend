@@ -59,8 +59,6 @@ Use marketplace_listing_id instead of event_id + tickets.
             OpenApiExample(
                 "Normal purchase",
                 value={
-                    "country": "NG",
-                    "currency": "NGN",
                     "full_name": "John Doe",
                     "phone_number": "08012345678",
                     "is_split": False,
@@ -75,8 +73,6 @@ Use marketplace_listing_id instead of event_id + tickets.
             OpenApiExample(
                 "Split purchase",
                 value={
-                    "country": "NG",
-                    "currency": "NGN",
                     "full_name": "John Doe",
                     "phone_number": "08012345678",
                     "is_split": True,
@@ -96,8 +92,6 @@ Use marketplace_listing_id instead of event_id + tickets.
             OpenApiExample(
                 "Marketplace purchase",
                 value={
-                    "country": "NG",
-                    "currency": "NGN",
                     "full_name": "John Doe",
                     "phone_number": "08012345678",
                     "is_split": False,
@@ -111,8 +105,6 @@ Use marketplace_listing_id instead of event_id + tickets.
             OpenApiExample(
                 "Guest purchase",
                 value={
-                    "country": "NG",
-                    "currency": "NGN",
                     "full_name": "John Doe",
                     "phone_number": "08012345678",
                     "email": "john@example.com",

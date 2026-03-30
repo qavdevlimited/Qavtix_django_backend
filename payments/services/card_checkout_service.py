@@ -1,4 +1,6 @@
-# payments/services/card_checkout_service.py
+# payments/services/card_checkout_service.py — UPDATED
+# Currency now derived from event host country
+
 import uuid
 import logging
 from decimal import Decimal
@@ -6,38 +8,26 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
-from payments.models import PaymentCard, Payment
 from payments.services.factory import get_gateway
+from payments.models import PaymentCard, Payment
+from payments.services.currency_utils import get_currency_for_event
 from payments.services.checkout_service import CheckoutError
 
 logger = logging.getLogger(__name__)
 
 
 class CardCheckoutService:
-    """
-    Charges a saved card directly — no Paystack popup needed.
-    Supports all three flows: normal, split (initiator only), marketplace.
-
-    Flow:
-      FE → POST /payments/charge-card/ with card_id + order details
-      BE → loads saved card → calls charge_authorization
-      BE → Paystack charges card now
-      BE → issues tickets immediately (no /complete/ call needed)
-      BE → returns { order_id, status: "completed" }
-    """
 
     def __init__(self, user, data):
         self.user         = user
         self.data         = data
-        self.gateway      = get_gateway(data.get("country", "NG"))
+        self.gateway      = get_gateway("NG")   # all currencies use Paystack
         self.email        = user.email
         self.full_name    = data.get("full_name", "")
         self.phone_number = data.get("phone_number", "")
-        self.currency     = data.get("currency", "NGN")
 
     @transaction.atomic
     def run(self):
-        # Load and validate card belongs to user
         card = self._get_card()
 
         marketplace_listing_id = self.data.get("marketplace_listing_id")
@@ -47,28 +37,22 @@ class CardCheckoutService:
 
         return self._handle_normal(card)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Normal purchase with saved card
-    # ─────────────────────────────────────────────────────────────────────────
-
     def _handle_normal(self, card):
         from transactions.models import Order, OrderTicket, IssuedTicket
-        from attendee.models import AffliateEarnings
 
-        event      = self._get_event()
+        event    = self._get_event()
+        currency = get_currency_for_event(event)   # ← derived from host country
+
         line_items = self._validate_tickets(event)
         discount   = self._apply_promo(line_items)
         subtotal   = sum(qty * price for _, qty, price in line_items)
         total      = max(subtotal - discount, Decimal("0.00"))
 
-        # Reserve tickets
         self._reserve_tickets(line_items)
 
-        # Store affiliate code if provided
         affiliate_code = str(self.data.get("affiliate_code") or "").strip()
+        reference      = self._generate_reference()
 
-        # Create pending order
-        reference = self._generate_reference()
         order = Order.objects.create(
             user=self.user,
             email=self.email,
@@ -95,12 +79,11 @@ class CardCheckoutService:
                 price=unit_price,
             )
 
-        # Charge saved card directly
         result = self.gateway.charge_saved_card(
             card=card,
             email=self.email,
             amount_kobo=int(float(total) * 100),
-            currency=self.currency,
+            currency=currency,
         )
 
         if result.status != "succeeded":
@@ -109,7 +92,6 @@ class CardCheckoutService:
                 402,
             )
 
-        # Persist payment
         payment = Payment.objects.create(
             user=self.user,
             email=self.email,
@@ -117,14 +99,13 @@ class CardCheckoutService:
             provider="paystack",
             provider_payment_id=result.reference,
             amount=total,
-            currency=self.currency.upper(),
+            currency=currency,
             status="succeeded",
             content_type=ContentType.objects.get_for_model(order),
             object_id=order.id,
             metadata=result.metadata,
         )
 
-        # Complete order + issue tickets
         order.status         = "completed"
         order.payment_method = "paystack"
         order.save(update_fields=["status", "payment_method"])
@@ -141,7 +122,6 @@ class CardCheckoutService:
                     metadata={},
                 )
 
-        # Credit affiliate if applicable
         self._credit_affiliate(order)
 
         return {
@@ -151,12 +131,9 @@ class CardCheckoutService:
             "subtotal": str(subtotal),
             "discount": str(discount),
             "total":    str(total),
+            "currency": currency,
             "card":     self._card_info(card),
         }
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Marketplace purchase with saved card
-    # ─────────────────────────────────────────────────────────────────────────
 
     def _handle_marketplace(self, card, listing_id):
         from marketplace.models import MarketListing
@@ -164,7 +141,9 @@ class CardCheckoutService:
         from attendee.models import AffliateEarnings
 
         try:
-            listing = MarketListing.objects.select_for_update().get(id=listing_id)
+            listing = MarketListing.objects.select_for_update().select_related(
+                "ticket__event__host"
+            ).get(id=listing_id)
         except MarketListing.DoesNotExist:
             raise CheckoutError("Marketplace listing not found.", 404)
 
@@ -175,12 +154,12 @@ class CardCheckoutService:
         if listing.expires_at and timezone.now() > listing.expires_at:
             raise CheckoutError("This listing has expired.", 400)
 
-        # Reserve listing
         listing.status = "reserved"
         listing.save(update_fields=["status"])
 
-        event     = listing.ticket.event
-        total     = listing.price
+        event    = listing.ticket.event
+        currency = get_currency_for_event(event)   # ← derived from host country
+        total    = listing.price
         reference = self._generate_reference()
 
         order = Order.objects.create(
@@ -202,12 +181,11 @@ class CardCheckoutService:
             },
         )
 
-        # Charge saved card directly
         result = self.gateway.charge_saved_card(
             card=card,
             email=self.email,
             amount_kobo=int(float(total) * 100),
-            currency=self.currency,
+            currency=currency,
         )
 
         if result.status != "succeeded":
@@ -223,16 +201,15 @@ class CardCheckoutService:
             provider="paystack",
             provider_payment_id=result.reference,
             amount=total,
-            currency=self.currency.upper(),
+            currency=currency,
             status="succeeded",
             content_type=ContentType.objects.get_for_model(order),
             object_id=order.id,
             metadata=result.metadata,
         )
 
-        # Transfer ticket ownership
         issued_ticket                = listing.ticket
-        issued_ticket.original_owner = issued_ticket.owner
+        issued_ticket.original_owner = issued_ticket.ownereyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc0OTA2MTcwLCJpYXQiOjE3NzQ4NzAxNzAsImp0aSI6IjNlZDFlNzUxNTI3MDQwMTRiN2E3NDNmZTkwZDE4YTI0IiwidXNlcl9pZCI6IjMifQ.ZRKAe47oKalpCEKRQA5OetcO9AQRM3lteWwUeGl0Qoc
         issued_ticket.owner          = self.user
         issued_ticket.status         = "resold"
         issued_ticket.transferred_at = timezone.now()
@@ -245,7 +222,6 @@ class CardCheckoutService:
         order.payment_method = "paystack"
         order.save(update_fields=["status", "payment_method"])
 
-        # Credit seller
         seller_attendee = listing.seller.attendee_profile
         AffliateEarnings.objects.get_or_create(
             attendee          = seller_attendee,
@@ -263,12 +239,9 @@ class CardCheckoutService:
             "listing_id": str(listing.id),
             "status":     "completed",
             "total":      str(total),
+            "currency":   currency,
             "card":       self._card_info(card),
         }
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Helpers
-    # ─────────────────────────────────────────────────────────────────────────
 
     def _get_card(self):
         card_id = self.data.get("card_id")
@@ -282,7 +255,9 @@ class CardCheckoutService:
     def _get_event(self):
         from events.models import Event
         try:
-            event = Event.objects.select_for_update().get(id=self.data["event_id"])
+            event = Event.objects.select_for_update().select_related("host").get(
+                id=self.data["event_id"]
+            )
         except Event.DoesNotExist:
             raise CheckoutError("Event not found.", 404)
         if event.status != "active":

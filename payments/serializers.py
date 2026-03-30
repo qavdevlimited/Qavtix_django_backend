@@ -17,9 +17,6 @@ class SplitMemberSerializer(serializers.Serializer):
 
 
 class CheckoutSerializer(serializers.Serializer):
-    # Location — determines gateway
-    country  = serializers.CharField(default="NG")
-    currency = serializers.CharField(default="NGN")
 
     # Buyer info
     full_name    = serializers.CharField()

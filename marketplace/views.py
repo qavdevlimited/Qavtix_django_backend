@@ -5,49 +5,58 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.utils import timezone
 from marketplace.filter import MarketListingFilter
 from marketplace.models import MarketListing
-from .serializers import MarketListingSerializer,MarketEventDetailsSerializer
+from marketplace.services import MarketplaceListingService,MarketplaceListingError
+from transactions.models import IssuedTicket
+from .serializers import MarketListingSerializer,MarketEventDetailsSerializer,MarketListingCreateSerializer
 from public.response import api_response
 
 
 class MarketListingCreateView(generics.CreateAPIView):
-    serializer_class = MarketListingSerializer
+    serializer_class = MarketListingCreateSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
         ticket_id = request.data.get("ticket_id")
         price = request.data.get("price")
-        expires_at = request.data.get("expires_at")  # optional
+        expires_at = request.data.get("expires_at")
 
-        # Validate ticket ownership
+       
         try:
-            ticket = request.user.owned_tickets.get(id=ticket_id, status="active")
-        except MarketListing.ticket.model.DoesNotExist:
+            ticket = (
+                request.user.owned_tickets
+                .select_related("event", "event__host")  # prevents future queries
+                .get(id=ticket_id, status="active")
+            )
+        except IssuedTicket.DoesNotExist:
             return api_response(
                 message="Ticket not found or not owned.",
                 status_code=400
             )
 
-        # Prevent double listing
-        if hasattr(ticket, "market_listing") and ticket.market_listing.status == "active":
+        # Call service
+        try:
+            listing = MarketplaceListingService.create_listing(
+                user=request.user,
+                ticket=ticket,
+                price=price,
+                expires_at=expires_at
+            )
+        except MarketplaceListingError as e:
             return api_response(
-                message="Ticket is already listed in the marketplace.",
-                status_code=400
+                message=e.message,
+                status_code=e.status
             )
 
-        listing = MarketListing.objects.create(
-            ticket=ticket,
-            seller=request.user,
-            price=price,
-            expires_at=expires_at
-        )
-
         serializer = self.get_serializer(listing)
+
         return api_response(
             message="Ticket Listed in Marketplace",
             status_code=201,
             data=serializer.data
         )
-
 
 class MarketListingListView(generics.ListAPIView):
     serializer_class = MarketListingSerializer

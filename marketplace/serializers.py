@@ -6,6 +6,8 @@ from django.db.models import Sum
 from transactions.models import IssuedTicket
 from host.serializers import EventLocationNestedSerializer,OrganizerSocialLinkNestedSerializer,EventMediaNestedSerializer,EventDetailsSerializer
 from public.serializers import EventLocationSerializer
+from django.utils import timezone
+from decimal import Decimal
 
 class MarketListingSerializer(serializers.ModelSerializer):
     event_name = serializers.CharField(source="ticket.event.title", read_only=True)
@@ -72,6 +74,18 @@ class MarketListingSerializer(serializers.ModelSerializer):
             return False
         # Check if the logged-in user has favorited this event
         return obj.ticket.event.favorited_by.filter(user=request.user).exists()
+    
+
+
+class MarketListingCreateSerializer(serializers.Serializer):
+    ticket_id = serializers.IntegerField()
+    price = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    expires_at = serializers.DateTimeField(required=False)
+
+    def validate_expires_at(self, value):
+        if value <= timezone.now():
+            raise serializers.ValidationError("Expiry time must be in the future.")
+        return value
     
 
 

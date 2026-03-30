@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.db.models import OuterRef, Subquery, Sum, Count,Prefetch
 from django.http import Http404
 from attendee.service import get_affiliate_dashboard
+from payments.services.currency_utils import get_currency_for_country, get_currency_for_event
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
 from .serializers import (PrivacySettingsSerializer, TicketDashboardSerializer,FavoriteEventSerializer, TicketReceiptSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
@@ -510,23 +511,35 @@ class AffiliateEventsView(generics.ListAPIView):
     search_fields = ["title"]
 
     def get_queryset(self):
-        queryset = Event.objects.filter(status="active", affiliate_enabled=True).distinct().order_by('-created_at')
+        queryset = Event.objects.filter(
+            status="active",
+            affiliate_enabled=True
+        ).select_related("host", "category").distinct()
 
-        # Optional filters from query params
-
+        # Optional query params
         category = self.request.query_params.get("category")
         start_date = self.request.query_params.get("start_date")
         end_date = self.request.query_params.get("end_date")
 
         if category:
-            queryset = queryset.filter(category_id=category)  
+            queryset = queryset.filter(category_id=category)
+
         if start_date and end_date:
             queryset = queryset.filter(
                 start_datetime__date__gte=start_date,
                 end_datetime__date__lte=end_date
             )
 
-        return queryset.distinct()
+        # Currency filter based on user's country
+        user = getattr(self.request, "user", None)
+        if user and user.is_authenticated:
+            attendee = getattr(user, "attendee_profile", None)
+            if attendee and attendee.country:
+                user_currency = get_currency_for_country(attendee.country)
+                # Use Python filter safely since host and host__country are prefetched
+                queryset = [e for e in queryset if get_currency_for_event(e) == user_currency]
+
+        return queryset
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())

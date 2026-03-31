@@ -303,8 +303,10 @@ class EventDetailsSerializer(serializers.ModelSerializer):
 
     def get_user_ticket_summary(self, obj):
         """
-        Returns a simple summary of the current user's tickets for this event.
-        Returns None if user is not logged in or has no tickets.
+        Returns the user's ticket(s) for this event with:
+        - issued_ticket_id
+        - ticket_type  
+        - status
         """
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
@@ -312,35 +314,36 @@ class EventDetailsSerializer(serializers.ModelSerializer):
 
         user = request.user
 
-        # Count tickets by status
         from transactions.models import IssuedTicket
 
-        tickets = IssuedTicket.objects.filter(
+        # Fetch actual ticket details (not just counts)
+        issued_tickets = IssuedTicket.objects.filter(
             event=obj,
             owner=user
-        ).values('status').annotate(count=Count('id'))
+        ).select_related('order_ticket__ticket')   # Important for performance
 
-        if not tickets.exists():
+        if not issued_tickets.exists():
             return None
 
-        total = 0
-        active = 0
-        cancelled = 0
+        ticket_list = []
+        for it in issued_tickets:
+            ticket_list.append({
+                "issued_ticket_id": int(it.id),
+                "ticket_type": it.order_ticket.ticket.ticket_type,
+                "status": it.status,
+                "status_display": it.get_status_display(),   # e.g. "Active", "Cancelled"
+            })
 
-        for item in tickets:
-            total += item['count']
-            if item['status'] == 'active':
-                active = item['count']
-            elif item['status'] == 'cancelled':
-                cancelled = item['count']
+        # If user has only one ticket, return it directly (most common case)
+        if len(ticket_list) == 1:
+            return ticket_list[0]
 
+        # If user has multiple tickets, return as list
         return {
-            "has_ticket": total > 0,
-            "total_tickets": total,
-            "active": active,
-            "cancelled": cancelled
+            "has_multiple": True,
+            "total": len(ticket_list),
+            "tickets": ticket_list
         }
-    
 
 
 class CustomerCardSerializer(serializers.Serializer):

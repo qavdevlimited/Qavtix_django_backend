@@ -37,7 +37,7 @@ class TicketNestedSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ticket
         fields = [
-            'ticket_type', 'description', 'price', 'quantity', 'per_person_max',
+            'id','ticket_type', 'description', 'price', 'quantity', 'per_person_max',
             'sales_start', 'sales_end', 'promo_codes',
         ]
 

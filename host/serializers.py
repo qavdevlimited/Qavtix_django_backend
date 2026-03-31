@@ -9,6 +9,7 @@ from public.models import Follow
 from transactions.models import Withdrawal
 from django.db.models import Sum
 from datetime import timedelta
+from django.db.models import Count
 
 # Ticket promo codes
 class PromoCodeNestedSerializer(serializers.ModelSerializer):
@@ -215,6 +216,7 @@ class EventDetailsSerializer(serializers.ModelSerializer):
     is_trending=serializers.SerializerMethodField()
     is_filling_fast=serializers.SerializerMethodField()
     organizer_id=serializers.IntegerField(source='host.id')
+    user_ticket_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -222,7 +224,8 @@ class EventDetailsSerializer(serializers.ModelSerializer):
             'id', 'title', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
             'location_type', 'short_description', 'full_description',
             'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
-            'event_location', 'social_links', 'tickets','event_status','event_image','attendees_count','age_restriction','is_favorite','is_following','is_trending','is_filling_fast','organizer_id'
+            'event_location', 'social_links', 'tickets','event_status','event_image','attendees_count',
+            'age_restriction','is_favorite','is_following','is_trending','is_filling_fast','organizer_id','user_ticket_summary'
         ]
     
     def get_attendees_count(self, obj):
@@ -297,6 +300,46 @@ class EventDetailsSerializer(serializers.ModelSerializer):
         elif obj.created_at >= timezone.now() - timedelta(days=7):
             return "new"
         return "normal"
+
+    def get_user_ticket_summary(self, obj):
+        """
+        Returns a simple summary of the current user's tickets for this event.
+        Returns None if user is not logged in or has no tickets.
+        """
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return None
+
+        user = request.user
+
+        # Count tickets by status
+        from transactions.models import IssuedTicket
+
+        tickets = IssuedTicket.objects.filter(
+            event=obj,
+            owner=user
+        ).values('status').annotate(count=Count('id'))
+
+        if not tickets.exists():
+            return None
+
+        total = 0
+        active = 0
+        cancelled = 0
+
+        for item in tickets:
+            total += item['count']
+            if item['status'] == 'active':
+                active = item['count']
+            elif item['status'] == 'cancelled':
+                cancelled = item['count']
+
+        return {
+            "has_ticket": total > 0,
+            "total_tickets": total,
+            "active": active,
+            "cancelled": cancelled
+        }
     
 
 

@@ -6,6 +6,7 @@ from datetime import timedelta
 from django.db.models import Count
 
 from host.serializers import EventSerializer
+from payments.serializers import TicketLineItemSerializer
 from .models import Category, CategorySubscription, Follow, LocationSubscription,Message
 
 from django.db.models import (
@@ -336,3 +337,15 @@ class CategoryPageSerializer(serializers.Serializer):
             many=True,
             context=self.context
         ).data
+
+
+
+class PromoCodeValidateSerializer(serializers.Serializer):
+    event_id = serializers.UUIDField()
+    promo_code = serializers.CharField(max_length=50)
+    tickets = TicketLineItemSerializer(many=True)   
+
+    def validate(self, data):
+        if not data.get("tickets"):
+            raise serializers.ValidationError("At least one ticket must be provided.")
+        return data

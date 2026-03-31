@@ -415,21 +415,34 @@ class CheckoutService:
         if not promo_code:
             return Decimal("0.00")
 
-        now     = timezone.now()
-        matched = None
-        for ticket, _, _ in line_items:
+        now = timezone.now()
+        total_discount = Decimal("0.00")
+
+        for ticket, qty, price in line_items:
             try:
-                matched = ticket.promo_codes.get(code=promo_code, valid_till__gte=now.date())
-                break
-            except Exception:
+                # Try to find promo code specifically for this ticket
+                promo = ticket.promo_codes.get(
+                    code=promo_code,
+                    valid_till__gte=now.date()
+                )
+                
+                # Calculate discount only for this ticket type
+                subtotal_for_ticket = qty * price
+                discount_for_ticket = (subtotal_for_ticket * promo.discount_percentage / 100).quantize(Decimal("0.01"))
+                
+                total_discount += discount_for_ticket
+
+            except ticket.promo_codes.model.DoesNotExist:
+                # Promo code not attached to this ticket → skip (no error)
+                continue
+            except Exception as e:
+                logger.warning(f"Error checking promo for ticket {ticket.id}: {e}")
                 continue
 
-        if not matched:
-            raise CheckoutError("Invalid or expired promo code.", 400)
+        if total_discount <= 0:
+            raise CheckoutError("Invalid or expired promo code for the selected tickets.", 400)
 
-        raw      = sum(qty * price for _, qty, price in line_items)
-        discount = (raw * matched.discount_percentage / 100).quantize(Decimal("0.01"))
-        return discount
+        return total_discount
 
     def _reserve_tickets(self, line_items):
         from events.models import Ticket

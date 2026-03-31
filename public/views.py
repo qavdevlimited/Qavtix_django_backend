@@ -1,14 +1,15 @@
 from django.shortcuts import render
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
 from events.models import Event,EventLocation
 from rest_framework import generics, permissions,status,filters
 from django.utils import timezone
 from django.db.models import Q
 
+from payments.services.currency_utils import get_currency_for_event
 from public.filters import CategoryEventFilter, EventFilter, SearchFilter
 from transactions.models import IssuedTicket
-from .serializers import CategoryPageSerializer, CategorySerializer, CategorySubscriptionSerializer, EventListSerializer, LocationPageSerializer, LocationSubscriptionSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer, event_list_queryset
+from .serializers import CategoryPageSerializer, CategorySerializer, CategorySubscriptionSerializer, EventListSerializer, LocationPageSerializer, LocationSubscriptionSerializer, PromoCodeValidateSerializer,TrendingHostSerializer,FollowActionSerializer,HostPublicDetailSerializer,MessageSerializer, event_list_queryset
 from rest_framework.response import Response
 from rest_framework.views import APIView, PermissionDenied
 from django.db.models import Count
@@ -29,6 +30,7 @@ from .helpers import increment_event_views
 from django_filters.rest_framework import DjangoFilterBackend
 from .utils import pagination_data
 from django.db.models import Exists, OuterRef, Value, BooleanField
+from decimal import Decimal
 
 
 # ── Nearby Events ──────────────────────────────────────────────────────────────
@@ -720,5 +722,115 @@ class CancelIssuedTicketView(generics.GenericAPIView):
             data={
                 "ticket_id": str(ticket.id),
                 "status": ticket.status
+            }
+        )
+
+
+class ValidatePromoCodeView(APIView):
+    """
+    POST /payments/promo/validate/
+
+    Validates a promo code for specific tickets in an event.
+    Returns discount details and validity information.
+    Useful for real-time promo validation on the frontend (checkout page).
+    """
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        summary="Validate Promo Code",
+        description="Checks if a promo code is valid for the selected tickets and returns discount info.",
+        request=PromoCodeValidateSerializer,
+        responses={
+            200: OpenApiResponse(description="Promo code is valid"),
+            400: OpenApiResponse(description="Invalid promo code or not applicable"),
+        },
+        examples=[
+            OpenApiExample(
+                "Validate promo code",
+                value={
+                    "event_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "promo_code": "VIP20",
+                    "tickets": [
+                        {"ticket_id": 5, "quantity": 2},
+                        {"ticket_id": 6, "quantity": 1}
+                    ]
+                },
+                request_only=True,
+            )
+        ],
+    )
+    def post(self, request):
+        serializer = PromoCodeValidateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        event_id = data["event_id"]
+        promo_code_str = data["promo_code"].strip()
+        ticket_items = data["tickets"]
+
+        try:
+            from events.models import Event, Ticket
+
+            event = Event.objects.get(id=event_id)
+        except Event.DoesNotExist:
+            return api_response(message="Event not found.", status_code=404)
+
+        if not promo_code_str:
+            return api_response(message="Promo code is required.", status_code=400)
+
+        total_discount = Decimal("0.00")
+        applied_tickets = []
+
+        now = timezone.now()
+
+        for item in ticket_items:
+            try:
+                ticket = Ticket.objects.get(id=item["ticket_id"], event=event)
+            except Ticket.DoesNotExist:
+                continue  # skip invalid ticket
+
+            try:
+                promo = ticket.promo_codes.get(
+                    code=promo_code_str,
+                    valid_till__gte=now.date()
+                )
+
+                subtotal = item["quantity"] * ticket.price
+                discount_amount = (subtotal * promo.discount_percentage / 100).quantize(Decimal("0.01"))
+
+                total_discount += discount_amount
+
+                applied_tickets.append({
+                    "ticket_id": ticket.id,
+                    "ticket_type": ticket.ticket_type,
+                    "quantity": item["quantity"],
+                    "original_price": str(ticket.price),
+                    "discount_percentage": promo.discount_percentage,
+                    "discount_amount": str(discount_amount),
+                    "valid_till": promo.valid_till.strftime("%Y-%m-%d"),
+                })
+
+            except ticket.promo_codes.model.DoesNotExist:
+                continue
+            except Exception:
+                continue
+
+        if total_discount <= 0:
+            return api_response(
+                message=f"Promo code '{promo_code_str}' is not valid for any of the selected tickets.",
+                status_code=400
+            )
+
+        return api_response(
+            message="Promo code is valid.",
+            status_code=200,
+            data={
+                'type': 'promo code',
+                "code": promo_code_str,
+                "percentage": int(total_discount),
+                "currency": get_currency_for_event(event), 
+                "description": f"Promo code '{total_discount}' off.",
+                "applied_tickets": applied_tickets,
+                "note": "Discount will be applied only to tickets that have this promo code."
             }
         )

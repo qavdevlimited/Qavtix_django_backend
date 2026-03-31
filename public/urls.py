@@ -30,6 +30,8 @@ urlpatterns = [
 
    path("tickets/<int:ticket_id>/cancel/", CancelIssuedTicketView.as_view()),
 
+   path("promo/validate/", ValidatePromoCodeView.as_view()),
+
     
 ]
 

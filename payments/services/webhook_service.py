@@ -151,6 +151,14 @@ class PaystackWebhookService:
         except Exception:
             pass
 
+
+        try:
+            from attendee.models import AttendeeSubscription
+            sub = AttendeeSubscription.objects.get(metadata__reference=reference)
+            return "attendee_subscription", sub, None
+        except Exception:
+            pass
+
         return None, None, None
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -433,6 +441,67 @@ class PaystackWebhookService:
             "flow":            "subscription",
             "subscription_id": str(subscription.id),
             "plan":            subscription.plan_slug,
+        }
+    
+
+    @transaction.atomic
+    def _complete_attendee_subscription(self, data, subscription):
+        """Minimal handler for AttendeeSubscription webhook"""
+        from payments.models import Payment
+        from attendee.models import AttendeeSubscription
+
+        if subscription.status == "active":
+            return {"handled": True, "skipped": True, "reason": "already_active"}
+
+        reference = data.get("reference", "")
+        currency  = data.get("currency") or getattr(subscription, 'currency', "NGN")
+        amount    = Decimal(str(data.get("amount", 0))) / 100
+
+        # Create Payment record
+        if not Payment.objects.filter(provider_payment_id=reference).exists():
+            Payment.objects.create(
+                user=subscription.attendee.user,          # Correct FK: attendee
+                email=subscription.attendee.user.email,
+                provider="paystack",
+                provider_payment_id=reference,
+                amount=amount,
+                currency=currency,
+                status="succeeded",
+                content_type=ContentType.objects.get_for_model(subscription),
+                object_id=subscription.id,
+                metadata={
+                    "reference":        reference,
+                    "gateway_response": data.get("gateway_response"),
+                    "channel":          data.get("channel"),
+                    "paid_at":          data.get("paid_at"),
+                    "source":           "webhook",
+                    "flow":             "attendee_subscription",
+                },
+            )
+
+        # Activate this subscription and cancel other active ones
+        AttendeeSubscription.objects.filter(
+            attendee=subscription.attendee,
+            status="active",
+        ).exclude(id=subscription.id).update(
+            status="cancelled",
+            cancelled_at=timezone.now(),
+        )
+
+        subscription.status = "active"
+        subscription.metadata["completed_by"] = "webhook"
+        subscription.save(update_fields=["status", "metadata"])
+
+        from payments.tasks import send_plan_activated_email
+        send_plan_activated_email.delay(str(subscription.id))
+
+        logger.info(f"Webhook: Attendee subscription {subscription.id} activated — {subscription.plan_slug}")
+
+        return {
+            "handled": True,
+            "flow": "attendee_subscription",
+            "subscription_id": str(subscription.id),
+            "plan": subscription.plan_slug,
         }
 
     # ─────────────────────────────────────────────────────────────────────────

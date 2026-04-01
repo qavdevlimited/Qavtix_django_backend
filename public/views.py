@@ -1,6 +1,7 @@
 from django.shortcuts import render
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
+from attendee.mixins import require_attendee_feature
 from events.models import Event,EventLocation
 from rest_framework import generics, permissions,status,filters
 from django.utils import timezone
@@ -759,6 +760,7 @@ class ValidatePromoCodeView(APIView):
             )
         ],
     )
+    @require_attendee_feature("promo_codes")
     def post(self, request):
         serializer = PromoCodeValidateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

@@ -244,6 +244,9 @@ class AttendeeProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
     id = serializers.IntegerField(source="user.id", read_only=True)
     currency=serializers.SerializerMethodField(read_only=True)
+    plan_expires_at = serializers.SerializerMethodField(read_only=True)
+    subscription_status = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Attendee
         fields = [
@@ -260,14 +263,63 @@ class AttendeeProfileSerializer(serializers.ModelSerializer):
             "profile_picture",
             "role",
             "currency",
+            "plan_expires_at",
+            "subscription_status",
         ]
-        read_only_fields = ["email", "email_verified","id","role","currency"]
+        read_only_fields = ["email", "email_verified","id","role","currency","plan_expires_at","subscription_status"]
 
 
     def get_currency(self, obj):
         country = obj.country
         from payments.services.currency_utils import get_currency_for_country
         return get_currency_for_country(country)
+    
+    def get_subscription_status(self, obj):
+        """Returns 'active' if user still has valid access, else 'inactive'"""
+        subscription = self._get_current_valid_subscription(obj)
+        
+        if subscription:
+            return "active"
+        return "inactive"
+    
+    def get_plan_expires_at(self, obj):
+        subscription = self._get_current_valid_subscription(obj)
+        if subscription and subscription.expires_at:
+            return subscription.expires_at.isoformat()
+        return None
+    
+    def _get_active_subscription(self, obj):
+        """Helper to get the most relevant active subscription"""
+        # Prefer paid active subscription
+        active_paid = obj.subscriptions.filter(
+            status="active"
+        ).exclude(plan_slug="free").order_by("-started_at").first()
+
+        if active_paid:
+            return active_paid
+
+        # Fallback to free plan if exists
+        return obj.subscriptions.filter(plan_slug="free").first()
+    
+
+    def _get_current_valid_subscription(self, obj):
+        """
+        Returns the latest subscription that has NOT expired yet.
+        - Works even if status is 'cancelled' (as long as expires_at is in future)
+        - Returns None if the latest subscription has already expired
+        """
+        # Get the most recently started subscription
+        latest = obj.subscriptions.order_by("-started_at").first()
+
+        if not latest:
+            return None
+
+        # If it has expired → user no longer has access
+        if latest.is_expired():
+            return None
+
+        # Still valid (active or cancelled but not expired)
+        return latest
 
     
 

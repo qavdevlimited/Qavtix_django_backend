@@ -1,13 +1,15 @@
 # marketplace/serializers.py
 from rest_framework import serializers
 from marketplace.models import MarketListing
-from events.models import EventLocation, EventMedia
+from events.models import Event, EventLocation, EventMedia, Tag
 from django.db.models import Sum
+from public.models import Follow
 from transactions.models import IssuedTicket
-from host.serializers import EventLocationNestedSerializer,OrganizerSocialLinkNestedSerializer,EventMediaNestedSerializer,EventDetailsSerializer
+from host.serializers import EventLocationNestedSerializer,OrganizerSocialLinkNestedSerializer,EventMediaNestedSerializer,EventDetailsSerializer, TicketNestedSerializer
 from public.serializers import EventLocationSerializer
 from django.utils import timezone
 from decimal import Decimal
+from datetime import timedelta
 
 class MarketListingSerializer(serializers.ModelSerializer):
     event_name = serializers.CharField(source="ticket.event.title", read_only=True)
@@ -90,28 +92,63 @@ class MarketListingCreateSerializer(serializers.Serializer):
 
 
 
-class MarketEventDetailsSerializer(EventDetailsSerializer):
+class MarketEventDetailsSerializer(serializers.ModelSerializer):
+    # Singular ticket
+    ticket = serializers.SerializerMethodField()
+    
+    # Include any other fields you need
     resale_price = serializers.SerializerMethodField()
     seller_name = serializers.SerializerMethodField()
     expires_at = serializers.SerializerMethodField()
     listing_id = serializers.SerializerMethodField()
     listing_status = serializers.SerializerMethodField()
+    event_location = EventLocationNestedSerializer(required=True)
+    social_links = OrganizerSocialLinkNestedSerializer(many=True, required=False)
+    tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
+    event_image = EventMediaNestedSerializer(many=True, required=False)
+    attendees_count = serializers.SerializerMethodField()
+    event_status = serializers.SerializerMethodField()
+    is_favorite = serializers.SerializerMethodField()
+    category = serializers.CharField(source="category.name", read_only=True)
+    is_following = serializers.SerializerMethodField()
+    is_trending = serializers.SerializerMethodField()
+    is_filling_fast = serializers.SerializerMethodField()
+    organizer_id = serializers.IntegerField(source='host.id')
+    event_media = EventMediaNestedSerializer(many=True, read_only=True, source="media")
 
-   
-    tickets = serializers.SerializerMethodField()
-
-    class Meta(EventDetailsSerializer.Meta):
-        fields = EventDetailsSerializer.Meta.fields + [
-            "resale_price",
-            "seller_name",
-            "expires_at",
-            "listing_id",
-            "listing_status",
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'title', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
+            'location_type', 'short_description', 'full_description',
+            'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
+            'event_location', 'social_links', 'ticket', 'event_status', 'event_image', 'attendees_count',
+            'age_restriction','is_favorite','is_following','is_trending','is_filling_fast','organizer_id',
+            'currency','event_media',
+            "resale_price", "seller_name", "expires_at", "listing_id", "listing_status"
         ]
 
     def _get_listing(self):
         return self.context.get("listing")
 
+    # Single ticket
+    def get_ticket(self, obj):
+        listing = self._get_listing()
+        if not listing:
+            return None
+        original_ticket = listing.ticket.order_ticket.ticket
+        return {
+            "ticket_type": original_ticket.ticket_type,
+            "description": original_ticket.description,
+            "price": str(listing.price),
+            "quantity": 1,
+            "per_person_max": 1,
+            "sales_start": original_ticket.sales_start,
+            "sales_end": original_ticket.sales_end,
+            "promo_codes": [],
+        }
+
+    # Other methods for resale_price, seller_name, etc.
     def get_resale_price(self, obj):
         listing = self._get_listing()
         return str(listing.price) if listing else None
@@ -131,9 +168,42 @@ class MarketEventDetailsSerializer(EventDetailsSerializer):
     def get_listing_status(self, obj):
         listing = self._get_listing()
         return listing.status if listing else None
+    
 
-    def get_tickets(self, obj):
-        listing = self._get_listing()
+    def get_attendees_count(self, obj):
+        """
+        Count unique users who purchased any ticket for this event.
+        Only count completed orders.
+        """
+        return (
+            obj.order_set
+            .filter(status="completed")   # Only completed orders
+            .values("user")               # Group by user
+            .distinct()                   # Unique users
+            .count()                      # Count of unique attendees
+        )
+    
+    def get_is_favorite(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        # Check if the logged-in user has favorited this event
+        return obj.favorited_by.filter(user=request.user).exists()
+
+    
+    def get_is_following(self, obj):
+        request = self.context.get("request")
+
+        if request and request.user.is_authenticated:
+            return Follow.objects.filter(
+                user=request.user,
+                host=obj.host
+            ).exists()
+
+        return False
+    
+    def get_ticket(self, obj):
+        listing = self.context.get("listing")
         if not listing:
             return None
 
@@ -149,3 +219,44 @@ class MarketEventDetailsSerializer(EventDetailsSerializer):
             "sales_end": original_ticket.sales_end,
             "promo_codes": [],
         }
+        
+        
+
+    def get_total_sold(self, obj):
+        return obj.tickets.aggregate(
+            total_sold=Sum("sold_count")
+        )["total_sold"] or 0
+
+    def get_total_capacity(self, obj):
+        return obj.tickets.aggregate(
+            total=Sum("quantity")
+        )["total"] or 0
+
+    def get_is_trending(self, obj):
+        total_sold = self.get_total_sold(obj)
+        return total_sold >= 1000
+    
+    def get_is_filling_fast(self, obj):
+        total_sold = self.get_total_sold(obj)
+        total_capacity = self.get_total_capacity(obj)
+
+        if total_capacity == 0:
+            return False
+
+        fill_percentage = (total_sold / total_capacity) * 100
+
+        return fill_percentage >= 70 
+
+    # Replace get_event_status:
+    def get_event_status(self, obj):
+        tickets = getattr(obj, "all_tickets", None) or list(obj.tickets.all())
+        total_quantity = sum(t.quantity for t in tickets)
+        sold_quantity  = sum(getattr(t, "sold_count", 0) for t in tickets)
+
+        if sold_quantity >= total_quantity:
+            return "sold-out"
+        elif total_quantity > 0 and sold_quantity / total_quantity >= 0.75:
+            return "fast-selling"
+        elif obj.created_at >= timezone.now() - timedelta(days=7):
+            return "new"
+        return "normal"

@@ -97,6 +97,9 @@ class MarketEventDetailsSerializer(EventDetailsSerializer):
     listing_id = serializers.SerializerMethodField()
     listing_status = serializers.SerializerMethodField()
 
+   
+    tickets = serializers.SerializerMethodField()
+
     class Meta(EventDetailsSerializer.Meta):
         fields = EventDetailsSerializer.Meta.fields + [
             "resale_price",
@@ -106,50 +109,43 @@ class MarketEventDetailsSerializer(EventDetailsSerializer):
             "listing_status",
         ]
 
+    def _get_listing(self):
+        return self.context.get("listing")
+
     def get_resale_price(self, obj):
-        listing = self.context.get("listing")
+        listing = self._get_listing()
         return str(listing.price) if listing else None
 
     def get_seller_name(self, obj):
-        listing = self.context.get("listing")
-        return listing.seller.get_full_name() if listing else None
+        listing = self._get_listing()
+        return listing.seller.attendee_profile.full_name if listing else None
 
     def get_expires_at(self, obj):
-        listing = self.context.get("listing")
+        listing = self._get_listing()
         return listing.expires_at if listing else None
 
     def get_listing_id(self, obj):
-        listing = self.context.get("listing")
+        listing = self._get_listing()
         return listing.id if listing else None
 
     def get_listing_status(self, obj):
-        listing = self.context.get("listing")
+        listing = self._get_listing()
         return listing.status if listing else None
 
-    def to_representation(self, instance):
-        """
-        instance = Event
-        listing is passed via context
-        """
-        data = super().to_representation(instance)
-
-        listing = self.context.get("listing")
+    def get_tickets(self, obj):
+        listing = self._get_listing()
         if not listing:
-            return data
+            return None
 
-        # Get original Ticket model
         original_ticket = listing.ticket.order_ticket.ticket
 
-        # Replace tickets with ONLY resale ticket
-        data["tickets"] = [{
+        return {
             "ticket_type": original_ticket.ticket_type,
             "description": original_ticket.description,
-            "price": str(listing.price),  # resale price
+            "price": str(listing.price),
             "quantity": 1,
             "per_person_max": 1,
             "sales_start": original_ticket.sales_start,
             "sales_end": original_ticket.sales_end,
             "promo_codes": [],
-        }]
-
-        return data
+        }

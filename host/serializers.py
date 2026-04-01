@@ -217,6 +217,7 @@ class EventDetailsSerializer(serializers.ModelSerializer):
     is_filling_fast=serializers.SerializerMethodField()
     organizer_id=serializers.IntegerField(source='host.id')
     user_ticket_summary = serializers.SerializerMethodField()
+    event_media = EventMediaNestedSerializer(many=True, read_only=True,source="media")
 
     class Meta:
         model = Event
@@ -225,7 +226,7 @@ class EventDetailsSerializer(serializers.ModelSerializer):
             'location_type', 'short_description', 'full_description',
             'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
             'event_location', 'social_links', 'tickets','event_status','event_image','attendees_count',
-            'age_restriction','is_favorite','is_following','is_trending','is_filling_fast','organizer_id','user_ticket_summary','currency'
+            'age_restriction','is_favorite','is_following','is_trending','is_filling_fast','organizer_id','user_ticket_summary','currency','event_media'
         ]
     
     def get_attendees_count(self, obj):

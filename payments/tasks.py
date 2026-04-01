@@ -533,7 +533,7 @@ def send_plan_expiry_reminders():
 # ====================== ATTENDEE SUBSCRIPTION EMAIL TASKS ======================
 
 @shared_task
-def send_plan_activated_email(subscription_id):
+def send_plan_activated_email_attendee(subscription_id):
     """Sent when an Attendee plan is activated (via popup, saved card, or webhook)"""
     from host.models import AttendeeSubscription   # your model location
 

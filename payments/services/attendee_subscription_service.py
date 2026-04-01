@@ -9,6 +9,7 @@ from django.contrib.contenttypes.models import ContentType
 from payments.services.factory import get_gateway
 from payments.models import Payment, PaymentCard
 from payments.services.currency_utils import get_gateway_country_code
+from payments.tasks import send_plan_activated_email_attendee
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ class AttendeeSubscriptionInitiateService:
         self._activate_subscription(subscription, existing)
 
         from payments.tasks import send_plan_activated_email
-        send_plan_activated_email.delay(str(subscription.id))
+        send_plan_activated_email_attendee.delay(str(subscription.id))
 
         return {
             "flow":            "card",
@@ -270,8 +271,8 @@ class AttendeeSubscriptionCompleteService:
 
         self._activate_subscription(subscription)
 
-        from payments.tasks import send_plan_activated_email
-        send_plan_activated_email.delay(str(subscription.id))
+        from payments.tasks import send_plan_activated_email_attendee
+        send_plan_activated_email_attendee.delay(str(subscription.id))
 
         return {
             "subscription_id": str(subscription.id),

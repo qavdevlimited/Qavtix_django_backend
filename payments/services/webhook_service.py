@@ -9,6 +9,8 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
+from payments.tasks import send_plan_activated_email_attendee
+
 logger = logging.getLogger(__name__)
 
 
@@ -492,8 +494,8 @@ class PaystackWebhookService:
         subscription.metadata["completed_by"] = "webhook"
         subscription.save(update_fields=["status", "metadata"])
 
-        from payments.tasks import send_plan_activated_email
-        send_plan_activated_email.delay(str(subscription.id))
+        from payments.tasks import send_plan_activated_email_attendee
+        send_plan_activated_email_attendee.delay(str(subscription.id))
 
         logger.info(f"Webhook: Attendee subscription {subscription.id} activated — {subscription.plan_slug}")
 

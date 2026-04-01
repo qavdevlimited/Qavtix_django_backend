@@ -529,6 +529,205 @@ def send_plan_expiry_reminders():
         logger.info(f"1-day expiry reminder queued for subscription {sub.id}")
 
 
+
+# ====================== ATTENDEE SUBSCRIPTION EMAIL TASKS ======================
+
+@shared_task
+def send_plan_activated_email(subscription_id):
+    """Sent when an Attendee plan is activated (via popup, saved card, or webhook)"""
+    from host.models import AttendeeSubscription   # your model location
+
+    try:
+        sub = AttendeeSubscription.objects.select_related(
+            "plan", "attendee__user"
+        ).get(id=subscription_id)
+    except AttendeeSubscription.DoesNotExist:
+        logger.error(f"AttendeeSubscription {subscription_id} not found for activation email")
+        return
+
+    user    = sub.attendee.user
+    plan    = sub.plan
+    cycle   = sub.billing_cycle.capitalize()
+    expires = sub.expires_at.strftime("%A, %d %B %Y") if sub.expires_at else "Never"
+
+    subject = f"🎉 Welcome to QavTix {plan.name} Plan!"
+    body    = f"""
+Hi {user.first_name or user.email},
+
+Your {plan.name} plan is now active.
+
+Plan:          {plan.name}
+Billing Cycle: {cycle}
+Amount Paid:   ₦{sub.amount_paid:,.2f}
+Expires:       {expires}
+
+You now have access to boosted rewards, higher discount caps, early access, 
+and all other {plan.name} benefits.
+
+Log in to your dashboard to explore your new features.
+
+— QavTix Team
+    """.strip()
+
+    _send_email(to=user.email, subject=subject, body=body)
+
+
+@shared_task
+def send_plan_expiry_reminder_email(subscription_id, days_remaining):
+    """Sent 7 days and 1 day before attendee plan expires (only for active plans)"""
+    from host.models import AttendeeSubscription
+
+    try:
+        sub = AttendeeSubscription.objects.select_related(
+            "plan", "attendee__user"
+        ).get(id=subscription_id)
+    except AttendeeSubscription.DoesNotExist:
+        return
+
+    if sub.status != "active":
+        return
+
+    user    = sub.attendee.user
+    plan    = sub.plan
+    expires = sub.expires_at.strftime("%A, %d %B %Y")
+    day_str = f"{days_remaining} day{'s' if days_remaining > 1 else ''}"
+
+    subject = f"⏰ Your {plan.name} plan expires in {day_str}"
+    body    = f"""
+Hi {user.first_name or user.email},
+
+Your {plan.name} attendee plan expires in {day_str} on {expires}.
+
+Renew now to continue enjoying boosted affiliate rewards, higher ticket discounts,
+early access, and exclusive deals.
+
+Renew here: https://qavtix.com/attendee/plans
+
+— QavTix Team
+    """.strip()
+
+    _send_email(to=user.email, subject=subject, body=body)
+
+
+@shared_task
+def send_plan_expired_email(subscription_id):
+    """Sent when an attendee plan expires"""
+    from host.models import AttendeeSubscription
+
+    try:
+        sub = AttendeeSubscription.objects.select_related(
+            "plan", "attendee__user"
+        ).get(id=subscription_id)
+    except AttendeeSubscription.DoesNotExist:
+        return
+
+    user = sub.attendee.user
+    plan = sub.plan
+
+    subject = f"Your {plan.name} plan has expired"
+    body    = f"""
+Hi {user.first_name or user.email},
+
+Your {plan.name} attendee plan has expired. Your account has been moved back to the Free plan.
+
+You can still buy tickets and earn basic rewards, but many premium benefits are now limited.
+
+Upgrade anytime to restore full access:
+https://qavtix.com/attendee/plans
+
+— QavTix Team
+    """.strip()
+
+    _send_email(to=user.email, subject=subject, body=body)
+
+
+@shared_task
+def expire_attendee_subscriptions():
+    """
+    Periodic task - Runs every 30 minutes.
+    Expires attendee subscriptions that have passed their expires_at date.
+    """
+    from host.models import AttendeeSubscription
+    from payments.models import AttendeePlan
+    from django.utils import timezone
+
+    now = timezone.now()
+
+    expired = AttendeeSubscription.objects.filter(
+        status__in=["active", "cancelled"],
+        expires_at__lt=now,
+    ).exclude(plan_slug="free").select_related("attendee", "plan")
+
+    try:
+        free_plan = AttendeePlan.objects.get(slug="free")
+    except AttendeePlan.DoesNotExist:
+        logger.error("Free AttendeePlan not found. Please seed the plans.")
+        return
+
+    for sub in expired:
+        sub.status = "expired"
+        sub.save(update_fields=["status"])
+
+        # Ensure attendee always has an active free subscription
+        AttendeeSubscription.objects.get_or_create(
+            attendee=sub.attendee,
+            plan_slug="free",
+            status="active",
+            defaults={
+                "plan":          free_plan,
+                "billing_cycle": "free",
+                "expires_at":    None,
+                "amount_paid":   0,
+                "metadata":      {},
+            },
+        )
+
+        send_plan_expired_email.delay(str(sub.id))
+        logger.info(f"Attendee subscription {sub.id} expired → moved to free plan")
+
+
+@shared_task
+def send_attendee_plan_expiry_reminders():
+    """
+    Periodic task - Runs every hour.
+    Sends reminders only for ACTIVE attendee subscriptions.
+    """
+    from host.models import AttendeeSubscription
+    from django.utils import timezone
+
+    now = timezone.now()
+
+    # 7-day reminder
+    window_7d_start = now + timezone.timedelta(days=6, hours=23)
+    window_7d_end   = now + timezone.timedelta(days=7)
+
+    expiring_7d = AttendeeSubscription.objects.filter(
+        status="active",
+        expires_at__gte=window_7d_start,
+        expires_at__lt=window_7d_end,
+    ).exclude(plan_slug="free").exclude(metadata__reminder_7d_sent=True)
+
+    for sub in expiring_7d:
+        send_plan_expiry_reminder_email.delay(str(sub.id), 7)
+        sub.metadata["reminder_7d_sent"] = True
+        sub.save(update_fields=["metadata"])
+        logger.info(f"7-day attendee expiry reminder queued for sub {sub.id}")
+
+    # 1-day reminder
+    window_1d_start = now + timezone.timedelta(hours=23)
+    window_1d_end   = now + timezone.timedelta(hours=24)
+
+    expiring_1d = AttendeeSubscription.objects.filter(
+        status="active",
+        expires_at__gte=window_1d_start,
+        expires_at__lt=window_1d_end,
+    ).exclude(plan_slug="free").exclude(metadata__reminder_1d_sent=True)
+
+    for sub in expiring_1d:
+        send_plan_expiry_reminder_email.delay(str(sub.id), 1)
+        sub.metadata["reminder_1d_sent"] = True
+        sub.save(update_fields=["metadata"])
+        logger.info(f"1-day attendee expiry reminder queued for sub {sub.id}")
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared email helper — single definition used by all tasks above
 # ─────────────────────────────────────────────────────────────────────────────

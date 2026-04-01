@@ -535,7 +535,7 @@ def send_plan_expiry_reminders():
 @shared_task
 def send_plan_activated_email_attendee(subscription_id):
     """Sent when an Attendee plan is activated (via popup, saved card, or webhook)"""
-    from host.models import AttendeeSubscription   # your model location
+    from attendee.models import AttendeeSubscription   # your model location
 
     try:
         sub = AttendeeSubscription.objects.select_related(
@@ -575,7 +575,7 @@ Log in to your dashboard to explore your new features.
 @shared_task
 def send_plan_expiry_reminder_email(subscription_id, days_remaining):
     """Sent 7 days and 1 day before attendee plan expires (only for active plans)"""
-    from host.models import AttendeeSubscription
+    from attendee.models import AttendeeSubscription
 
     try:
         sub = AttendeeSubscription.objects.select_related(
@@ -612,7 +612,7 @@ Renew here: https://qavtix.com/attendee/plans
 @shared_task
 def send_plan_expired_email(subscription_id):
     """Sent when an attendee plan expires"""
-    from host.models import AttendeeSubscription
+    from attendee.models import AttendeeSubscription
 
     try:
         sub = AttendeeSubscription.objects.select_related(
@@ -647,7 +647,7 @@ def expire_attendee_subscriptions():
     Periodic task - Runs every 30 minutes.
     Expires attendee subscriptions that have passed their expires_at date.
     """
-    from host.models import AttendeeSubscription
+    from attendee.models import AttendeeSubscription
     from payments.models import AttendeePlan
     from django.utils import timezone
 
@@ -692,7 +692,7 @@ def send_attendee_plan_expiry_reminders():
     Periodic task - Runs every hour.
     Sends reminders only for ACTIVE attendee subscriptions.
     """
-    from host.models import AttendeeSubscription
+    from attendee.models import AttendeeSubscription
     from django.utils import timezone
 
     now = timezone.now()

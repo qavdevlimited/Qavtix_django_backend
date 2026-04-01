@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from payments.services.add_card_service import AddCardConfirmService, AddCardInitiateService
+from payments.services.attendee_subscription_service import AttendeeSubscriptionCompleteService, AttendeeSubscriptionInitiateService
 from payments.services.card_checkout_service import CardCheckoutService
 from payments.services.card_service import CardError, CardListService, DeleteCardService, SetDefaultCardService
 from payments.services.factory import get_gateway
@@ -991,6 +992,171 @@ class CancelSubscriptionView(APIView):
             data={
                 "plan":       sub.plan_slug,
                 "expires_at": sub.expires_at,
+                "status":     "cancelled",
+            },
+        )
+
+
+
+class AttendeeSubscribeInitiateView(APIView):
+    """
+    POST /payments/attendee-plans/subscribe/
+
+    Initiates an Attendee plan purchase (Pro, Enterprise, etc.)
+    Supports both saved card (immediate activation) and popup flow.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Initiate Attendee Plan Subscription",
+        request=SubscribeInitiateSerializer,
+        responses={
+            200: OpenApiResponse(description="Payment initiated or plan activated"),
+            400: OpenApiResponse(description="Already on this plan or downgrade attempt"),
+            402: OpenApiResponse(description="Card charge failed"),
+            403: OpenApiResponse(description="Not an attendee"),
+            404: OpenApiResponse(description="Plan or card not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Popup flow",
+                value={
+                    "plan_slug":     "pro",
+                    "billing_cycle": "monthly",
+                    "currency":      "NGN",
+                },
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Saved card flow",
+                value={
+                    "plan_slug":     "pro",
+                    "billing_cycle": "annual",
+                    "currency":      "NGN",
+                    "card_id":       "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                },
+                request_only=True,
+            ),
+        ],
+    )
+    @transaction.atomic
+    def post(self, request):
+        serializer = SubscribeInitiateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = AttendeeSubscriptionInitiateService(
+                user=request.user,
+                data=serializer.validated_data,
+            ).run()
+        except SubscriptionError as e:
+            transaction.set_rollback(True)
+            return api_response(message=e.message, status_code=e.status)
+        except Exception as e:
+            transaction.set_rollback(True)
+            return api_response(message=f"Failed: {str(e)}", status_code=500)
+
+        msg = "Plan activated successfully." if result.get("status") == "active" else "Proceed to payment."
+        return api_response(message=msg, status_code=200, data=result)
+    
+
+    
+
+
+class AttendeeCompleteSubscriptionView(APIView):
+    """
+    POST /payments/attendee-plans/complete/
+
+    Called after Paystack popup succeeds for attendee plan purchase.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Complete Attendee Plan Subscription",
+        request=CompleteSubscriptionSerializer,
+        responses={
+            200: OpenApiResponse(description="Attendee plan activated"),
+            402: OpenApiResponse(description="Payment verification failed"),
+            404: OpenApiResponse(description="Subscription record not found"),
+        },
+        examples=[
+            OpenApiExample(
+                "Complete attendee subscription",
+                value={
+                    "reference": "qavtix_attendee_sub_abc123def456",
+                    "save_card": True,
+                    "country":   "NG",
+                },
+                request_only=True,
+            )
+        ],
+    )
+    @transaction.atomic
+    def post(self, request):
+        serializer = CompleteSubscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            result = AttendeeSubscriptionCompleteService(
+                user=request.user,
+                reference=data["reference"],
+                save_card=data.get("save_card", False),
+                country=data.get("country", "NG"),
+            ).run()
+        except SubscriptionError as e:
+            transaction.set_rollback(True)
+            return api_response(message=e.message, status_code=e.status)
+        except Exception as e:
+            transaction.set_rollback(True)
+            return api_response(message=f"Completion failed: {str(e)}", status_code=500)
+
+        return api_response(
+            message="Your attendee plan is now active!",
+            status_code=200,
+            data=result,
+        )
+
+
+class AttendeeCancelSubscriptionView(APIView):
+    """
+    POST /payments/attendee-plans/cancel/
+
+    Cancels attendee subscription but keeps benefits until expiry date.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        attendee = getattr(request.user, "attendee_profile", None)
+        if not attendee:
+            return api_response(message="You are not registered as an attendee.", status_code=403)
+
+        sub = (
+            attendee.subscriptions
+            .filter(status="active")
+            .exclude(plan_slug="free")
+            .order_by("-started_at")
+            .first()
+        )
+
+        if not sub:
+            return api_response(
+                message="You have no active paid attendee plan to cancel.",
+                status_code=400,
+            )
+
+        sub.status       = "cancelled"
+        sub.cancelled_at = timezone.now()
+        sub.save(update_fields=["status", "cancelled_at"])
+
+        return api_response(
+            message=f"Your {sub.plan.name} plan has been cancelled. "
+                    f"You will continue to enjoy the benefits until {sub.expires_at.strftime('%d %b %Y')}.",
+            status_code=200,
+            data={
+                "plan":       sub.plan_slug,
+                "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
                 "status":     "cancelled",
             },
         )

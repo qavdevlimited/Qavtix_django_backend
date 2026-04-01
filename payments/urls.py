@@ -2,6 +2,9 @@ from django.urls import path
 from payments.views import (
     AddCardConfirmView,
     AddCardInitiateView,
+    AttendeeCancelSubscriptionView,
+    AttendeeCompleteSubscriptionView,
+    AttendeeSubscribeInitiateView,
     CancelSubscriptionView,
     CardCheckoutView,
     CardListView,
@@ -47,4 +50,9 @@ urlpatterns = [
     path("plans/subscribe/",  SubscribeInitiateView.as_view()),
     path("plans/complete/",   CompleteSubscriptionView.as_view()),
     path("plans/cancel/", CancelSubscriptionView.as_view()),
+
+
+    path('attendee-plans/subscribe/', AttendeeSubscribeInitiateView.as_view(), name='attendee-subscribe'),
+    path('attendee-plans/complete/', AttendeeCompleteSubscriptionView.as_view(), name='attendee-complete'),
+    path('attendee-plans/cancel/', AttendeeCancelSubscriptionView.as_view(), name='attendee-cancel'),
 ]

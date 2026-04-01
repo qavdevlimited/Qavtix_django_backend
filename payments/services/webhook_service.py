@@ -9,8 +9,6 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
-from payments.tasks import send_plan_activated_email_attendee
-
 logger = logging.getLogger(__name__)
 
 
@@ -90,6 +88,8 @@ class PaystackWebhookService:
             return self._complete_featured(data, obj)
         elif flow == "subscription":
             return self._complete_subscription(data, obj)
+        elif flow == "attendee_subscription":        
+            return self._complete_attendee_subscription(data, obj)
         else:
             logger.warning(f"Webhook: unknown flow '{flow}' for reference {reference}")
             return {"handled": False, "reason": f"unknown_flow_{flow}"}

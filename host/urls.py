@@ -49,6 +49,20 @@ urlpatterns = [
     path("sales/graphs/",       SalesGraphsView.as_view(),      name="sales-graphs"),
     path("sales/transactions/", TransactionHistoryView.as_view(), name="sales-transactions"),
 
+
+    #Privacy and Account
+    path('privacy/account/delete/',RequestAccountDeletionView.as_view(),name="account_deletion"),
+    path('privacy/data/download/',DownloadMyDataView.as_view(),name="download_data"),
+    path('privacy/activity/sharing/',ActivitySharingView.as_view(),name="actsharing"),
+    path('privacy/settings/',PrivacySettingsView.as_view(),name="privacy_settings"),
+
+
+    #plans and subscriptions
+    path("subscription/status/", HostSubscriptionStatusView.as_view()),
+    path("subscription/renew/", RenewSubscriptionView.as_view()),
+
+
+
     
 
 ]

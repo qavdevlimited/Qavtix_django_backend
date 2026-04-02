@@ -3,7 +3,8 @@ from django.utils import timezone
 from decimal import Decimal
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
-from payments.models import PayoutInformation
+from host.models import Host, HostSubscription
+from payments.models import HostPlan, PayoutInformation
 from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
 from public.models import Follow
 from transactions.models import Withdrawal
@@ -982,3 +983,48 @@ class DownloadEventAttendeeSerializer(serializers.Serializer):
     def get_checked_in_at(self, obj):
         checkin = getattr(obj, "checkin", None)
         return checkin.checked_in_at if checkin else None
+    
+
+
+
+class PrivacySettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Host
+        fields = ["show_my_events", "show_past_events"]
+
+
+
+class HostPlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HostPlan
+        fields = [
+            "slug",
+            "name",
+            "monthly_price",
+            "annual_price",
+            "features",
+        ]
+
+
+class HostSubscriptionStatusSerializer(serializers.ModelSerializer):
+    plan = HostPlanSerializer()
+
+    is_expired = serializers.SerializerMethodField()
+
+    class Meta:
+        model = HostSubscription
+        fields = [
+            "status",
+            "billing_cycle",
+            "amount_paid",
+            "currency",
+            "started_at",
+            "expires_at",
+            "cancelled_at",
+            "plan_slug",
+            "is_expired",
+            "plan",
+        ]
+
+    def get_is_expired(self, obj):
+        return obj.is_expired()

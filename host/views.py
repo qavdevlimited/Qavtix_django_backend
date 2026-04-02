@@ -1,17 +1,19 @@
 from decimal import Decimal
 import uuid
-
+from rest_framework import serializers
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
-from attendee.models import Attendee
+from attendee.models import AccountDeletionRequest, Attendee
 from events.models import Event
+from host.models import Host, HostSubscription
+from host.services.RenewSubscriptionService import RenewSubscriptionService, SubscriptionError
 from host.services.brevoservice import CampaignError, CampaignService   
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
 from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, SingleEmailCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,DownloadEventAttendeeSerializer
+from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostSubscriptionStatusSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, SingleEmailCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,DownloadEventAttendeeSerializer,PrivacySettingsSerializer
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -38,7 +40,7 @@ from .serializers import (
 )
 from datetime import date, timedelta
 
-from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter
+from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter, inline_serializer
 from drf_spectacular.types import OpenApiTypes
 from .mixin import PlanFeatureMixin
 
@@ -1399,6 +1401,7 @@ class DashboardFeedView(generics.ListAPIView):
                 "activities":    HostActivitySerializer(activities, many=True).data,
                 "notifications": HostNotificationSerializer(notifications, many=True).data,
                 "trending":      TrendingTicketSerializer(trending, many=True).data,
+                "follower_count":   host.following.count(),  
             },
         )
 
@@ -1648,4 +1651,184 @@ class DownloadEventAttendeeView(generics.ListAPIView):
         )
 
 
+#Gets the model from the attendde models 
+@extend_schema(
+    responses={
+        201: inline_serializer(
+            name="RequestAccountDeletionResponse",
+            fields={
+                "request_id": serializers.UUIDField(),
+            },
+        ),
+        400: None,
+    },
+    description="Submit an account deletion request. Requires password confirmation.",
+)
+class RequestAccountDeletionView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+
+        user = request.user
         
+        deletion_request = AccountDeletionRequest.objects.create(
+            user=user,
+        )
+
+        return api_response(
+            "Account deletion request submitted. Admin will review it.",
+            201,
+            {"request_id": str(deletion_request.id)}
+        )
+
+
+class DownloadMyDataView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+
+        # Collect data (simplified, you can serialize all related models)
+        data = {
+            "user": {
+                "email": user.email,
+                "username": user.username,
+            },
+            "profile": {
+                "full_name": user.host_profile.full_name,
+                "phone_number": user.host_profile.phone_number,
+                "country": user.host_profile.country,
+                "state": user.host_profile.state,
+                "city": user.host_profile.city,
+            },
+            # Add favorites, orders, tickets, groups, etc.
+        }
+
+        # Here you can attach this data to email or generate a file
+        # send_mail(
+        #     subject="Your Data Download",
+        #     message=str(data),  # ideally JSON attachment
+        #     from_email="no-reply@yourdomain.com",
+        #     recipient_list=[user.email]
+        # )
+
+        return api_response("Your data has been sent to your email", 200, {})
+
+
+
+
+@extend_schema(
+    request=inline_serializer(
+        name="HostActivitySharingRequestV2",
+        fields={
+            "show_my_events": serializers.BooleanField(required=False),
+            "show_past_events": serializers.BooleanField(required=False),
+        },
+    ),
+    responses=inline_serializer(
+        name="HostActivitySharingRequestV2",
+        fields={
+            "show_my_events": serializers.BooleanField(),
+            "show_past_events": serializers.BooleanField(),
+        },
+    ),
+    description="Update which activity types (recent events, past event) are visible on your profile."
+)
+class ActivitySharingView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request):
+        show_events = request.data.get("show_my_events")
+        show_past_events = request.data.get("show_past_events")
+
+        profile = request.user.host_profile
+
+        if show_events is not None:
+            profile.show_my_events = bool(show_events)
+        if show_past_events is not None:
+            profile.show_past_events = bool(show_past_events)
+
+        profile.save()
+        return api_response(
+            "Activity sharing updated",
+            200,
+            {
+                "show_my_events": profile.show_my_events,
+                "show_past_events": profile.show_past_events
+            }
+        )
+
+
+class PrivacySettingsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        host = Host.objects.get(user=request.user)
+        serializer = PrivacySettingsSerializer(host)
+        
+        return api_response(
+            message="Privacy settings retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
+
+
+class HostSubscriptionStatusView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        host = request.user.host_profile
+
+        subscription = (
+            HostSubscription.objects
+            .filter(host=host)
+            .select_related("plan")
+            .order_by("-started_at")
+            .first()
+        )
+
+        if not subscription:
+            return api_response(
+                message="No subscription found",
+                status_code=200,
+                data=None
+            )
+
+        serializer = HostSubscriptionStatusSerializer(subscription)
+
+        return api_response(
+            message="Subscription retrieved successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
+
+
+
+class RenewSubscriptionView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        service = RenewSubscriptionService(request.user)
+        try:
+            result = service.run()
+            return api_response(
+                message="Subscription renewed successfully",
+                status_code=200,
+                data=result
+            )
+        except SubscriptionError as e:
+            # Return in your standard api_response format
+            return api_response(
+                message=e.message,
+                status_code=e.status if hasattr(e, "status") else 400,
+                data=None
+            )
+        except Exception as e:
+            # Fallback for unexpected errors
+            return api_response(
+                message="An unexpected error occurred.",
+                status_code=500,
+                data=None
+            )

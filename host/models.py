@@ -33,6 +33,8 @@ class Host(models.Model):
     role=models.CharField(max_length=20, default="host")
     followers=models.IntegerField(default=0)
     stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
+    show_my_events = models.BooleanField(default=True)
+    show_past_events = models.BooleanField(default=True)
 
     def __str__(self):
         return self.full_name

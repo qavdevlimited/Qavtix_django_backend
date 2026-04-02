@@ -355,6 +355,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'payments.tasks.send_attendee_plan_expiry_reminders',
         'schedule': crontab(minute=0),             # every hour
     },
+    'auto-renew-subscriptions': {
+        'task': 'host.tasks.auto_renew_subscriptions',
+        'schedule': crontab(hour=0, minute=0),             # every hour
+    },
 }
 
 

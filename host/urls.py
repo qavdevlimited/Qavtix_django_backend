@@ -60,6 +60,7 @@ urlpatterns = [
     #plans and subscriptions
     path("subscription/status/", HostSubscriptionStatusView.as_view()),
     path("subscription/renew/", RenewSubscriptionView.as_view()),
+    path("auto-renew/toggle/", ToggleAutoRenewView.as_view(), name="toggle_auto_renew"),
 
 
 

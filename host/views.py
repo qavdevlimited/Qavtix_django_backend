@@ -1832,3 +1832,73 @@ class RenewSubscriptionView(APIView):
                 status_code=500,
                 data=None
             )
+
+
+
+class ToggleAutoRenewView(APIView):
+    """
+    Toggle auto-renew for the active subscription of the logged-in host.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+
+    @extend_schema(
+        request=inline_serializer(
+            name="ToggleAutoRenewRequest",
+            fields={
+                "auto_renew": serializers.BooleanField(
+                    required=True,
+                    help_text="Set to true to enable auto-renew, false to disable."
+                ),
+            },
+        ),
+        responses=inline_serializer(
+            name="ToggleAutoRenewResponse",
+            fields={
+                "subscription_id": serializers.UUIDField(),
+                "plan_slug": serializers.CharField(),
+                "billing_cycle": serializers.CharField(),
+                "status": serializers.CharField(),
+                "expires_at": serializers.DateTimeField(),
+                "currency": serializers.CharField(),
+                "auto_renew": serializers.BooleanField(),
+            },
+        ),
+        description="Enable or disable auto-renew for the active subscription."
+    )
+    def patch(self, request):
+        host = getattr(request.user, "host_profile", None)
+        if not host:
+            return api_response(
+                message="Host profile not found.",
+                status_code=404,
+                data=None
+            )
+
+        subscription = host.subscriptions.filter(status="active").last()
+        if not subscription:
+            return api_response(
+                message="No active subscription found.",
+                status_code=404,
+                data=None
+            )
+
+        # Get the value from the request
+        auto_renew_value = request.data.get("auto_renew")
+        if auto_renew_value is None:
+            return api_response(
+                message="Missing 'auto_renew' field in request.",
+                status_code=400,
+                data=None
+            )
+
+        # Update and save
+        subscription.auto_renew = bool(auto_renew_value)
+        subscription.save(update_fields=["auto_renew"])
+
+        serializer = HostSubscriptionStatusSerializer(subscription)
+        return api_response(
+            message=f"Auto-renew {'enabled' if subscription.auto_renew else 'disabled'} successfully.",
+            status_code=200,
+            data=serializer.data
+        )

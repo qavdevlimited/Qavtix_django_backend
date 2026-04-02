@@ -242,6 +242,7 @@ class HostSubscription(models.Model):
         help_text="Currency used for this subscription (NGN, USD, GHS, KES, ZAR, etc.)"
     )
     metadata      = models.JSONField(default=dict)
+    auto_renew    = models.BooleanField(default=False, help_text="Automatically renew this subscription 1 day before expiry.")
 
     class Meta:
         ordering = ["-started_at"]

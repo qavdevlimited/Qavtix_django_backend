@@ -1024,6 +1024,7 @@ class HostSubscriptionStatusSerializer(serializers.ModelSerializer):
             "plan_slug",
             "is_expired",
             "plan",
+            "auto_renew",
         ]
 
     def get_is_expired(self, obj):

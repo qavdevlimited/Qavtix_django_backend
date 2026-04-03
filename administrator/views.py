@@ -4,7 +4,7 @@ from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from administrator.serializers import AdminLoginSerializer, AdminOTPVerifySerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer
-from administrator.services import AdminAuthService, AuthError
+from administrator.service.auth_service import AdminAuthService, AuthError
 from administrator.service.dashboard_service import ActivityService, AdminDashboardService, RevenueService, TicketAnalyticsService
 from administrator.service.uptime_service import UptimeService
 from authentication.serializers import CustomLoginSerializer
@@ -16,7 +16,31 @@ from rest_framework.generics import GenericAPIView, ListAPIView
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 
 from public.response import api_response
-# Create your views here.
+# administrator/views/customer_views.py
+
+import logging
+from rest_framework import generics, permissions
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+from drf_spectacular.types import OpenApiTypes
+
+from administrator.service.customer_service import AdminCustomerCardService, AdminCustomerListService
+from administrator.service.affiliate_service import AdminAffiliateCardService, AdminAffiliateListService
+from administrator.service.withdrawal_service import AdminWithdrawalListService
+from administrator.serializers import (
+    AdminCustomerCardSerializer,
+    AdminCustomerListSerializer,
+    AdminAffiliateCardSerializer,
+    AdminAffiliateListSerializer,
+    AdminWithdrawalListSerializer,
+)
+from administrator.filters import AdminCustomerFilter, AdminAffiliateFilter, AdminWithdrawalFilter
+from public.response import api_response
+from public.pagination import CustomPagination
+from .utils import pagination_data
+
+logger = logging.getLogger(__name__)
 
 
 @extend_schema(
@@ -261,4 +285,226 @@ class AdminActivityView(ListAPIView):
             data={
                 **self.paginator.get_paginated_response(serializer.data).data
             }
+        )
+
+
+
+@extend_schema(
+    operation_id="admin_customer_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR, description="day | week | month | year"),
+    ],
+    responses=AdminCustomerCardSerializer,
+    summary="Admin Customer Cards",
+    description="Returns 4 summary cards for the customer dashboard.",
+)
+class AdminCustomerCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        date_range = request.query_params.get("date_range", "month")
+        cards      = AdminCustomerCardService.get_cards(date_range=date_range)
+
+        return api_response(
+            message="Customer cards retrieved successfully.",
+            status_code=200,
+            data=AdminCustomerCardSerializer(cards).data,
+        )
+
+
+
+# Customer List
+@extend_schema(
+    operation_id="admin_customer_list",
+    parameters=[
+        OpenApiParameter("status",           OpenApiTypes.STR,  description="active | suspended | banned | flagged"),
+        OpenApiParameter("country",          OpenApiTypes.STR,  description="Filter by country"),
+        OpenApiParameter("state",            OpenApiTypes.STR,  description="Filter by state"),
+        OpenApiParameter("city",             OpenApiTypes.STR,  description="Filter by city"),
+        OpenApiParameter("min_spend",        OpenApiTypes.NUMBER, description="Minimum total spend"),
+        OpenApiParameter("max_spend",        OpenApiTypes.NUMBER, description="Maximum total spend"),
+        OpenApiParameter("date_joined_from", OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("date_joined_to",   OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("search",           OpenApiTypes.STR,  description="Name, email or phone"),
+    ],
+    responses=AdminCustomerListSerializer(many=True),
+    summary="Admin Customer List",
+    description="Paginated list of all attendees with profile, address, spend stats and status.",
+)
+class AdminCustomerListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminCustomerListSerializer
+    pagination_class   = CustomPagination
+    filter_backends    = [DjangoFilterBackend, filters.OrderingFilter,filters.SearchFilter]
+    filterset_class    = AdminCustomerFilter
+    ordering_fields    = ["registration_date", "total_spend", "tickets_bought"]
+    ordering           = ["-registration_date"]
+    search_fields = ["full_name", "country","phone_number"] 
+
+    def get_queryset(self):
+        return AdminCustomerListService.get_customers(
+            status           = self.request.query_params.get("status"),
+            country          = self.request.query_params.get("country"),
+            state            = self.request.query_params.get("state"),
+            city             = self.request.query_params.get("city"),
+            min_spend        = self.request.query_params.get("min_spend"),
+            max_spend        = self.request.query_params.get("max_spend"),
+            date_joined_from = self.request.query_params.get("date_joined_from"),
+            date_joined_to   = self.request.query_params.get("date_joined_to"),
+            # search           = self.request.query_params.get("search", "").strip() or None,
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page     = self.paginate_queryset(queryset)
+
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            
+            # Use your custom pagination_data helper
+            data = pagination_data(self.paginator)
+            data["results"] = serializer.data
+            
+        else:
+            serializer = self.get_serializer(queryset, many=True)
+            data = {
+                "results": serializer.data
+            }
+
+        return api_response(
+            message="Customers retrieved successfully.",
+            status_code=200,
+            data=data,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Affiliate Cards
+# ─────────────────────────────────────────────────────────────────────────────
+
+@extend_schema(
+    operation_id="admin_affiliate_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR, description="day | week | month | year"),
+    ],
+    responses=AdminAffiliateCardSerializer,
+    summary="Admin Affiliate Cards",
+    description="Returns 4 summary cards for the affiliate dashboard.",
+)
+class AdminAffiliateCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        date_range = request.query_params.get("date_range", "month")
+        cards      = AdminAffiliateCardService.get_cards(date_range=date_range)
+
+        return api_response(
+            message="Affiliate cards retrieved successfully.",
+            status_code=200,
+            data=AdminAffiliateCardSerializer(cards).data,
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Affiliate List
+# ─────────────────────────────────────────────────────────────────────────────
+
+@extend_schema(
+    operation_id="admin_affiliate_list",
+    parameters=[
+        OpenApiParameter("last_activity_from", OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("last_activity_to",   OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("search",             OpenApiTypes.STR,  description="Name or email"),
+    ],
+    responses=AdminAffiliateListSerializer(many=True),
+    summary="Admin Affiliate List",
+    description="Paginated list of all affiliate links with performance stats.",
+)
+class AdminAffiliateListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminAffiliateListSerializer
+    pagination_class   = CustomPagination
+    filter_backends    = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class    = AdminAffiliateFilter
+    ordering_fields    = ["last_activity", "clicks", "sales"]
+    ordering           = ["-last_activity"]
+
+    def get_queryset(self):
+        return AdminAffiliateListService.get_affiliates(
+            last_activity_from = self.request.query_params.get("last_activity_from"),
+            last_activity_to   = self.request.query_params.get("last_activity_to"),
+            search             = self.request.query_params.get("search", "").strip() or None,
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page     = self.paginate_queryset(queryset)
+
+        serializer = self.get_serializer(
+            page if page is not None else queryset, 
+            many=True
+        )
+
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+
+        return api_response(
+            message="Affiliates retrieved successfully.",
+            status_code=200,
+            data=data,
+        )
+
+
+# Withdrawal History
+
+@extend_schema(
+    operation_id="admin_withdrawal_list",
+    parameters=[
+        OpenApiParameter("status",     OpenApiTypes.STR,    description="pending | approved | rejected | paid"),
+        OpenApiParameter("date_from",  OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",    OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("min_amount", OpenApiTypes.NUMBER, description="Minimum amount"),
+        OpenApiParameter("max_amount", OpenApiTypes.NUMBER, description="Maximum amount"),
+        OpenApiParameter("search",     OpenApiTypes.STR,    description="Name, email or account number"),
+    ],
+    responses=AdminWithdrawalListSerializer(many=True),
+    summary="Admin Withdrawal History",
+    description="Paginated withdrawal history with profile, bank account and status.",
+)
+class AdminWithdrawalListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminWithdrawalListSerializer
+    pagination_class   = CustomPagination
+    filter_backends    = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class    = AdminWithdrawalFilter
+    ordering_fields    = ["created_at", "amount"]
+    ordering           = ["-created_at"]
+
+    def get_queryset(self):
+        return AdminWithdrawalListService.get_withdrawals(
+            status     = self.request.query_params.get("status"),
+            date_from  = self.request.query_params.get("date_from"),
+            date_to    = self.request.query_params.get("date_to"),
+            min_amount = self.request.query_params.get("min_amount"),
+            max_amount = self.request.query_params.get("max_amount"),
+            search     = self.request.query_params.get("search", "").strip() or None,
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page     = self.paginate_queryset(queryset)
+
+        serializer = self.get_serializer(
+            page if page is not None else queryset, 
+            many=True
+        )
+
+        # Consistent pagination format using your helper
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+
+        return api_response(
+            message="Withdrawal history retrieved successfully.",
+            status_code=200,
+            data=data,
         )

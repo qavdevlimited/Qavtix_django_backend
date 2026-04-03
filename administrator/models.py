@@ -4,6 +4,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import timedelta
+from django.contrib.auth.models import User
 
 
 class Admin(models.Model):
@@ -49,3 +50,43 @@ class AdminOTP(models.Model):
 
     def __str__(self):
         return f"OTP for {self.user.email} — {'used' if self.is_used else 'pending'}"
+
+
+
+class FlaggedUser(models.Model):
+    """
+    Tracks users flagged by the system for suspicious activity.
+    Created by the flag_suspicious_users Celery beat task.
+    Admin can review and clear flags.
+    """
+    FLAG_REASON_CHOICES = [
+        ("high_transaction_volume", "Unusually High Transaction Volume"),
+        ("multiple_refunds",        "Multiple Refund Requests"),
+        ("suspicious_pattern",      "Suspicious Purchase Pattern"),
+        ("manual",                  "Manually Flagged by Admin"),
+    ]
+ 
+    id        = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user      = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="flag",
+    )
+    reason    = models.CharField(max_length=50, choices=FLAG_REASON_CHOICES)
+    notes     = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)  # False = admin cleared the flag
+    flagged_at = models.DateTimeField(auto_now_add=True)
+    cleared_at = models.DateTimeField(null=True, blank=True)
+    cleared_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="cleared_flags",
+    )
+ 
+    class Meta:
+        ordering = ["-flagged_at"]
+ 
+    def __str__(self):
+        return f"{self.user.email} — {self.reason} — {'active' if self.is_active else 'cleared'}"
+ 

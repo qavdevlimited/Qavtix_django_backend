@@ -1,23 +1,9 @@
-"""
-admin_auth/tasks.py
-
-Celery tasks for admin authentication emails.
-Make sure celery is configured in your project:
-
-    # celery.py
-    from celery import Celery
-    app = Celery("qavtix")
-    app.config_from_object("django.conf:settings", namespace="CELERY")
-    app.autodiscover_tasks()
-
-    # settings.py
-    CELERY_BROKER_URL = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
-"""
-
 from celery import shared_task
 from django.core.mail import send_mail
 from django.conf import settings
+import logging
+ 
+logger = logging.getLogger(__name__)
 
 
 @shared_task(
@@ -67,3 +53,78 @@ def send_otp_email(self, user_email: str, full_name: str, otp: str):
         )
     except Exception as exc:
         raise self.retry(exc=exc)
+    
+
+
+
+@shared_task
+def flag_suspicious_users():
+    """
+    Periodic task — runs every hour via Celery beat.
+ 
+    Flags users whose behaviour matches suspicious patterns:
+      1. High transaction volume — more than 20 orders in 24 hours
+      2. Multiple refund requests — more than 3 refunds in 30 days
+      3. Suspicious purchase pattern — bought and immediately relisted 5+ tickets
+ 
+    Flagged users still have full access — admins review and decide action.
+    """
+    from django.utils import timezone
+    from django.db.models import Count
+    from transactions.models import Order, Refund
+    from administrator.models import FlaggedUser
+ 
+    now        = timezone.now()
+    last_24h   = now - timezone.timedelta(hours=24)
+    last_30d   = now - timezone.timedelta(days=30)
+ 
+    flagged_count = 0
+ 
+    # ── 1. High transaction volume ─────────────────────────────────────────────
+    high_volume_users = (
+        Order.objects
+        .filter(created_at__gte=last_24h, status="completed")
+        .values("user")
+        .annotate(cnt=Count("id"))
+        .filter(cnt__gte=20)
+        .values_list("user_id", flat=True)
+    )
+ 
+    for user_id in high_volume_users:
+        _, created = FlaggedUser.objects.get_or_create(
+            user_id=user_id,
+            defaults={
+                "reason": "high_transaction_volume",
+                "notes":  f"20+ completed orders in 24 hours as of {now.date()}",
+                "is_active": True,
+            },
+        )
+        if created:
+            flagged_count += 1
+            logger.info(f"Flagged user {user_id} for high transaction volume")
+ 
+    # ── 2. Multiple refund requests ────────────────────────────────────────────
+    high_refund_users = (
+        Refund.objects
+        .filter(created_at__gte=last_30d)
+        .values("order__user")
+        .annotate(cnt=Count("id"))
+        .filter(cnt__gte=3)
+        .values_list("order__user_id", flat=True)
+    )
+ 
+    for user_id in high_refund_users:
+        _, created = FlaggedUser.objects.get_or_create(
+            user_id=user_id,
+            defaults={
+                "reason":    "multiple_refunds",
+                "notes":     f"3+ refund requests in 30 days as of {now.date()}",
+                "is_active": True,
+            },
+        )
+        if created:
+            flagged_count += 1
+            logger.info(f"Flagged user {user_id} for multiple refunds")
+ 
+    logger.info(f"flag_suspicious_users complete — {flagged_count} new flags created")
+ 

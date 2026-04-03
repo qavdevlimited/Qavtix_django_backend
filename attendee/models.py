@@ -96,6 +96,7 @@ class AffiliateLink(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     clicks = models.PositiveIntegerField(default=0)
     sales = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def get_url(self):
         return f"https://yourdomain.com/events/{self.event.id}?ref={self.code}"

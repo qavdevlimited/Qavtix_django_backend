@@ -359,6 +359,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'host.tasks.auto_renew_subscriptions',
         'schedule': crontab(hour=0, minute=0),             # every hour
     },
+    "flag-suspicious-users": {
+    "task":     "administrator.tasks.flag_suspicious_users",
+     "schedule": crontab(minute=0),  # every hour
+    },
 }
 
 

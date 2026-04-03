@@ -4,8 +4,8 @@ import string
 from django.contrib.auth import authenticate
 from django.utils import timezone
 
-from .models import AdminOTP
-from .task import send_otp_email
+from ..models import AdminOTP
+from ..task import send_otp_email
 
 
 class AdminAuthService:

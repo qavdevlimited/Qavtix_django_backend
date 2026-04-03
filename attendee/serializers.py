@@ -246,6 +246,7 @@ class AttendeeProfileSerializer(serializers.ModelSerializer):
     currency=serializers.SerializerMethodField(read_only=True)
     plan_expires_at = serializers.SerializerMethodField(read_only=True)
     subscription_status = serializers.SerializerMethodField(read_only=True)
+    is_completed = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Attendee
@@ -265,6 +266,7 @@ class AttendeeProfileSerializer(serializers.ModelSerializer):
             "currency",
             "plan_expires_at",
             "subscription_status",
+            "is_completed"
         ]
         read_only_fields = ["email", "email_verified","id","role","currency","plan_expires_at","subscription_status"]
 
@@ -321,6 +323,26 @@ class AttendeeProfileSerializer(serializers.ModelSerializer):
         # Still valid (active or cancelled but not expired)
         return latest
 
+    def get_is_completed(self, obj):
+        """
+        Determines if the attendee has completed their profile.
+        """
+        required_fields = [
+            obj.full_name,
+            obj.phone_number,
+            obj.dob,
+            obj.gender,
+            obj.country,
+            obj.state,
+            obj.city,
+        ]
+
+        # Optional but recommended
+        # if not obj.profile_picture:
+        #     return False
+
+        # Check all required fields are filled
+        return all(required_fields)
     
 
 class TwoFactorToggleSerializer(serializers.ModelSerializer):

@@ -137,7 +137,7 @@ class TicketDashboardView(generics.ListAPIView):
 
         # TOTAL AFFILIATE EARNINGS
         total_earnings = AffliateEarnings.objects.filter(
-            attendee=attendee
+            attendee=attendee,status="paid"
         ).aggregate(
             total=Sum("earning")
         )["total"] or 0
@@ -479,10 +479,24 @@ class AffiliateDashboardView(APIView):
         # Earnings this month
         earnings_this_month = all_earnings.filter(created_at__gte=start_of_month).aggregate(total=Sum("earning"))["total"] or 0
 
-        # Pending withdrawals & available to withdraw
-        # For simplicity, let's assume withdrawals are tracked elsewhere
-        pending_withdrawals = 0
-        available_to_withdraw = total_earnings - pending_withdrawals
+        total_withdrawn = (
+                Withdrawal.objects
+                .select_for_update()
+                .filter(user=request.user)
+                .exclude(status="rejected")
+                .aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
+            )
+
+        
+        pending_withdrawals = (
+                Withdrawal.objects
+                .select_for_update()
+                .filter(user=request.user,status="pending")
+                .aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
+            )
+        available_to_withdraw = total_earnings - total_withdrawn
 
     
         return api_response(
@@ -805,7 +819,7 @@ class RequestWithdrawalView(APIView):
             total_earnings = (
                 AffliateEarnings.objects
                 .select_for_update()
-                .filter(link__user=request.user, status="succeeded")
+                .filter(attendee=request.user.attendee_profile.id, status="paid")
                 .aggregate(total=Sum("earning"))["total"]
                 or Decimal("0.00")
             )
@@ -818,6 +832,7 @@ class RequestWithdrawalView(APIView):
                 .aggregate(total=Sum("amount"))["total"]
                 or Decimal("0.00")
             )
+            print(total_earnings,total_withdrawn  )
 
             available_balance = total_earnings - total_withdrawn
 

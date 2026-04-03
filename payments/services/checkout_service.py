@@ -692,7 +692,7 @@ class CompleteCheckoutService:
             earning_type      = "marketplace",
             defaults={
                 "earning": listing.price,
-                "status":  "pending",
+                "status":  "paid",
             },
         )
 
@@ -807,7 +807,7 @@ class CompleteCheckoutService:
                 "link":     link,
                 "attendee": link.user.attendee_profile,
                 "earning":  earning_amount,
-                "status":   "pending",
+                "status":   "paid",
             },
         )
 

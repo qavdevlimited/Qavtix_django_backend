@@ -255,3 +255,14 @@ class HostSubscription(models.Model):
 
     def __str__(self):
         return f"{self.host} — {self.plan_slug} — {self.status}"
+    
+
+
+class VerifiedBadge(models.Model):
+    host = models.ForeignKey(
+        Host,
+        on_delete=models.CASCADE,
+        related_name="gifted_badges"
+    )
+    is_active = models.BooleanField(default=True)
+    gifted_at = models.DateTimeField(auto_now_add=True)

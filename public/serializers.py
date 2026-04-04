@@ -124,10 +124,29 @@ class TrendingHostSerializer(serializers.ModelSerializer):
     events_count = serializers.IntegerField()
     trending_score = serializers.FloatField()
     is_following = serializers.BooleanField()
+    is_verified = serializers.SerializerMethodField()
+    is_subscribed = serializers.SerializerMethodField()
 
     class Meta:
         model = Host
-        fields = ["id", "business_name", "followers", "events_count", "trending_score","is_following"]
+        fields = ["id", "business_name", "followers", "events_count", "trending_score","is_following","is_verified","is_subscribed"]
+
+    
+    def get_is_verified(self, obj):
+        """Check if host has an active verified badge"""
+        return obj.gifted_badges.filter(is_active=True).exists()
+
+    def get_is_subscribed(self, obj):
+        """True only if currently on a paid plan (not free)"""
+        active_subscription = obj.subscriptions.filter(
+            status="active"
+        ).first()
+        
+        if not active_subscription:
+            return False
+        
+        # Only paid plans (monthly or annual), not "free"
+        return active_subscription.plan_slug != "free"
 
     
 
@@ -150,6 +169,8 @@ class HostPublicDetailSerializer(serializers.ModelSerializer):
     is_following = serializers.SerializerMethodField()
     relevant_links=serializers.SerializerMethodField()
     host=serializers.CharField(source="business_name", read_only=True)
+    is_verified = serializers.SerializerMethodField()
+    is_subscribed = serializers.SerializerMethodField()
 
 
     class Meta:
@@ -168,6 +189,8 @@ class HostPublicDetailSerializer(serializers.ModelSerializer):
             "is_following",
             "relevant_links",
             "description",
+            "is_verified",
+            "is_subscribed",
         ]
 
     def get_relevant_links(self, obj):
@@ -207,6 +230,22 @@ class HostPublicDetailSerializer(serializers.ModelSerializer):
             ).exists()
 
         return False
+    
+    def get_is_verified(self, obj):
+        """Check if host has an active verified badge"""
+        return obj.gifted_badges.filter(is_active=True).exists()
+
+    def get_is_subscribed(self, obj):
+        """True only if currently on a paid plan (not free)"""
+        active_subscription = obj.subscriptions.filter(
+            status="active"
+        ).first()
+        
+        if not active_subscription:
+            return False
+        
+        # Only paid plans, not free
+        return active_subscription.plan_slug != "free"
 
 
 class MessageSerializer(serializers.ModelSerializer):

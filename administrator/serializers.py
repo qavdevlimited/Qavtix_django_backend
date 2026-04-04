@@ -175,3 +175,112 @@ class AdminWithdrawalListSerializer(serializers.Serializer):
         }
  
  
+
+class UserDetailCardSerializer(serializers.Serializer):
+    total_spent             = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_spent_change      = serializers.FloatField()
+    tickets_bought          = serializers.IntegerField()
+    tickets_bought_change   = serializers.FloatField()
+    refund_count            = serializers.IntegerField()
+    refund_count_change     = serializers.FloatField()
+    last_order_value        = serializers.DecimalField(max_digits=14, decimal_places=2)
+    last_order_value_change = serializers.FloatField()
+ 
+ 
+class UserDetailChartPointSerializer(serializers.Serializer):
+    label  = serializers.CharField()
+    amount = serializers.DecimalField(max_digits=14, decimal_places=2)
+ 
+ 
+class UserDetailOrderSerializer(serializers.Serializer):
+    """One row per order in the purchase history table."""
+    order_id      = serializers.UUIDField(source="id")
+    event_id      = serializers.UUIDField(source="event.id")
+    event_name    = serializers.CharField(source="event.title")
+    event_category = serializers.SerializerMethodField()
+    purchase_date = serializers.DateTimeField(source="created_at")
+    quantity      = serializers.SerializerMethodField()
+    amount        = serializers.DecimalField(max_digits=14, decimal_places=2, source="total_amount")
+    status        = serializers.CharField()
+    event_image   = serializers.SerializerMethodField()
+ 
+    def get_event_category(self, obj):
+        cat = getattr(obj.event, "category", None)
+        return cat.name if cat else None
+ 
+    def get_quantity(self, obj):
+        # Uses annotated total_qty if available, else sum from prefetch
+        annotated = getattr(obj, "total_qty", None)
+        if annotated is not None:
+            return annotated
+        return sum(t.quantity for t in obj.tickets.all())
+    
+
+    def get_event_image(self, obj):
+        """Return featured image safely"""
+        # 1. Use annotated field from queryset (most efficient)
+        if hasattr(obj, 'featured_image') and obj.featured_image:
+            return obj.featured_image
+
+        # 2. Fallback: Check event media directly (if needed)
+        media = getattr(obj.event, 'media', None)
+        if media:
+            # Prefer featured image
+            featured = media.filter(is_featured=True).first()
+            if featured and featured.image_url:
+                return featured.image_url
+            
+            # Otherwise take the first image
+            first_media = media.first()
+            if first_media and first_media.image_url:
+                return first_media.image_url
+
+        return None
+ 
+ 
+class BankAccountSerializer(serializers.Serializer):
+    id             = serializers.UUIDField()
+    account_name   = serializers.CharField()
+    account_number = serializers.CharField()
+    bank_name      = serializers.CharField()
+    is_default     = serializers.BooleanField()
+ 
+ 
+class UserDetailProfileSerializer(serializers.Serializer):
+    """Full profile card for admin user detail page."""
+ 
+    # Identity
+    user_id         = serializers.IntegerField()
+    email           = serializers.EmailField()
+    full_name       = serializers.CharField()
+    phone_number    = serializers.CharField(allow_null=True)
+    profile_picture = serializers.URLField(allow_null=True)
+    dob             = serializers.DateField(allow_null=True)
+    gender          = serializers.CharField(allow_null=True)
+    date_joined     = serializers.DateTimeField()
+ 
+    # Location
+    country = serializers.CharField(allow_null=True)
+    state   = serializers.CharField(allow_null=True)
+    city    = serializers.CharField(allow_null=True)
+ 
+    # Host info
+    is_host        = serializers.BooleanField()
+    business_name  = serializers.CharField(allow_null=True)
+    business_type  = serializers.CharField(allow_null=True)
+    description    = serializers.CharField(allow_null=True)
+    relevant_links = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+ 
+    # Stats
+    all_time_spend   = serializers.DecimalField(max_digits=14, decimal_places=2)
+    all_time_tickets = serializers.IntegerField()
+    first_purchase   = serializers.DateTimeField(allow_null=True)
+    last_purchase    = serializers.DateTimeField(allow_null=True)
+ 
+    # Bank accounts
+    bank_accounts = BankAccountSerializer(many=True)
+ 
+    # Status
+    account_status = serializers.CharField()
+    is_active      = serializers.BooleanField()
+    wallet_balance = serializers.DecimalField(max_digits=14, decimal_places=2)

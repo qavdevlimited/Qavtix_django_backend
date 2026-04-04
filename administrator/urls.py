@@ -1,7 +1,7 @@
 from django.urls import path
 
 
-from administrator.views import AdminActivityView, AdminAffiliateCardsView, AdminAffiliateListView, AdminCustomerCardsView, AdminCustomerListView, AdminDashboardView, AdminLoginView, AdminOTPVerifyView, AdminRevenueView, AdminTicketAnalyticsView, AdminWithdrawalListView
+from administrator.views import  *
 
 
 urlpatterns = [
@@ -23,6 +23,24 @@ urlpatterns = [
  
     # ── Withdrawals ───────────────────────────────────────────────────────────
     path("admin/withdrawals/",                AdminWithdrawalListView.as_view(),   name="admin-withdrawal-list"),
+
+
+    #user details
+    # Cards  →  GET /admin/users/<id>/cards/?date_range=month
+    path("admin/users/<int:user_id>/cards/",   AdminUserDetailCardsView.as_view(),  name="admin-user-cards"),
+ 
+    # Chart  →  GET /admin/users/<id>/chart/?date_range=month
+    path("admin/users/<int:user_id>/chart/",   AdminUserDetailChartView.as_view(),  name="admin-user-chart"),
+ 
+    # Orders →  GET /admin/users/<id>/orders/?date_from=2026-01-01&qty_min=1
+    path("admin/users/<int:user_id>/orders/",  AdminUserDetailOrdersView.as_view(), name="admin-user-orders"),
+ 
+    # Profile → GET /admin/users/<id>/profile/
+    path("admin/users/<int:user_id>/profile/", AdminUserDetailProfileView.as_view(), name="admin-user-profile"),
+ 
+    # Suspend → POST /admin/users/<id>/suspend/  (toggles — suspend or unsuspend)
+    path("admin/users/<int:user_id>/suspend/", AdminUserSuspendView.as_view(),      name="admin-user-suspend"),
+
 
 ]
 

@@ -3,8 +3,9 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminLoginSerializer, AdminOTPVerifySerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer
+from administrator.serializers import AdminLoginSerializer, AdminOTPVerifySerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
 from administrator.service.auth_service import AdminAuthService, AuthError
+from administrator.service.customer_details_service import  UserDetailCardService, UserDetailOrderHistoryService, UserDetailProfileService, UserDetailSpendChartService
 from administrator.service.dashboard_service import ActivityService, AdminDashboardService, RevenueService, TicketAnalyticsService
 from administrator.service.uptime_service import UptimeService
 from authentication.serializers import CustomLoginSerializer
@@ -39,6 +40,10 @@ from administrator.filters import AdminCustomerFilter, AdminAffiliateFilter, Adm
 from public.response import api_response
 from public.pagination import CustomPagination
 from .utils import pagination_data
+from rest_framework.pagination import PageNumberPagination
+from django.db.models import Sum
+from rest_framework.pagination import PageNumberPagination
+from django.db.models import Sum
 
 logger = logging.getLogger(__name__)
 
@@ -378,9 +383,9 @@ class AdminCustomerListView(generics.ListAPIView):
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # Affiliate Cards
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 @extend_schema(
     operation_id="admin_affiliate_cards",
@@ -405,9 +410,8 @@ class AdminAffiliateCardsView(APIView):
         )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # Affiliate List
-# ─────────────────────────────────────────────────────────────────────────────
 
 @extend_schema(
     operation_id="admin_affiliate_list",
@@ -508,3 +512,209 @@ class AdminWithdrawalListView(generics.ListAPIView):
             status_code=200,
             data=data,
         )
+
+
+
+
+
+@extend_schema(
+    operation_id="admin_user_detail_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR, description="day | week | month | year"),
+    ],
+    responses=UserDetailCardSerializer,
+    summary="Admin User Detail — KPI Cards",
+)
+class AdminUserDetailCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request, user_id):
+        date_range = request.query_params.get("date_range", "month")
+        cards      = UserDetailCardService.get_cards(
+            user_id=user_id,
+            date_range=date_range,
+        )
+ 
+        return api_response(
+            message="User KPI cards retrieved.",
+            status_code=200,
+            data=UserDetailCardSerializer(cards).data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Spend Chart
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_user_detail_chart",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR, description="day | week | month | year"),
+    ],
+    responses=UserDetailChartPointSerializer(many=True),
+    summary="Admin User Detail — Spend Chart",
+)
+class AdminUserDetailChartView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request, user_id):
+        date_range = request.query_params.get("date_range", "month")
+        chart      = UserDetailSpendChartService.get_chart(
+            user_id=user_id,
+            date_range=date_range,
+        )
+ 
+        return api_response(
+            message="Spend chart retrieved.",
+            status_code=200,
+            data=UserDetailChartPointSerializer(chart, many=True).data,
+        )
+ 
+ 
+
+# 3. Order History
+
+ 
+@extend_schema(
+    operation_id="admin_user_detail_orders",
+    parameters=[
+        OpenApiParameter("qty_min",    OpenApiTypes.INT,    description="Min ticket quantity per order"),
+        OpenApiParameter("qty_max",    OpenApiTypes.INT,    description="Max ticket quantity per order"),
+        OpenApiParameter("date_from",  OpenApiTypes.DATE,   description="Purchase date from (YYYY-MM-DD)"),
+        OpenApiParameter("date_to",    OpenApiTypes.DATE,   description="Purchase date to (YYYY-MM-DD)"),
+        OpenApiParameter("min_amount", OpenApiTypes.NUMBER, description="Min order amount"),
+        OpenApiParameter("max_amount", OpenApiTypes.NUMBER, description="Max order amount"),
+    ],
+    responses=UserDetailOrderSerializer(many=True),
+    summary="Admin User Detail — Order History",
+)
+class AdminUserDetailOrdersView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = UserDetailOrderSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        user_id = self.kwargs["user_id"]
+        params  = self.request.query_params
+ 
+        return UserDetailOrderHistoryService.get_orders(
+            user_id    = user_id,
+            qty_min    = params.get("qty_min"),
+            qty_max    = params.get("qty_max"),
+            date_from  = params.get("date_from"),
+            date_to    = params.get("date_to"),
+            min_amount = params.get("min_amount"),
+            max_amount = params.get("max_amount"),
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+
+        data = {"results": serializer.data}
+
+        if page is not None:
+            data.update(pagination_data(self.paginator))   # Your helper function
+        else:
+            # Fallback when pagination is disabled
+            data.update({
+                "count": queryset.count(),
+                "total_pages": 1,
+                "page": 1,
+                "next": None,
+                "previous": None,
+            })
+
+        return api_response(
+            message="Order history retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+
+# 4. Profile Card
+
+ 
+@extend_schema(
+    operation_id="admin_user_detail_profile",
+    responses=UserDetailProfileSerializer,
+    summary="Admin User Detail — Profile Card",
+)
+class AdminUserDetailProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request, user_id):
+        profile = UserDetailProfileService.get_profile(user_id=user_id)
+ 
+        if not profile:
+            return api_response(message="User not found.", status_code=404)
+ 
+        return api_response(
+            message="User profile retrieved.",
+            status_code=200,
+            data=UserDetailProfileSerializer(profile).data,
+        )
+ 
+ 
+
+# 5. Suspend / Unsuspend User
+
+ 
+@extend_schema(
+    operation_id="admin_user_suspend",
+    request=None,
+    responses={200: OpenApiResponse(description="User suspended or unsuspended")},
+    summary="Admin — Suspend / Unsuspend User",
+    description=(
+        "Toggles user suspension. "
+        "Suspended users cannot log in. "
+        "Calling again on a suspended user will unsuspend them."
+    ),
+)
+class AdminUserSuspendView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request, user_id):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+ 
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return api_response(message="User not found.", status_code=404)
+ 
+        # Prevent suspending other admins
+        if user.is_staff or user.is_superuser:
+            return api_response(
+                message="Cannot suspend an admin user.",
+                status_code=403,
+            )
+ 
+        if user.is_active:
+            # Suspend
+            user.is_active = False
+            user.save(update_fields=["is_active"])
+ 
+            logger.info(f"Admin {request.user.email} suspended user {user.email}")
+ 
+            return api_response(
+                message=f"{user.email} has been suspended.",
+                status_code=200,
+                data={"user_id": user_id, "is_active": False, "status": "suspended"},
+            )
+        else:
+            # Unsuspend
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+ 
+            logger.info(f"Admin {request.user.email} unsuspended user {user.email}")
+ 
+            return api_response(
+                message=f"{user.email} has been unsuspended.",
+                status_code=200,
+                data={"user_id": user_id, "is_active": True, "status": "active"},
+            )

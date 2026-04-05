@@ -3,10 +3,11 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminLoginSerializer, AdminOTPVerifySerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
+from administrator.serializers import AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminOTPVerifySerializer, GiftBadgeSerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
 from administrator.service.auth_service import AdminAuthService, AuthError
 from administrator.service.customer_details_service import  UserDetailCardService, UserDetailOrderHistoryService, UserDetailProfileService, UserDetailSpendChartService
 from administrator.service.dashboard_service import ActivityService, AdminDashboardService, RevenueService, TicketAnalyticsService
+from administrator.service.host_service import AdminBadgeService, AdminHostCardService, AdminHostChartService, AdminHostDetailCardService, AdminHostDetailProfileService, AdminHostEventsService, AdminHostListService, AdminHostVerificationService
 from administrator.service.uptime_service import UptimeService
 from authentication.serializers import CustomLoginSerializer
 from public.pagination import CustomPagination
@@ -36,7 +37,7 @@ from administrator.serializers import (
     AdminAffiliateListSerializer,
     AdminWithdrawalListSerializer,
 )
-from administrator.filters import AdminCustomerFilter, AdminAffiliateFilter, AdminWithdrawalFilter
+from administrator.filters import AdminCustomerFilter, AdminAffiliateFilter, AdminHostEventFilter, AdminHostFilter, AdminHostVerificationFilter, AdminWithdrawalFilter
 from public.response import api_response
 from public.pagination import CustomPagination
 from .utils import pagination_data
@@ -718,3 +719,395 @@ class AdminUserSuspendView(APIView):
                 status_code=200,
                 data={"user_id": user_id, "is_active": True, "status": "active"},
             )
+
+@extend_schema(
+    operation_id="admin_host_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR, description="day | week | month | year"),
+    ],
+    responses=AdminHostCardSerializer,
+    summary="Admin Host Cards",
+    description="4 summary KPI cards for the host management dashboard.",
+)
+class AdminHostCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        date_range = request.query_params.get("date_range", "month")
+        cards      = AdminHostCardService.get_cards(date_range=date_range)
+ 
+        return api_response(
+            message="Host cards retrieved successfully.",
+            status_code=200,
+            data=AdminHostCardSerializer(cards).data,
+        )
+ 
+
+
+@extend_schema(
+    operation_id="admin_host_list",
+    parameters=[
+        OpenApiParameter("status",      OpenApiTypes.STR,    description="active | suspended | banned"),
+        OpenApiParameter("verified",    OpenApiTypes.BOOL,   description="true | false"),
+        OpenApiParameter("min_events",  OpenApiTypes.INT,    description="Min event count"),
+        OpenApiParameter("max_events",  OpenApiTypes.INT,    description="Max event count"),
+        OpenApiParameter("min_revenue", OpenApiTypes.NUMBER, description="Min total revenue"),
+        OpenApiParameter("max_revenue", OpenApiTypes.NUMBER, description="Max total revenue"),
+        OpenApiParameter("search",      OpenApiTypes.STR,    description="Name, business name or email"),
+    ],
+    responses=AdminHostListSerializer(many=True),
+    summary="Admin Host List",
+    description="Paginated list of all hosts with business info, stats and status.",
+)
+class AdminHostListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminHostListSerializer
+    pagination_class   = CustomPagination
+    filter_backends    = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class    = AdminHostFilter
+    ordering_fields    = ["registration_date", "total_revenue", "event_count", "followers"]
+    ordering           = ["-registration_date"]
+ 
+    def get_queryset(self):
+        return AdminHostListService.get_hosts(
+            status      = self.request.query_params.get("status"),
+            search      = self.request.query_params.get("search", "").strip() or None,
+            min_events  = self.request.query_params.get("min_events"),
+            max_events  = self.request.query_params.get("max_events"),
+            min_revenue = self.request.query_params.get("min_revenue"),
+            max_revenue = self.request.query_params.get("max_revenue"),
+            verified    = self.request.query_params.get("verified"),
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Host list retrieved successfully.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Pending Verifications
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_host_verifications",
+    parameters=[
+        OpenApiParameter("status",    OpenApiTypes.STR,  description="active | suspended"),
+        OpenApiParameter("date_from", OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",   OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("search",    OpenApiTypes.STR,  description="Name, business name or email"),
+    ],
+    responses=AdminHostVerificationListSerializer(many=True),
+    summary="Admin Host Pending Verifications",
+    description="Hosts who have submitted KYC info and are awaiting verification.",
+)
+class AdminHostVerificationListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminHostVerificationListSerializer
+    pagination_class   = CustomPagination
+    filter_backends    = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class    = AdminHostVerificationFilter
+    ordering           = ["-registration_date"]
+ 
+    def get_queryset(self):
+        return AdminHostVerificationService.get_pending(
+            search    = self.request.query_params.get("search", "").strip() or None,
+            status    = self.request.query_params.get("status"),
+            date_from = self.request.query_params.get("date_from"),
+            date_to   = self.request.query_params.get("date_to"),
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Pending verifications retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+@extend_schema(
+    operation_id="admin_host_approve",
+    request=None,
+    responses={200: OpenApiResponse(description="Host approved")},
+    summary="Admin — Approve Host Verification",
+)
+class AdminHostApproveView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request, host_id):
+        success, host = AdminHostVerificationService.approve(host_id)
+ 
+        if not success:
+            return api_response(message="Host not found.", status_code=404)
+ 
+        logger.info(f"Admin {request.user.email} approved host {host_id}")
+ 
+        return api_response(
+            message=f"{host.business_name} has been verified.",
+            status_code=200,
+            data={"host_id": host_id, "verified": True},
+        )
+ 
+ 
+@extend_schema(
+    operation_id="admin_host_decline",
+    request=None,
+    responses={200: OpenApiResponse(description="Host declined")},
+    summary="Admin — Decline Host Verification",
+)
+class AdminHostDeclineView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request, host_id):
+        success, host = AdminHostVerificationService.decline(host_id)
+ 
+        if not success:
+            return api_response(message="Host not found.", status_code=404)
+ 
+        logger.info(f"Admin {request.user.email} declined host {host_id}")
+ 
+        return api_response(
+            message=f"{host.business_name} verification has been declined.",
+            status_code=200,
+            data={"host_id": host_id, "verified": False},
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Host Detail — Cards
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_host_detail_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR, description="day | week | month | year"),
+    ],
+    responses=AdminHostDetailCardSerializer,
+    summary="Admin Host Detail — Earnings Cards",
+)
+class AdminHostDetailCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request, host_id):
+        date_range = request.query_params.get("date_range", "month")
+        cards      = AdminHostDetailCardService.get_cards(
+            host_id=host_id, date_range=date_range
+        )
+ 
+        if not cards:
+            return api_response(message="Host not found.", status_code=404)
+ 
+        return api_response(
+            message="Host earnings cards retrieved.",
+            status_code=200,
+            data=AdminHostDetailCardSerializer(cards).data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Host Detail — Profile
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_host_detail_profile",
+    responses=AdminHostDetailProfileSerializer,
+    summary="Admin Host Detail — Profile Card",
+)
+class AdminHostDetailProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request, host_id):
+        profile = AdminHostDetailProfileService.get_profile(host_id=host_id)
+ 
+        if not profile:
+            return api_response(message="Host not found.", status_code=404)
+ 
+        return api_response(
+            message="Host profile retrieved.",
+            status_code=200,
+            data=AdminHostDetailProfileSerializer(profile).data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Host Detail — Events
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_host_detail_events",
+    parameters=[
+        OpenApiParameter("category",    OpenApiTypes.INT,  description="Category ID"),
+        OpenApiParameter("status",      OpenApiTypes.STR,  description="active | draft | cancelled | ended"),
+        OpenApiParameter("event_state", OpenApiTypes.STR,  description="live | cancelled | ended"),
+        OpenApiParameter("date_from",   OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",     OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("performance", OpenApiTypes.STR,  description="high | low"),
+        OpenApiParameter("search",      OpenApiTypes.STR,  description="Event title"),
+    ],
+    responses=AdminHostEventSerializer(many=True),
+    summary="Admin Host Detail — All Events",
+)
+class AdminHostDetailEventsView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminHostEventSerializer
+    pagination_class   = CustomPagination
+    filter_backends    = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class    = AdminHostEventFilter
+ 
+    def get_queryset(self):
+        host_id = self.kwargs["host_id"]
+        params  = self.request.query_params
+ 
+        return AdminHostEventsService.get_events(
+            host_id     = host_id,
+            category    = params.get("category"),
+            status      = params.get("status"),
+            date_from   = params.get("date_from"),
+            date_to     = params.get("date_to"),
+            performance = params.get("performance"),
+            event_state = params.get("event_state"),
+            search      = params.get("search", "").strip() or None,
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Host events retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Host Detail — Revenue / Ticket Chart
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_host_detail_chart",
+    parameters=[
+        OpenApiParameter("chart_type", OpenApiTypes.STR, description="revenue | tickets"),
+        OpenApiParameter("year",       OpenApiTypes.INT, description="e.g. 2026"),
+        OpenApiParameter("month",      OpenApiTypes.INT, description="1-12 — returns daily if provided"),
+    ],
+    responses=AdminHostChartPointSerializer(many=True),
+    summary="Admin Host Detail — Revenue / Ticket Chart",
+)
+class AdminHostDetailChartView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request, host_id):
+        chart_type = request.query_params.get("chart_type", "revenue")
+        year       = request.query_params.get("year")
+        month      = request.query_params.get("month")
+ 
+        chart = AdminHostChartService.get_chart(
+            host_id    = host_id,
+            chart_type = chart_type,
+            year       = year,
+            month      = month,
+        )
+ 
+        return api_response(
+            message="Chart data retrieved.",
+            status_code=200,
+            data=AdminHostChartPointSerializer(chart, many=True).data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Suspend Host
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_host_suspend",
+    request=None,
+    responses={200: OpenApiResponse(description="Host suspended or unsuspended")},
+    summary="Admin — Suspend / Unsuspend Host",
+    description="Toggles host user suspension. Calling again unsuspends.",
+)
+class AdminHostSuspendView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request, host_id):
+        from host.models import Host
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+ 
+        try:
+            host = Host.objects.select_related("user").get(id=host_id)
+        except Host.DoesNotExist:
+            return api_response(message="Host not found.", status_code=404)
+ 
+        user = host.user
+ 
+        if user.is_staff or user.is_superuser:
+            return api_response(
+                message="Cannot suspend an admin user.",
+                status_code=403,
+            )
+ 
+        if user.is_active:
+            user.is_active = False
+            user.save(update_fields=["is_active"])
+            logger.info(f"Admin {request.user.email} suspended host {host_id}")
+            return api_response(
+                message=f"{host.business_name} has been suspended.",
+                status_code=200,
+                data={"host_id": host_id, "is_active": False, "status": "suspended"},
+            )
+        else:
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+            logger.info(f"Admin {request.user.email} unsuspended host {host_id}")
+            return api_response(
+                message=f"{host.business_name} has been unsuspended.",
+                status_code=200,
+                data={"host_id": host_id, "is_active": True, "status": "active"},
+            )
+
+
+
+class GiftBadgeView(APIView):
+
+    @extend_schema(
+        request=None,
+        responses={200: None}
+    )
+    def post(self, request, host_id):
+
+        result = AdminBadgeService.gift_badge(host_id=host_id)
+
+        if "error" in result:
+            return api_response(
+                message=result["error"],
+                status_code=400,
+                data=None,
+            )
+
+        return api_response(
+            message="Badge gifted successfully",
+            status_code=200,
+            data=result,
+        )

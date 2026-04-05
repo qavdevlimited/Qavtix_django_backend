@@ -21,6 +21,7 @@ class Host(models.Model):
     business_type=models.CharField(max_length=50, blank=True, null=True)
     registration_number=models.CharField(max_length=50, blank=True, null=True)
     tax_id=models.CharField(max_length=50, blank=True, null=True)
+    nin=models.CharField(max_length=50, blank=True, null=True)
     phone_number= models.CharField(max_length=16)
     country=models.CharField(max_length=30)
     state=models.CharField(max_length=30)
@@ -33,8 +34,11 @@ class Host(models.Model):
     role=models.CharField(max_length=20, default="host")
     followers=models.IntegerField(default=0)
     stripe_customer_id = models.CharField(max_length=255, blank=True, null=True)
+    profile_picture = models.URLField(max_length=500, blank=True, null=True)
+    profile_banner = models.URLField(max_length=500, blank=True, null=True)
     show_my_events = models.BooleanField(default=True)
     show_past_events = models.BooleanField(default=True)
+    verified=models.BooleanField(default=False)
 
     def __str__(self):
         return self.full_name
@@ -209,7 +213,7 @@ class HostNotification(models.Model):
 
 
 
-# host/models.py
+
 
 class HostSubscription(models.Model):
     STATUS_CHOICES = [
@@ -266,3 +270,12 @@ class VerifiedBadge(models.Model):
     )
     is_active = models.BooleanField(default=True)
     gifted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["host"],
+                condition=models.Q(is_active=True),
+                name="unique_active_badge_per_host"
+            )
+        ]

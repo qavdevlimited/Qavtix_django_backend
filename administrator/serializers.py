@@ -284,3 +284,177 @@ class UserDetailProfileSerializer(serializers.Serializer):
     account_status = serializers.CharField()
     is_active      = serializers.BooleanField()
     wallet_balance = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+
+
+
+# ── Host Cards ────────────────────────────────────────────────────────────────
+ 
+class AdminHostCardSerializer(serializers.Serializer):
+    total_hosts       = serializers.IntegerField()
+    new_this_period   = serializers.IntegerField()
+    new_growth        = serializers.FloatField()
+    tickets_sold      = serializers.IntegerField()
+    tickets_growth    = serializers.FloatField()
+    commission_paid   = serializers.DecimalField(max_digits=14, decimal_places=2)
+    commission_growth = serializers.FloatField()
+ 
+ 
+# ── Host List ─────────────────────────────────────────────────────────────────
+ 
+class AdminHostListSerializer(serializers.Serializer):
+    host_id        = serializers.IntegerField(source="id")
+ 
+    # Owner info
+    owner_name     = serializers.CharField(source="full_name")
+    owner_email    = serializers.CharField(source="user.email")
+    profile_picture = serializers.URLField(allow_null=True)
+ 
+    # Business
+    business_name  = serializers.CharField()
+    business_type  = serializers.CharField(allow_null=True)
+ 
+    # Stats — annotated
+    event_count    = serializers.IntegerField()
+    followers      = serializers.IntegerField()
+    total_revenue  = serializers.SerializerMethodField()
+ 
+    # Status
+    status         = serializers.SerializerMethodField()
+    verified       = serializers.BooleanField()
+    date_joined    = serializers.DateTimeField(source="registration_date")
+ 
+    def get_total_revenue(self, obj):
+        val = getattr(obj, "total_revenue", None)
+        return str(val) if val else "0.00"
+ 
+    def get_status(self, obj):
+        from administrator.service.host_service import AdminHostListService
+        return AdminHostListService.get_host_status(obj)
+ 
+ 
+# ── Pending Verification List ─────────────────────────────────────────────────
+ 
+class AdminHostVerificationListSerializer(serializers.Serializer):
+    host_id             = serializers.IntegerField(source="id")
+    business_name       = serializers.CharField()
+    owner_name          = serializers.CharField(source="full_name")
+    owner_email         = serializers.CharField(source="user.email")
+    owner_phone         = serializers.CharField(source="phone_number")
+    profile_picture     = serializers.URLField(allow_null=True)
+    signup_date         = serializers.DateTimeField(source="registration_date")
+    account_type        = serializers.CharField(source="business_type", allow_null=True)
+    status              = serializers.SerializerMethodField()
+ 
+    # KYC info for review
+    registration_number = serializers.CharField(allow_null=True, allow_blank=True)
+    tax_id              = serializers.CharField(allow_null=True, allow_blank=True)
+    nin                 = serializers.CharField(allow_null=True, allow_blank=True)
+ 
+    def get_status(self, obj):
+        if not obj.user.is_active:
+            return "suspended"
+        return "pending_verification"
+ 
+ 
+# ── Host Detail Cards ─────────────────────────────────────────────────────────
+ 
+class AdminHostDetailCardSerializer(serializers.Serializer):
+    all_time_earnings = serializers.DecimalField(max_digits=14, decimal_places=2)
+    current_balance   = serializers.DecimalField(max_digits=14, decimal_places=2)
+    all_time_payouts  = serializers.DecimalField(max_digits=14, decimal_places=2)
+    next_payout_date  = serializers.DateTimeField(allow_null=True)
+ 
+ 
+# ── Host Detail Profile ───────────────────────────────────────────────────────
+ 
+class AdminBankAccountSerializer(serializers.Serializer):
+    id             = serializers.UUIDField()
+    account_name   = serializers.CharField()
+    account_number = serializers.CharField()
+    bank_name      = serializers.CharField()
+    is_default     = serializers.BooleanField()
+ 
+ 
+class AdminHostDetailProfileSerializer(serializers.Serializer):
+    host_id             = serializers.IntegerField()
+    full_name           = serializers.CharField()
+    email               = serializers.EmailField()
+    phone_number        = serializers.CharField(allow_null=True)
+    profile_picture     = serializers.URLField(allow_null=True)
+    profile_banner      = serializers.URLField(allow_null=True)
+    business_name       = serializers.CharField()
+    business_type       = serializers.CharField(allow_null=True)
+    description         = serializers.CharField(allow_null=True)
+    registration_number = serializers.CharField(allow_null=True)
+    tax_id              = serializers.CharField(allow_null=True)
+    nin                 = serializers.CharField(allow_null=True)
+    country             = serializers.CharField()
+    state               = serializers.CharField()
+    city                = serializers.CharField()
+    followers           = serializers.IntegerField()
+    verified            = serializers.BooleanField()
+    relevant_links      = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    date_joined         = serializers.DateTimeField()
+    bank_accounts       = AdminBankAccountSerializer(many=True)
+    account_status      = serializers.CharField()
+    is_subscribed       = serializers.BooleanField()
+    is_verified   = serializers.BooleanField()
+
+
+
+    
+ 
+ 
+# ── Host Detail Events ────────────────────────────────────────────────────────
+ 
+class AdminHostEventSerializer(serializers.Serializer):
+    event_id       = serializers.UUIDField(source="id")
+    title          = serializers.CharField()
+    category       = serializers.SerializerMethodField()
+    status         = serializers.CharField()
+    start_datetime = serializers.DateTimeField()
+    end_datetime   = serializers.DateTimeField()
+    location       = serializers.SerializerMethodField()
+    featured_image = serializers.SerializerMethodField()
+    tickets_sold   = serializers.SerializerMethodField()
+    total_listed   = serializers.SerializerMethodField()
+    revenue        = serializers.SerializerMethodField()
+    views_count          = serializers.IntegerField()
+    saves_count           = serializers.IntegerField()
+ 
+    def get_category(self, obj):
+        cat = getattr(obj, "category", None)
+        return cat.name if cat else None
+ 
+    def get_location(self, obj):
+        loc = getattr(obj, "event_location", None)
+        if not loc:
+            return None
+        return f"{loc.address}{loc.city}, {loc.state}"
+ 
+    def get_featured_image(self, obj):
+        media = obj.media.filter(is_featured=True).first()
+        return media.image_url if media else None
+ 
+    def get_tickets_sold(self, obj):
+        return getattr(obj, "tickets_sold", None) or 0
+ 
+    def get_total_listed(self, obj):
+        return getattr(obj, "total_listed", None) or 0
+ 
+    def get_revenue(self, obj):
+        val = getattr(obj, "revenue", None)
+        return str(val) if val else "0.00"
+ 
+ 
+# ── Host Chart ────────────────────────────────────────────────────────────────
+ 
+class AdminHostChartPointSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    value = serializers.FloatField()
+ 
+
+class GiftBadgeSerializer(serializers.Serializer):
+    host_id = serializers.IntegerField()

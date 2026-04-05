@@ -42,6 +42,25 @@ urlpatterns = [
     path("admin/users/<int:user_id>/suspend/", AdminUserSuspendView.as_view(),      name="admin-user-suspend"),
 
 
+    # Cards
+    path("admin/hosts/cards/",   AdminHostCardsView.as_view(),            name="admin-host-cards"),
+    # List
+    path("admin/hosts/",         AdminHostListView.as_view(),              name="admin-host-list"),
+    # Pending verifications
+    path("admin/hosts/verifications/",                   AdminHostVerificationListView.as_view(), name="admin-host-verifications"),
+    path("admin/hosts/<int:host_id>/approve/",           AdminHostApproveView.as_view(),          name="admin-host-approve"),
+    path("admin/hosts/<int:host_id>/decline/",           AdminHostDeclineView.as_view(),          name="admin-host-decline"),
+ 
+    # ── Host Detail ───────────────────────────────────────────────────────────
+    path("admin/hosts/<int:host_id>/cards/",   AdminHostDetailCardsView.as_view(),   name="admin-host-detail-cards"),
+    path("admin/hosts/<int:host_id>/profile/", AdminHostDetailProfileView.as_view(), name="admin-host-detail-profile"),
+    path("admin/hosts/<int:host_id>/events/",  AdminHostDetailEventsView.as_view(),  name="admin-host-detail-events"),
+    path("admin/hosts/<int:host_id>/chart/",   AdminHostDetailChartView.as_view(),   name="admin-host-detail-chart"),
+    path("admin/hosts/<int:host_id>/suspend/", AdminHostSuspendView.as_view(),       name="admin-host-suspend"),
+
+    path("admin/hosts/<int:host_id>/gift-badge/", GiftBadgeView.as_view()),
+
+
 ]
 
 

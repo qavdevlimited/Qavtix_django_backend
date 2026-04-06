@@ -83,7 +83,7 @@ class AdminPayoutActionService:
                     Withdrawal.objects.filter(id=withdrawal.id).update(status="approved")
 
                 # 2 — Queue Celery task for actual transfer (non-blocking)
-                from administrator.tasks import process_single_payout
+                from administrator.task import process_single_payout
                 process_single_payout.delay(str(withdrawal.id), admin_user.email)
 
                 succeeded.append(str(withdrawal.id))

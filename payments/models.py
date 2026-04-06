@@ -68,6 +68,8 @@ class PayoutInformation(models.Model):
     bank_name = models.CharField(max_length=150)
     account_name = models.CharField(max_length=255)
     account_number = models.CharField(max_length=20)
+    bank_code      = models.CharField(max_length=20, blank=True, default="")
+    recipient_code = models.CharField(max_length=100, blank=True, null=True)
 
     is_default = models.BooleanField(default=False)
 

@@ -75,6 +75,17 @@ urlpatterns = [
     # ── Audit Logs ────────────────────────────────────────────────────────────
     path("admin/audit-logs/", AdminAuditLogListView.as_view(), name="admin-audit-logs"),
 
+
+    # ── Financials ────────────────────────────────────────────────────────────
+    path("admin/financials/cards/",          AdminFinancialCardsView.as_view(),      name="admin-financial-cards"),
+    path("admin/financials/resale-cards/",   AdminFinancialResaleCardsView.as_view(), name="admin-financial-resale-cards"),
+    path("admin/financials/payouts/pending/", AdminPayoutPendingView.as_view(),       name="admin-payout-pending"),
+    path("admin/financials/payouts/approved/", AdminPayoutApprovedView.as_view(),     name="admin-payout-approved"),
+    path("admin/financials/payouts/approve/",  AdminPayoutApproveView.as_view(),      name="admin-payout-approve"),
+    path("admin/financials/payouts/decline/",  AdminPayoutDeclineView.as_view(),      name="admin-payout-decline"),
+    path("admin/financials/marketplace/",      AdminMarketplaceListingsView.as_view(), name="admin-marketplace-listings"),
+    path("admin/financials/featured/",         AdminFeaturedPaymentsView.as_view(),   name="admin-featured-payments"),
+    path("admin/financials/subscriptions/",    AdminSubscriptionPaymentsView.as_view(), name="admin-subscription-payments"),
 ]
 
 

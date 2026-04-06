@@ -3,13 +3,15 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminOTPVerifySerializer, AdminTicketTypeSerializer, GiftBadgeSerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
+from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, BulkPayoutActionSerializer, GiftBadgeSerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
 from administrator.service.audit import AdminAuditLogService, AuditLogMixin
 from administrator.service.auth_service import AdminAuthService, AuthError
 from administrator.service.customer_details_service import  UserDetailCardService, UserDetailOrderHistoryService, UserDetailProfileService, UserDetailSpendChartService
 from administrator.service.dashboard_service import ActivityService, AdminDashboardService, RevenueService, TicketAnalyticsService
 from administrator.service.event_service import AdminEventActionService, AdminEventAttendeeService, AdminEventCardService, AdminEventListService
+from administrator.service.financial_service import AdminFeaturedPaymentService, AdminFinancialCardService, AdminFinancialResaleCardService, AdminMarketplaceListingService, AdminPayoutRequestService, AdminSubscriptionPaymentService
 from administrator.service.host_service import AdminBadgeService, AdminHostCardService, AdminHostChartService, AdminHostDetailCardService, AdminHostDetailProfileService, AdminHostEventsService, AdminHostListService, AdminHostVerificationService
+from administrator.service.payout_service import AdminPayoutActionService
 from administrator.service.uptime_service import UptimeService
 from authentication.serializers import CustomLoginSerializer
 from public.pagination import CustomPagination
@@ -1419,6 +1421,396 @@ class AdminAuditLogListView(generics.ListAPIView):
  
         return api_response(
             message="Audit logs retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+
+
+@extend_schema(
+    operation_id="admin_financial_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR,  description="day | week | month | year"),
+        OpenApiParameter("event_id",   OpenApiTypes.UUID, description="Filter by specific event"),
+    ],
+    responses=AdminFinancialCardSerializer,
+    summary="Admin Financial Cards",
+)
+class AdminFinancialCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        date_range = request.query_params.get("date_range", "month")
+        event_id   = request.query_params.get("event_id")
+        cards      = AdminFinancialCardService.get_cards(
+            date_range=date_range, event_id=event_id
+        )
+ 
+        return api_response(
+            message="Financial cards retrieved.",
+            status_code=200,
+            data=AdminFinancialCardSerializer(cards).data,
+        )
+
+
+@extend_schema(
+    operation_id="admin_financial_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR,  description="day | week | month | year"),
+        OpenApiParameter("event_id",   OpenApiTypes.UUID, description="Filter by specific event"),
+    ],
+    responses=AdminFinancialResaleCardSerializer,
+    summary="Admin Financial Resale Cards",
+)
+class AdminFinancialResaleCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        date_range = request.query_params.get("date_range", "month")
+        event_id   = request.query_params.get("event_id")
+        cards      = AdminFinancialResaleCardService.get_cards(
+            date_range=date_range, event_id=event_id
+        )
+ 
+        return api_response(
+            message="Financial cards retrieved.",
+            status_code=200,
+            data=AdminFinancialResaleCardSerializer(cards).data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Pending Payout Requests
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_payout_pending",
+    parameters=[
+        OpenApiParameter("date_from",  OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",    OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("min_amount", OpenApiTypes.NUMBER),
+        OpenApiParameter("max_amount", OpenApiTypes.NUMBER),
+        OpenApiParameter("seller_id",  OpenApiTypes.INT,    description="Filter by user ID"),
+        OpenApiParameter("search",     OpenApiTypes.STR),
+    ],
+    responses=AdminPayoutRequestSerializer(many=True),
+    summary="Admin Pending Payout Requests",
+)
+class AdminPayoutPendingView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminPayoutRequestSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        p = self.request.query_params
+        return AdminPayoutRequestService.get_pending(
+            date_from  = p.get("date_from"),
+            date_to    = p.get("date_to"),
+            min_amount = p.get("min_amount"),
+            max_amount = p.get("max_amount"),
+            seller_id  = p.get("seller_id"),
+            search     = p.get("search", "").strip() or None,
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Pending payout requests retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Approved Payouts
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_payout_approved",
+    parameters=[
+        OpenApiParameter("date_from",  OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",    OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("min_amount", OpenApiTypes.NUMBER),
+        OpenApiParameter("max_amount", OpenApiTypes.NUMBER),
+        OpenApiParameter("seller_id",  OpenApiTypes.INT),
+        OpenApiParameter("search",     OpenApiTypes.STR),
+    ],
+    responses=AdminPayoutRequestSerializer(many=True),
+    summary="Admin Approved Payouts",
+)
+class AdminPayoutApprovedView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminPayoutRequestSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        p = self.request.query_params
+        return AdminPayoutRequestService.get_approved(
+            date_from  = p.get("date_from"),
+            date_to    = p.get("date_to"),
+            min_amount = p.get("min_amount"),
+            max_amount = p.get("max_amount"),
+            seller_id  = p.get("seller_id"),
+            search     = p.get("search", "").strip() or None,
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Approved payouts retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Bulk Approve Payouts (with Paystack auto-pay)
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_payout_approve",
+    request=BulkPayoutActionSerializer,
+    responses={200: OpenApiResponse(description="Payouts approved and transfer initiated")},
+    summary="Admin — Bulk Approve Payouts",
+    description=(
+        "Approves one or more pending withdrawal requests and immediately "
+        "initiates Paystack transfers to each user's registered bank account. "
+        "If Paystack transfer fails for any, it stays 'approved' for retry."
+    ),
+)
+class AdminPayoutApproveView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request):
+        serializer = BulkPayoutActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        withdrawal_ids = serializer.validated_data["withdrawal_ids"]
+        succeeded, failed = AdminPayoutActionService.bulk_approve(
+            withdrawal_ids=withdrawal_ids,
+            admin_user=request.user,
+        )
+ 
+        # Log each approved withdrawal
+        for wid in succeeded:
+            self.log_action(
+                request,
+                action       = "withdrawal_approve",
+                target_type  = "withdrawal",
+                target_id    = str(wid),
+                details      = f"Approved and Paystack transfer initiated by {request.user.email}",
+            )
+ 
+        return api_response(
+            message=f"{len(succeeded)} payout(s) approved. {len(failed)} failed.",
+            status_code=200,
+            data={"succeeded": succeeded, "failed": failed},
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. Bulk Decline Payouts
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_payout_decline",
+    request=BulkPayoutActionSerializer,
+    responses={200: OpenApiResponse(description="Payouts declined")},
+    summary="Admin — Bulk Decline Payouts",
+)
+class AdminPayoutDeclineView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request):
+        serializer = BulkPayoutActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        withdrawal_ids = serializer.validated_data["withdrawal_ids"]
+        reason         = serializer.validated_data.get("reason", "")
+ 
+        succeeded, failed = AdminPayoutActionService.bulk_decline(
+            withdrawal_ids=withdrawal_ids,
+            admin_user=request.user,
+            reason=reason,
+        )
+ 
+        for wid in succeeded:
+            self.log_action(
+                request,
+                action       = "withdrawal_reject",
+                target_type  = "withdrawal",
+                target_id    = str(wid),
+                details      = f"Declined by {request.user.email}. Reason: {reason or 'none'}",
+            )
+ 
+        return api_response(
+            message=f"{len(succeeded)} payout(s) declined. {len(failed)} failed.",
+            status_code=200,
+            data={"succeeded": succeeded, "failed": failed},
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. Marketplace Listings
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_marketplace_listings",
+    parameters=[
+        OpenApiParameter("status",     OpenApiTypes.STR,    description="active | sold | cancelled"),
+        OpenApiParameter("seller_id",  OpenApiTypes.INT),
+        OpenApiParameter("min_amount", OpenApiTypes.NUMBER),
+        OpenApiParameter("max_amount", OpenApiTypes.NUMBER),
+        OpenApiParameter("date_from",  OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",    OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("search",     OpenApiTypes.STR),
+    ],
+    responses=AdminMarketplaceListingSerializer(many=True),
+    summary="Admin Marketplace Listings",
+)
+class AdminMarketplaceListingsView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminMarketplaceListingSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        p = self.request.query_params
+        return AdminMarketplaceListingService.get_listings(
+            status     = p.get("status"),
+            seller_id  = p.get("seller_id"),
+            min_amount = p.get("min_amount"),
+            max_amount = p.get("max_amount"),
+            date_from  = p.get("date_from"),
+            date_to    = p.get("date_to"),
+            search     = p.get("search", "").strip() or None,
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Marketplace listings retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Featured Event Payments
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_featured_payments",
+    parameters=[
+        OpenApiParameter("plan_slug",  OpenApiTypes.STR,    description="basic | standard | advanced | premium"),
+        OpenApiParameter("status",     OpenApiTypes.STR,    description="pending | active | expired | cancelled"),
+        OpenApiParameter("min_amount", OpenApiTypes.NUMBER),
+        OpenApiParameter("max_amount", OpenApiTypes.NUMBER),
+        OpenApiParameter("date_from",  OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",    OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("search",     OpenApiTypes.STR),
+    ],
+    responses=AdminFeaturedPaymentSerializer(many=True),
+    summary="Admin Featured Event Payments",
+)
+class AdminFeaturedPaymentsView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminFeaturedPaymentSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        p = self.request.query_params
+        return AdminFeaturedPaymentService.get_featured_payments(
+            plan_slug  = p.get("plan_slug"),
+            status     = p.get("status"),
+            min_amount = p.get("min_amount"),
+            max_amount = p.get("max_amount"),
+            date_from  = p.get("date_from"),
+            date_to    = p.get("date_to"),
+            search     = p.get("search", "").strip() or None,
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Featured event payments retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Subscription Plan Payments
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+@extend_schema(
+    operation_id="admin_subscription_payments",
+    parameters=[
+        OpenApiParameter("plan_slug",     OpenApiTypes.STR,    description="pro | enterprise"),
+        OpenApiParameter("status",        OpenApiTypes.STR,    description="active | expired | cancelled"),
+        OpenApiParameter("billing_cycle", OpenApiTypes.STR,    description="monthly | annual"),
+        OpenApiParameter("min_amount",    OpenApiTypes.NUMBER),
+        OpenApiParameter("max_amount",    OpenApiTypes.NUMBER),
+        OpenApiParameter("date_from",     OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",       OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("search",        OpenApiTypes.STR),
+    ],
+    responses=AdminSubscriptionPaymentSerializer(many=True),
+    summary="Admin Subscription Plan Payments",
+)
+class AdminSubscriptionPaymentsView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminSubscriptionPaymentSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        p = self.request.query_params
+        return AdminSubscriptionPaymentService.get_subscriptions(
+            plan_slug     = p.get("plan_slug"),
+            status        = p.get("status"),
+            billing_cycle = p.get("billing_cycle"),
+            min_amount    = p.get("min_amount"),
+            max_amount    = p.get("max_amount"),
+            date_from     = p.get("date_from"),
+            date_to       = p.get("date_to"),
+            search        = p.get("search", "").strip() or None,
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Subscription payments retrieved.",
             status_code=200,
             data=data,
         )

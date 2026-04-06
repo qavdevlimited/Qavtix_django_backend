@@ -127,4 +127,35 @@ def flag_suspicious_users():
             logger.info(f"Flagged user {user_id} for multiple refunds")
  
     logger.info(f"flag_suspicious_users complete — {flagged_count} new flags created")
- 
+
+
+
+
+# @shared_task(
+#     bind=True,
+#     max_retries=3,
+#     default_retry_delay=60,  # retry after 60 seconds
+#     autoretry_for=(Exception,),
+# )
+# def process_single_payout(self, withdrawal_id, initiated_by_email=""):
+#     """
+#     Celery task that handles a single Paystack transfer.
+#     Retries up to 3 times on failure with 60s delay.
+#     Using the same reference on retry prevents double-crediting.
+#     """
+#     from administrator.service.payout_service import PaystackPayoutService
+
+#     logger.info(
+#         f"process_single_payout: withdrawal={withdrawal_id}, "
+#         f"initiated_by={initiated_by_email}, "
+#         f"attempt={self.request.retries + 1}"
+#     )
+
+#     try:
+#         PaystackPayoutService.process_withdrawal(withdrawal_id)
+#     except Exception as exc:
+#         logger.error(
+#             f"process_single_payout failed for {withdrawal_id} "
+#             f"(attempt {self.request.retries + 1}): {exc}"
+#         )
+#         raise  # autoretry_for will catch this and retry

@@ -612,3 +612,187 @@ class AdminAuditLogSerializer(serializers.Serializer):
     def get_action_label(self, obj):
         from administrator.models import AdminAuditLog
         return dict(AdminAuditLog.ACTION_CHOICES).get(obj.action, obj.action)
+
+
+
+# ── Financial Cards ───────────────────────────────────────────────────────────
+ 
+class AdminFinancialResaleCardSerializer(serializers.Serializer):
+    total_resale_revenue         = serializers.DecimalField(max_digits=14, decimal_places=2)
+    net_profit     = serializers.DecimalField(max_digits=14, decimal_places=2)
+    tickets_resold = serializers.DecimalField(max_digits=14, decimal_places=2)
+    active_listings   = serializers.DecimalField(max_digits=14, decimal_places=2)
+
+
+
+class AdminFinancialCardSerializer(serializers.Serializer):
+    total_gmv         = serializers.DecimalField(max_digits=14, decimal_places=2)
+    platform_fees     = serializers.DecimalField(max_digits=14, decimal_places=2)
+    affiliate_balance = serializers.DecimalField(max_digits=14, decimal_places=2)
+    pending_payouts   = serializers.DecimalField(max_digits=14, decimal_places=2)
+ 
+ 
+# ── Payout Request (Pending / Approved) ───────────────────────────────────────
+ 
+class AdminPayoutRequestSerializer(serializers.Serializer):
+    payout_id    = serializers.UUIDField(source="id")
+    amount       = serializers.DecimalField(max_digits=12, decimal_places=2)
+    request_date = serializers.DateTimeField(source="created_at")
+    status       = serializers.CharField()
+ 
+    # Seller/Owner — could be host or attendee
+    seller = serializers.SerializerMethodField()
+ 
+    # Bank account
+    bank_account = serializers.SerializerMethodField()
+ 
+    def get_seller(self, obj):
+        from administrator.service.financial_service import AdminPayoutRequestService
+        return AdminPayoutRequestService.get_seller_info(obj)
+ 
+    def get_bank_account(self, obj):
+        acct = obj.payout_account
+        return {
+            "account_name":   acct.account_name,
+            "account_number": acct.account_number,
+            "bank_name":      acct.bank_name,
+        }
+ 
+ 
+# ── Bulk Payout Action ────────────────────────────────────────────────────────
+ 
+class BulkPayoutActionSerializer(serializers.Serializer):
+    withdrawal_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        min_length=1,
+    )
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+ 
+ 
+# ── Marketplace Listings ──────────────────────────────────────────────────────
+ 
+class AdminMarketplaceListingSerializer(serializers.Serializer):
+    ticket_id    = serializers.UUIDField(source="ticket.id")
+    listing_id   = serializers.IntegerField(source="id")
+    status       = serializers.CharField()
+    listing_price = serializers.DecimalField(max_digits=10, decimal_places=2, source="price")
+    listing_date  = serializers.DateTimeField(source="created_at")
+ 
+    # Reseller
+    reseller = serializers.SerializerMethodField()
+ 
+    # Event
+    event = serializers.SerializerMethodField()
+ 
+    def get_reseller(self, obj):
+        seller   = obj.seller
+        host     = getattr(seller, "host_profile", None)
+        attendee = getattr(seller, "attendee_profile", None)
+ 
+        if host:
+            return {
+                "name":            host.full_name,
+                "email":           seller.email,
+                "profile_picture": host.profile_picture,
+            }
+        if attendee:
+            return {
+                "name":            attendee.full_name or seller.email,
+                "email":           seller.email,
+                "profile_picture": attendee.profile_picture,
+            }
+        return {"name": seller.email, "email": seller.email, "profile_picture": None}
+ 
+    def get_event(self, obj):
+        event = obj.ticket.event
+        cat   = getattr(event, "category", None)
+        media = event.media.filter(is_featured=True).first()
+        return {
+            "id":            str(event.id),
+            "title":         event.title,
+            "category":      cat.name if cat else None,
+            "featured_image": media.image_url if media else None,
+        }
+ 
+ 
+# ── Featured Event Payments ───────────────────────────────────────────────────
+ 
+class AdminFeaturedPaymentSerializer(serializers.Serializer):
+    payment_id   = serializers.UUIDField(source="id")
+    status       = serializers.CharField()
+    package      = serializers.SerializerMethodField()
+    amount       = serializers.DecimalField(max_digits=10, decimal_places=2, source="payment_amount")
+    payment_date = serializers.DateTimeField(source="start_date")
+    payment_method = serializers.CharField()
+ 
+    # Host
+    host = serializers.SerializerMethodField()
+ 
+    # Event
+    event = serializers.SerializerMethodField()
+ 
+    def get_package(self, obj):
+        meta = obj.metadata or {}
+        return {
+            "slug": meta.get("plan_slug", ""),
+            "name": meta.get("plan_name", ""),
+            "duration_days": meta.get("duration_days", ""),
+        }
+ 
+    def get_host(self, obj):
+        host = getattr(obj.user, "host_profile", None)
+        return {
+            "name":            host.full_name    if host else obj.user.email,
+            "email":           obj.user.email,
+            "business_name":   host.business_name if host else None,
+            "profile_picture": host.profile_picture if host else None,
+        }
+ 
+    def get_event(self, obj):
+        event = obj.event
+        cat   = getattr(event, "category", None)
+        media = event.media.filter(is_featured=True).first()
+        return {
+            "id":             str(event.id),
+            "title":          event.title,
+            "category":       cat.name if cat else None,
+            "featured_image": media.image_url if media else None,
+        }
+ 
+ 
+# ── Subscription Plan Payments ────────────────────────────────────────────────
+ 
+class AdminSubscriptionPaymentSerializer(serializers.Serializer):
+    payment_id   = serializers.UUIDField(source="id")
+    status       = serializers.CharField()
+    plan         = serializers.SerializerMethodField()
+    billing_cycle = serializers.CharField()
+    timeline     = serializers.SerializerMethodField()
+    amount       = serializers.DecimalField(max_digits=10, decimal_places=2, source="amount_paid")
+    payment_date = serializers.DateTimeField(source="started_at")
+    currency     = serializers.CharField()
+ 
+    # Host profile
+    profile = serializers.SerializerMethodField()
+ 
+    def get_plan(self, obj):
+        return {
+            "slug": obj.plan_slug,
+            "name": obj.plan.name if obj.plan else obj.plan_slug,
+        }
+ 
+    def get_timeline(self, obj):
+        return {
+            "started_at": obj.started_at,
+            "expires_at": obj.expires_at,
+        }
+ 
+    def get_profile(self, obj):
+        host = obj.host
+        return {
+            "name":            host.full_name,
+            "email":           host.user.email,
+            "business_name":   host.business_name,
+            "profile_picture": host.profile_picture,
+        }
+ 

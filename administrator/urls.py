@@ -61,6 +61,20 @@ urlpatterns = [
     path("admin/hosts/<int:host_id>/gift-badge/", GiftBadgeView.as_view()),
 
 
+    # ── Event Management ──────────────────────────────────────────────────────
+    path("admin/events/cards/", AdminEventCardsView.as_view(), name="admin-event-cards"),
+    path("admin/events/",       AdminEventListView.as_view(),  name="admin-event-list"),
+ 
+    # Event Actions
+    path("admin/events/<uuid:event_id>/attendees/",    AdminEventAttendeesView.as_view(),   name="admin-event-attendees"),
+    path("admin/events/<uuid:event_id>/ticket-types/", AdminEventTicketTypesView.as_view(), name="admin-event-ticket-types"),
+    path("admin/events/<uuid:event_id>/suspend/",      AdminEventSuspendView.as_view(),     name="admin-event-suspend"),
+    path("admin/events/<uuid:event_id>/delete/",       AdminEventDeleteView.as_view(),      name="admin-event-delete"),
+    path("admin/events/<uuid:event_id>/feature/",      AdminEventFeatureView.as_view(),     name="admin-event-feature"),
+ 
+    # ── Audit Logs ────────────────────────────────────────────────────────────
+    path("admin/audit-logs/", AdminAuditLogListView.as_view(), name="admin-audit-logs"),
+
 ]
 
 

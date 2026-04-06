@@ -458,3 +458,157 @@ class AdminHostChartPointSerializer(serializers.Serializer):
 
 class GiftBadgeSerializer(serializers.Serializer):
     host_id = serializers.IntegerField()
+
+
+
+# ── Event Cards ───────────────────────────────────────────────────────────────
+
+class AdminEventCardSerializer(serializers.Serializer):
+    live      = serializers.IntegerField()
+    suspended = serializers.IntegerField()
+    ended     = serializers.IntegerField()
+    sold_out  = serializers.IntegerField()
+
+
+# ── Event List ────────────────────────────────────────────────────────────────
+
+class AdminEventListSerializer(serializers.Serializer):
+    event_id       = serializers.UUIDField(source="id")
+    title          = serializers.CharField()
+    status         = serializers.CharField()
+    category       = serializers.SerializerMethodField()
+    featured_image = serializers.SerializerMethodField()
+    host_name      = serializers.SerializerMethodField()
+    host_id        = serializers.SerializerMethodField()
+
+    # Date/Time
+    start_datetime = serializers.DateTimeField()
+    end_datetime   = serializers.DateTimeField()
+
+    # Location
+    location       = serializers.SerializerMethodField()
+
+    # Stats
+    tickets_sold  = serializers.SerializerMethodField()
+    total_listed  = serializers.SerializerMethodField()
+    revenue       = serializers.SerializerMethodField()
+    views_count   = serializers.IntegerField()
+    saves_count   = serializers.IntegerField()
+
+    def get_category(self, obj):
+        cat = getattr(obj, "category", None)
+        return cat.name if cat else None
+
+    def get_featured_image(self, obj):
+        media = obj.media.filter(is_featured=True).first()
+        return media.image_url if media else None
+
+    def get_host_name(self, obj):
+        return getattr(obj.host, "business_name", None) or getattr(obj.host, "full_name", "")
+
+    def get_host_id(self, obj):
+        return getattr(obj.host, "id", None)
+
+    def get_location(self, obj):
+        loc = getattr(obj, "event_location", None)
+        if not loc:
+            return None
+        return {"city": loc.city, "state": loc.state, "country": loc.country}
+
+    def get_tickets_sold(self, obj):
+        return getattr(obj, "tickets_sold", None) or 0
+
+    def get_total_listed(self, obj):
+        return getattr(obj, "total_listed", None) or 0
+
+    def get_revenue(self, obj):
+        val = getattr(obj, "revenue", None)
+        return str(val) if val else "0.00"
+
+
+# ── Event Attendee List ───────────────────────────────────────────────────────
+
+class AdminEventAttendeeSerializer(serializers.Serializer):
+    ticket_id     = serializers.UUIDField(source="id")
+    ticket_type   = serializers.SerializerMethodField()
+    status        = serializers.CharField()
+    purchase_date = serializers.DateTimeField(source="created_at")
+    amount        = serializers.SerializerMethodField()
+    quantity      = serializers.SerializerMethodField()
+
+    # Attendee info
+    attendee_name    = serializers.SerializerMethodField()
+    attendee_email   = serializers.SerializerMethodField()
+    profile_picture  = serializers.SerializerMethodField()
+
+    def get_ticket_type(self, obj):
+        ot = getattr(obj, "order_ticket", None)
+        return ot.ticket.ticket_type if ot and ot.ticket else None
+
+    def get_amount(self, obj):
+        order = getattr(obj, "order", None)
+        return str(order.total_amount) if order else "0.00"
+
+    def get_quantity(self, obj):
+        ot = getattr(obj, "order_ticket", None)
+        return ot.quantity if ot else 1
+
+    def get_attendee_name(self, obj):
+        if obj.owner:
+            attendee = getattr(obj.owner, "attendee_profile", None)
+            return attendee.full_name if attendee else obj.owner.email
+        return obj.guest_email or "Guest"
+
+    def get_attendee_email(self, obj):
+        if obj.owner:
+            return obj.owner.email
+        return obj.guest_email
+
+    def get_profile_picture(self, obj):
+        if obj.owner:
+            attendee = getattr(obj.owner, "attendee_profile", None)
+            return attendee.profile_picture if attendee else None
+        return None
+
+
+# ── Ticket Types for Filter Dropdown ─────────────────────────────────────────
+
+class AdminTicketTypeSerializer(serializers.Serializer):
+    id          = serializers.IntegerField()
+    ticket_type = serializers.CharField()
+    price       = serializers.DecimalField(max_digits=12, decimal_places=2)
+    quantity    = serializers.IntegerField()
+    sold_count  = serializers.IntegerField()
+
+
+# ── Feature Event ─────────────────────────────────────────────────────────────
+
+class AdminFeatureEventSerializer(serializers.Serializer):
+    plan_slug = serializers.ChoiceField(choices=["basic", "standard", "advanced", "premium"])
+
+
+# ── Audit Log ─────────────────────────────────────────────────────────────────
+
+class AdminAuditLogSerializer(serializers.Serializer):
+    id           = serializers.UUIDField()
+    timestamp    = serializers.DateTimeField(source="created_at")
+    admin_email  = serializers.EmailField()
+    admin_name   = serializers.SerializerMethodField()
+    action       = serializers.CharField()
+    action_label = serializers.SerializerMethodField()
+    details      = serializers.CharField()
+    target_type  = serializers.CharField()
+    target_id    = serializers.CharField()
+    target_label = serializers.CharField()
+    ip_address   = serializers.IPAddressField(allow_null=True)
+    user_agent   = serializers.CharField()
+
+    def get_admin_name(self, obj):
+        if obj.admin:
+            profile = getattr(obj.admin, "admin_profile", None)
+            return profile.full_name if profile else obj.admin_email
+        return obj.admin_email
+
+    def get_action_label(self, obj):
+        from administrator.models import AdminAuditLog
+        return dict(AdminAuditLog.ACTION_CHOICES).get(obj.action, obj.action)

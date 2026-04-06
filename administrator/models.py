@@ -89,4 +89,68 @@ class FlaggedUser(models.Model):
  
     def __str__(self):
         return f"{self.user.email} — {self.reason} — {'active' if self.is_active else 'cleared'}"
+
+
+class AdminAuditLog(models.Model):
+    """
+    Immutable audit trail for all admin actions.
+    Written by the AuditLogMixin on every state-changing admin endpoint.
+    Never deleted — append-only for compliance.
+    """
+ 
+    ACTION_CHOICES = [
+        # User actions
+        ("user_suspend",    "User Suspended"),
+        ("user_unsuspend",  "User Unsuspended"),
+        ("user_flag",       "User Flagged"),
+        ("user_unflag",     "User Unflagged"),
+        # Host actions
+        ("host_suspend",    "Host Suspended"),
+        ("host_unsuspend",  "Host Unsuspended"),
+        ("host_approve",    "Host Verification Approved"),
+        ("host_decline",    "Host Verification Declined"),
+        # Event actions
+        ("event_suspend",   "Event Suspended"),
+        ("event_unsuspend", "Event Unsuspended"),
+        ("event_delete",    "Event Deleted"),
+        ("event_feature",   "Event Featured"),
+        # Withdrawal actions
+        ("withdrawal_approve", "Withdrawal Approved"),
+        ("withdrawal_reject",  "Withdrawal Rejected"),
+        # General
+        ("other", "Other"),
+    ]
+ 
+    id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ 
+    # Who did it
+    admin      = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="audit_logs",
+    )
+    admin_email = models.EmailField()  # cached in case admin is deleted
+ 
+    # What was done
+    action     = models.CharField(max_length=30, choices=ACTION_CHOICES)
+    details    = models.TextField(blank=True) 
+ 
+    # Who it was done to (flexible — can be user, host, event etc.)
+    target_type  = models.CharField(max_length=50, blank=True)  # e.g. "user", "host", "event"
+    target_id    = models.CharField(max_length=100, blank=True) # the ID of the target object
+    target_label = models.CharField(max_length=255, blank=True) # e.g. "John Doe", "Pulse Concerts"
+ 
+    # Network info
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+ 
+    created_at = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        ordering   = ["-created_at"]
+        db_table   = "admin_audit_log"
+ 
+    def __str__(self):
+        return f"{self.admin_email} — {self.action} — {self.created_at:%Y-%m-%d %H:%M}"
  

@@ -3,10 +3,12 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminOTPVerifySerializer, GiftBadgeSerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
+from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminOTPVerifySerializer, AdminTicketTypeSerializer, GiftBadgeSerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
+from administrator.service.audit import AdminAuditLogService, AuditLogMixin
 from administrator.service.auth_service import AdminAuthService, AuthError
 from administrator.service.customer_details_service import  UserDetailCardService, UserDetailOrderHistoryService, UserDetailProfileService, UserDetailSpendChartService
 from administrator.service.dashboard_service import ActivityService, AdminDashboardService, RevenueService, TicketAnalyticsService
+from administrator.service.event_service import AdminEventActionService, AdminEventAttendeeService, AdminEventCardService, AdminEventListService
 from administrator.service.host_service import AdminBadgeService, AdminHostCardService, AdminHostChartService, AdminHostDetailCardService, AdminHostDetailProfileService, AdminHostEventsService, AdminHostListService, AdminHostVerificationService
 from administrator.service.uptime_service import UptimeService
 from authentication.serializers import CustomLoginSerializer
@@ -1111,3 +1113,313 @@ class GiftBadgeView(APIView):
             status_code=200,
             data=result,
         )
+
+
+
+@extend_schema(
+    operation_id="admin_event_cards",
+    parameters=[
+        OpenApiParameter("date_range", OpenApiTypes.STR, description="day | week | month | year"),
+    ],
+    responses=AdminEventCardSerializer,
+    summary="Admin Event Cards",
+)
+class AdminEventCardsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        date_range = request.query_params.get("date_range", "month")
+        cards      = AdminEventCardService.get_cards(date_range=date_range)
+ 
+        return api_response(
+            message="Event cards retrieved.",
+            status_code=200,
+            data=AdminEventCardSerializer(cards).data,
+        )
+ 
+ 
+
+#Event List
+
+ 
+@extend_schema(
+    operation_id="admin_event_list",
+    parameters=[
+        OpenApiParameter("status",       OpenApiTypes.STR,  description="active | draft | cancelled | ended | sold-out | banned"),
+        OpenApiParameter("event_state",  OpenApiTypes.STR,  description="live | ended | cancelled | suspended"),
+        OpenApiParameter("category",     OpenApiTypes.INT,  description="Category ID"),
+        OpenApiParameter("host_id",      OpenApiTypes.INT,  description="Filter by host"),
+        OpenApiParameter("city",         OpenApiTypes.STR),
+        OpenApiParameter("state",        OpenApiTypes.STR),
+        OpenApiParameter("country",      OpenApiTypes.STR),
+        OpenApiParameter("date_from",    OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",      OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("performance",  OpenApiTypes.STR,  description="high | low"),
+        OpenApiParameter("search",       OpenApiTypes.STR),
+    ],
+    responses=AdminEventListSerializer(many=True),
+    summary="Admin Event List",
+)
+class AdminEventListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminEventListSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        p = self.request.query_params
+        return AdminEventListService.get_events(
+            status      = p.get("status"),
+            event_state = p.get("event_state"),
+            category    = p.get("category"),
+            host_id     = p.get("host_id"),
+            city        = p.get("city"),
+            state       = p.get("state"),
+            country     = p.get("country"),
+            date_from   = p.get("date_from"),
+            date_to     = p.get("date_to"),
+            performance = p.get("performance"),
+            search      = p.get("search", "").strip() or None,
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Events retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+
+#Event Attendees
+
+ 
+@extend_schema(
+    operation_id="admin_event_attendees",
+    parameters=[
+        OpenApiParameter("ticket_type_id", OpenApiTypes.INT,    description="Filter by ticket type ID"),
+        OpenApiParameter("status",         OpenApiTypes.STR,    description="active | used | cancelled | resold"),
+        OpenApiParameter("date_from",      OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",        OpenApiTypes.DATE,   description="YYYY-MM-DD"),
+        OpenApiParameter("min_amount",     OpenApiTypes.NUMBER),
+        OpenApiParameter("max_amount",     OpenApiTypes.NUMBER),
+    ],
+    responses=AdminEventAttendeeSerializer(many=True),
+    summary="Admin Event Attendees",
+)
+class AdminEventAttendeesView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminEventAttendeeSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        event_id = self.kwargs["event_id"]
+        p        = self.request.query_params
+ 
+        return AdminEventAttendeeService.get_attendees(
+            event_id       = event_id,
+            ticket_type_id = p.get("ticket_type_id"),
+            status         = p.get("status"),
+            date_from      = p.get("date_from"),
+            date_to        = p.get("date_to"),
+            min_amount     = p.get("min_amount"),
+            max_amount     = p.get("max_amount"),
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Event attendees retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 
+ 
+# Ticket Types for Filter Dropdown
+ 
+@extend_schema(
+    operation_id="admin_event_ticket_types",
+    responses=AdminTicketTypeSerializer(many=True),
+    summary="Admin Event Ticket Types",
+    description="Returns all ticket types for an event — use for attendee filter dropdown.",
+)
+class AdminEventTicketTypesView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request, event_id):
+        ticket_types = AdminEventAttendeeService.get_ticket_types(event_id=event_id)
+ 
+        return api_response(
+            message="Ticket types retrieved.",
+            status_code=200,
+            data=AdminTicketTypeSerializer(ticket_types, many=True).data,
+        )
+ 
+ 
+#Suspend / Unsuspend Event
+
+ 
+@extend_schema(
+    operation_id="admin_event_suspend",
+    request=None,
+    responses={200: OpenApiResponse(description="Event suspended or unsuspended")},
+    summary="Admin — Suspend / Unsuspend Event",
+)
+class AdminEventSuspendView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request, event_id):
+        success, message = AdminEventActionService.suspend_event(event_id=event_id)
+ 
+        if not success:
+            return api_response(message=message, status_code=404)
+ 
+        action = "event_unsuspend" if "unsuspended" in message else "event_suspend"
+ 
+        self.log_action(
+            request,
+            action       = action,
+            target_type  = "event",
+            target_id    = str(event_id),
+            details      = message,
+        )
+ 
+        return api_response(message=message, status_code=200)
+ 
+ 
+
+#Delete Event
+
+ 
+@extend_schema(
+    operation_id="admin_event_delete",
+    request=None,
+    responses={200: OpenApiResponse(description="Event deleted")},
+    summary="Admin — Delete Event (Permanent)",
+)
+class AdminEventDeleteView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def delete(self, request, event_id):
+        success, message = AdminEventActionService.delete_event(event_id=event_id)
+ 
+        if not success:
+            return api_response(message=message, status_code=404)
+ 
+        self.log_action(
+            request,
+            action      = "event_delete",
+            target_type = "event",
+            target_id   = str(event_id),
+            details     = message,
+        )
+ 
+        return api_response(message=message, status_code=200)
+ 
+ 
+
+# 7. Feature Event (Admin Assignment)
+ 
+@extend_schema(
+    operation_id="admin_event_feature",
+    request=AdminFeatureEventSerializer,
+    responses={200: OpenApiResponse(description="Event featured")},
+    summary="Admin — Feature Event",
+    description="Assigns a featured plan to an event at no charge. Calculates end date from plan duration automatically.",
+)
+class AdminEventFeatureView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request, event_id):
+        serializer = AdminFeatureEventSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        success, message, featured = AdminEventActionService.feature_event(
+            event_id   = event_id,
+            plan_slug  = serializer.validated_data["plan_slug"],
+            admin_user = request.user,
+        )
+ 
+        if not success:
+            return api_response(message=message, status_code=404)
+ 
+        self.log_action(
+            request,
+            action       = "event_feature",
+            target_type  = "event",
+            target_id    = str(event_id),
+            target_label = featured.event.title if featured else "",
+            details      = message,
+        )
+ 
+        return api_response(
+            message=message,
+            status_code=200,
+            data={
+                "featured_id": str(featured.id),
+                "plan":        serializer.validated_data["plan_slug"],
+                "end_date":    featured.end_date,
+            },
+        )
+ 
+ 
+
+#Audit Logs
+
+ 
+@extend_schema(
+    operation_id="admin_audit_logs",
+    parameters=[
+        OpenApiParameter("action",     OpenApiTypes.STR,  description="Filter by action slug e.g. user_suspend"),
+        OpenApiParameter("date_range", OpenApiTypes.STR,  description="day | week | month | year"),
+        OpenApiParameter("date_from",  OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("date_to",    OpenApiTypes.DATE, description="YYYY-MM-DD"),
+        OpenApiParameter("admin_id",   OpenApiTypes.INT,  description="Filter by admin user ID"),
+        OpenApiParameter("search",     OpenApiTypes.STR,  description="Search email, target or details"),
+    ],
+    responses=AdminAuditLogSerializer(many=True),
+    summary="Admin Audit Logs",
+    description="Immutable log of all admin actions with IP, timestamp and target info.",
+)
+class AdminAuditLogListView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class   = AdminAuditLogSerializer
+    pagination_class   = CustomPagination
+ 
+    def get_queryset(self):
+        p = self.request.query_params
+        return AdminAuditLogService.get_logs(
+            action     = p.get("action"),
+            date_range = p.get("date_range"),
+            date_from  = p.get("date_from"),
+            date_to    = p.get("date_to"),
+            admin_id   = p.get("admin_id"),
+            search     = p.get("search", "").strip() or None,
+        )
+ 
+    def list(self, request, *args, **kwargs):
+        queryset   = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page if page is not None else queryset, many=True)
+ 
+        data = pagination_data(self.paginator) if page is not None else {}
+        data["results"] = serializer.data
+ 
+        return api_response(
+            message="Audit logs retrieved.",
+            status_code=200,
+            data=data,
+        )
+ 

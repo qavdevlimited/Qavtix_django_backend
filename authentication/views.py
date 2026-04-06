@@ -271,7 +271,7 @@ class VerifyPasswordResetOTPView(APIView):
 
     def post(self, request):
         email = request.data.get("email")
-        otp = request.data.get("otp")
+        otp = request.data.get("otp").strip()
 
         try:
             user = User.objects.get(email=email)

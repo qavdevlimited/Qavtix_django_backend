@@ -8,7 +8,7 @@ Your password reset code is:
 
 {otp}
 
-This code expires in 10 minutes.
+This code expires in 3 minutes.
 If you did not request this, ignore this email.
 """
 

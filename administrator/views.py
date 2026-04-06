@@ -3,7 +3,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, BulkPayoutActionSerializer, GiftBadgeSerializer, HostActivitySerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
+from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, BulkPayoutActionSerializer, FeesConfigSerializer, FeesConfigUpdateSerializer, FraudConfigSerializer, FraudConfigUpdateSerializer, FraudConfigUpdateSerializer, GeneralConfigSerializer, GeneralConfigUpdateSerializer, GiftBadgeSerializer, HostActivitySerializer, LocalizationConfigSerializer, LocalizationConfigUpdateSerializer, NotificationsConfigSerializer, NotificationsConfigUpdateSerializer, PoliciesConfigSerializer, PoliciesConfigUpdateSerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
 from administrator.service.audit import AdminAuditLogService, AuditLogMixin
 from administrator.service.auth_service import AdminAuthService, AuthError
 from administrator.service.customer_details_service import  UserDetailCardService, UserDetailOrderHistoryService, UserDetailProfileService, UserDetailSpendChartService
@@ -12,6 +12,7 @@ from administrator.service.event_service import AdminEventActionService, AdminEv
 from administrator.service.financial_service import AdminFeaturedPaymentService, AdminFinancialCardService, AdminFinancialResaleCardService, AdminMarketplaceListingService, AdminPayoutRequestService, AdminSubscriptionPaymentService
 from administrator.service.host_service import AdminBadgeService, AdminHostCardService, AdminHostChartService, AdminHostDetailCardService, AdminHostDetailProfileService, AdminHostEventsService, AdminHostListService, AdminHostVerificationService
 from administrator.service.payout_service import AdminPayoutActionService
+from administrator.service.system_config_service import SystemConfigService
 from administrator.service.uptime_service import UptimeService
 from authentication.serializers import CustomLoginSerializer
 from public.pagination import CustomPagination
@@ -103,7 +104,7 @@ class AdminLoginView(APIView):
         )
 
 
-# ── Step 2: OTP verify → issue JWT ────────────────────────────────────────────
+
 
 @extend_schema(
     operation_id="admin_otp_verify",
@@ -547,9 +548,7 @@ class AdminUserDetailCardsView(APIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. Spend Chart
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_user_detail_chart",
@@ -577,7 +576,7 @@ class AdminUserDetailChartView(APIView):
  
  
 
-# 3. Order History
+#  Order History
 
  
 @extend_schema(
@@ -641,7 +640,7 @@ class AdminUserDetailOrdersView(generics.ListAPIView):
  
  
 
-# 4. Profile Card
+#  Profile Card
 
  
 @extend_schema(
@@ -666,7 +665,7 @@ class AdminUserDetailProfileView(APIView):
  
  
 
-# 5. Suspend / Unsuspend User
+# Suspend / Unsuspend User
 
  
 @extend_schema(
@@ -798,9 +797,7 @@ class AdminHostListView(generics.ListAPIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Pending Verifications
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_host_verifications",
@@ -893,9 +890,7 @@ class AdminHostDeclineView(APIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Host Detail — Cards
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_host_detail_cards",
@@ -924,9 +919,6 @@ class AdminHostDetailCardsView(APIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Host Detail — Profile
-# ─────────────────────────────────────────────────────────────────────────────
  
 @extend_schema(
     operation_id="admin_host_detail_profile",
@@ -948,10 +940,6 @@ class AdminHostDetailProfileView(APIView):
             data=AdminHostDetailProfileSerializer(profile).data,
         )
  
- 
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. Host Detail — Events
-# ─────────────────────────────────────────────────────────────────────────────
  
 @extend_schema(
     operation_id="admin_host_detail_events",
@@ -1004,10 +992,7 @@ class AdminHostDetailEventsView(generics.ListAPIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. Host Detail — Revenue / Ticket Chart
-# ─────────────────────────────────────────────────────────────────────────────
- 
+
 @extend_schema(
     operation_id="admin_host_detail_chart",
     parameters=[
@@ -1040,9 +1025,7 @@ class AdminHostDetailChartView(APIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 8. Suspend Host
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_host_suspend",
@@ -1479,9 +1462,7 @@ class AdminFinancialResaleCardsView(APIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. Pending Payout Requests
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_payout_pending",
@@ -1527,9 +1508,7 @@ class AdminPayoutPendingView(generics.ListAPIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Approved Payouts
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_payout_approved",
@@ -1575,9 +1554,7 @@ class AdminPayoutApprovedView(generics.ListAPIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Bulk Approve Payouts (with Paystack auto-pay)
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_payout_approve",
@@ -1621,9 +1598,7 @@ class AdminPayoutApproveView(AuditLogMixin, APIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Bulk Decline Payouts
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_payout_decline",
@@ -1664,9 +1639,7 @@ class AdminPayoutDeclineView(AuditLogMixin, APIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. Marketplace Listings
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_marketplace_listings",
@@ -1714,9 +1687,6 @@ class AdminMarketplaceListingsView(generics.ListAPIView):
         )
  
  
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. Featured Event Payments
-# ─────────────────────────────────────────────────────────────────────────────
  
 @extend_schema(
     operation_id="admin_featured_payments",
@@ -1763,10 +1733,7 @@ class AdminFeaturedPaymentsView(generics.ListAPIView):
             data=data,
         )
  
- 
-# ─────────────────────────────────────────────────────────────────────────────
-# 8. Subscription Plan Payments
-# ─────────────────────────────────────────────────────────────────────────────
+
  
 @extend_schema(
     operation_id="admin_subscription_payments",
@@ -1813,5 +1780,301 @@ class AdminSubscriptionPaymentsView(generics.ListAPIView):
             message="Subscription payments retrieved.",
             status_code=200,
             data=data,
+        )
+
+
+
+
+
+@extend_schema(
+    operation_id="admin_config_general",
+    responses=GeneralConfigSerializer,
+    summary="Admin — Get General Settings",
+)
+class AdminConfigGeneralView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        return api_response(
+            message="General settings retrieved.",
+            status_code=200,
+            data=GeneralConfigSerializer(SystemConfigService.get_general()).data,
+        )
+ 
+    @extend_schema(request=GeneralConfigUpdateSerializer)
+    def patch(self, request):
+        serializer = GeneralConfigUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        updated = SystemConfigService.update_general(serializer.validated_data, user=request.user)
+ 
+        self.log_action(request, action="other", target_type="config",
+                        details=f"General settings updated: {', '.join(updated)}")
+ 
+        return api_response(
+            message="General settings updated.",
+            status_code=200,
+            data=GeneralConfigSerializer(SystemConfigService.get_general()).data,
+        )
+ 
+    @extend_schema(request=None, responses={200: OpenApiResponse(description="Reset to last saved")})
+    def delete(self, request):
+        """Reset general settings to last saved state."""
+        SystemConfigService.reset_to_last_saved("general")
+        return api_response(
+            message="General settings reset to last saved.",
+            status_code=200,
+            data=GeneralConfigSerializer(SystemConfigService.get_general()).data,
+        )
+ 
+ 
+@extend_schema(
+    operation_id="admin_config_policies",
+    responses=PoliciesConfigSerializer,
+    summary="Admin — Get Policy Settings",
+)
+class AdminConfigPoliciesView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        return api_response(
+            message="Policy settings retrieved.",
+            status_code=200,
+            data=PoliciesConfigSerializer(SystemConfigService.get_policies()).data,
+        )
+ 
+    @extend_schema(request=PoliciesConfigUpdateSerializer)
+    def patch(self, request):
+        serializer = PoliciesConfigUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        updated = SystemConfigService.update_policies(serializer.validated_data, user=request.user)
+ 
+        self.log_action(request, action="other", target_type="config",
+                        details=f"Policy settings updated: {', '.join(updated)}")
+ 
+        return api_response(
+            message="Policy settings updated.",
+            status_code=200,
+            data=PoliciesConfigSerializer(SystemConfigService.get_policies()).data,
+        )
+ 
+    def delete(self, request):
+        SystemConfigService.reset_to_last_saved("policies")
+        return api_response(
+            message="Policy settings reset to last saved.",
+            status_code=200,
+            data=PoliciesConfigSerializer(SystemConfigService.get_policies()).data,
+        )
+ 
+ 
+
+ 
+@extend_schema(
+    operation_id="admin_config_fees",
+    responses=FeesConfigSerializer,
+    summary="Admin — Get Fee Settings",
+)
+class AdminConfigFeesView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        return api_response(
+            message="Fee settings retrieved.",
+            status_code=200,
+            data=FeesConfigSerializer(SystemConfigService.get_fees()).data,
+        )
+ 
+    @extend_schema(request=FeesConfigUpdateSerializer)
+    def patch(self, request):
+        serializer = FeesConfigUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        updated = SystemConfigService.update_fees(serializer.validated_data, user=request.user)
+ 
+        self.log_action(request, action="other", target_type="config",
+                        details=f"Fee settings updated: {', '.join(updated)}")
+ 
+        return api_response(
+            message="Fee settings updated.",
+            status_code=200,
+            data=FeesConfigSerializer(SystemConfigService.get_fees()).data,
+        )
+ 
+    def delete(self, request):
+        SystemConfigService.reset_to_last_saved("fees")
+        return api_response(
+            message="Fee settings reset to last saved.",
+            status_code=200,
+            data=FeesConfigSerializer(SystemConfigService.get_fees()).data,
+        )
+ 
+ 
+
+ 
+@extend_schema(
+    operation_id="admin_config_fraud",
+    responses=FraudConfigSerializer,
+    summary="Admin — Get Fraud Detection Settings",
+)
+class AdminConfigFraudView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        return api_response(
+            message="Fraud settings retrieved.",
+            status_code=200,
+            data=FraudConfigSerializer(SystemConfigService.get_fraud()).data,
+        )
+ 
+    @extend_schema(request=FraudConfigUpdateSerializer)
+    def patch(self, request):
+        serializer = FraudConfigUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        updated = SystemConfigService.update_fraud(serializer.validated_data, user=request.user)
+ 
+        self.log_action(request, action="other", target_type="config",
+                        details=f"Fraud sensitivity updated to: {serializer.validated_data.get('fraud_sensitivity')}")
+ 
+        return api_response(
+            message="Fraud settings updated.",
+            status_code=200,
+            data=FraudConfigSerializer(SystemConfigService.get_fraud()).data,
+        )
+ 
+    def delete(self, request):
+        SystemConfigService.reset_to_last_saved("fraud")
+        return api_response(
+            message="Fraud settings reset to last saved.",
+            status_code=200,
+            data=FraudConfigSerializer(SystemConfigService.get_fraud()).data,
+        )
+ 
+ 
+
+ 
+@extend_schema(
+    operation_id="admin_config_notifications",
+    responses=NotificationsConfigSerializer,
+    summary="Admin — Get Notification Settings",
+)
+class AdminConfigNotificationsView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        return api_response(
+            message="Notification settings retrieved.",
+            status_code=200,
+            data=NotificationsConfigSerializer(SystemConfigService.get_notifications()).data,
+        )
+ 
+    @extend_schema(request=NotificationsConfigUpdateSerializer)
+    def patch(self, request):
+        serializer = NotificationsConfigUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        updated = SystemConfigService.update_notifications(serializer.validated_data, user=request.user)
+ 
+        self.log_action(request, action="other", target_type="config",
+                        details=f"Notification settings updated: {', '.join(updated)}")
+ 
+        return api_response(
+            message="Notification settings updated.",
+            status_code=200,
+            data=NotificationsConfigSerializer(SystemConfigService.get_notifications()).data,
+        )
+ 
+    def delete(self, request):
+        SystemConfigService.reset_to_last_saved("notifications")
+        return api_response(
+            message="Notification settings reset to last saved.",
+            status_code=200,
+            data=NotificationsConfigSerializer(SystemConfigService.get_notifications()).data,
+        )
+ 
+ 
+
+ 
+@extend_schema(
+    operation_id="admin_config_localization",
+    responses=LocalizationConfigSerializer,
+    summary="Admin — Get Localization Settings",
+)
+class AdminConfigLocalizationView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def get(self, request):
+        return api_response(
+            message="Localization settings retrieved.",
+            status_code=200,
+            data=LocalizationConfigSerializer(SystemConfigService.get_localization()).data,
+        )
+ 
+    @extend_schema(request=LocalizationConfigUpdateSerializer)
+    def patch(self, request):
+        serializer = LocalizationConfigUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        updated = SystemConfigService.update_localization(serializer.validated_data, user=request.user)
+ 
+        self.log_action(request, action="other", target_type="config",
+                        details=f"Localization settings updated: {', '.join(updated)}")
+ 
+        return api_response(
+            message="Localization settings updated.",
+            status_code=200,
+            data=LocalizationConfigSerializer(SystemConfigService.get_localization()).data,
+        )
+ 
+    def delete(self, request):
+        SystemConfigService.reset_to_last_saved("localization")
+        return api_response(
+            message="Localization settings reset to last saved.",
+            status_code=200,
+            data=LocalizationConfigSerializer(SystemConfigService.get_localization()).data,
+        )
+ 
+ 
+
+ 
+@extend_schema(
+    operation_id="admin_config_reset_all",
+    request=None,
+    responses={200: OpenApiResponse(description="All settings reset to factory defaults")},
+    summary="Admin — Reset ALL Settings to Factory Defaults",
+    description="Resets every config key to its original factory default. Cannot be undone.",
+)
+class AdminConfigResetAllView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
+ 
+    def post(self, request):
+        updated = SystemConfigService.reset_all_to_defaults()
+ 
+        self.log_action(
+            request,
+            action       = "other",
+            target_type  = "config",
+            details      = f"FULL system config reset to factory defaults by {request.user.email}. "
+                           f"{len(updated)} keys reset.",
+        )
+ 
+        return api_response(
+            message=f"All system settings reset to factory defaults. {len(updated)} keys restored.",
+            status_code=200,
+            data={
+                "general":       GeneralConfigSerializer(SystemConfigService.get_general()).data,
+                "policies":      PoliciesConfigSerializer(SystemConfigService.get_policies()).data,
+                "fees":          FeesConfigSerializer(SystemConfigService.get_fees()).data,
+                "fraud":         FraudConfigSerializer(SystemConfigService.get_fraud()).data,
+                "notifications": NotificationsConfigSerializer(SystemConfigService.get_notifications()).data,
+                "localization":  LocalizationConfigSerializer(SystemConfigService.get_localization()).data,
+            },
         )
  

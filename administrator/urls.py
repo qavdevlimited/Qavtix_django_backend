@@ -86,6 +86,17 @@ urlpatterns = [
     path("admin/financials/marketplace/",      AdminMarketplaceListingsView.as_view(), name="admin-marketplace-listings"),
     path("admin/financials/featured/",         AdminFeaturedPaymentsView.as_view(),   name="admin-featured-payments"),
     path("admin/financials/subscriptions/",    AdminSubscriptionPaymentsView.as_view(), name="admin-subscription-payments"),
+
+
+    path("admin/config/general/",       AdminConfigGeneralView.as_view(),       name="admin-config-general"),
+    path("admin/config/policies/",      AdminConfigPoliciesView.as_view(),      name="admin-config-policies"),
+    path("admin/config/fees/",          AdminConfigFeesView.as_view(),          name="admin-config-fees"),
+    path("admin/config/fraud/",         AdminConfigFraudView.as_view(),         name="admin-config-fraud"),
+    path("admin/config/notifications/", AdminConfigNotificationsView.as_view(), name="admin-config-notifications"),
+    path("admin/config/localization/",  AdminConfigLocalizationView.as_view(),  name="admin-config-localization"),
+ 
+    # POST — resets ALL config to factory defaults
+    path("admin/config/reset-all/", AdminConfigResetAllView.as_view(), name="admin-config-reset-all"),
 ]
 
 

@@ -795,4 +795,109 @@ class AdminSubscriptionPaymentSerializer(serializers.Serializer):
             "business_name":   host.business_name,
             "profile_picture": host.profile_picture,
         }
- 
+
+
+
+# ── General ───────────────────────────────────────────────────────────────────
+
+class CurrencySerializer(serializers.Serializer):
+    code  = serializers.CharField(max_length=10)
+    label = serializers.CharField(max_length=50)
+
+
+class GeneralConfigSerializer(serializers.Serializer):
+    platform_support_email = serializers.EmailField()
+    default_currency       = CurrencySerializer()
+    default_timezone       = serializers.CharField()
+
+
+class GeneralConfigUpdateSerializer(serializers.Serializer):
+    platform_support_email = serializers.EmailField(required=False)
+    default_currency       = CurrencySerializer(required=False)
+    default_timezone       = serializers.CharField(required=False)
+
+
+# ── Policies ──────────────────────────────────────────────────────────────────
+
+class PoliciesConfigSerializer(serializers.Serializer):
+    seller_verification_required = serializers.BooleanField()
+    auto_approve_listing         = serializers.BooleanField()
+
+
+class PoliciesConfigUpdateSerializer(serializers.Serializer):
+    seller_verification_required = serializers.BooleanField(required=False)
+    auto_approve_listing         = serializers.BooleanField(required=False)
+
+
+# ── Fees ──────────────────────────────────────────────────────────────────────
+
+class FeesConfigSerializer(serializers.Serializer):
+    ticket_resell_commission = serializers.IntegerField()
+    seller_service_fee       = serializers.IntegerField()
+    buyer_service_fee        = serializers.IntegerField()
+    vat_enabled              = serializers.BooleanField()
+    prices_include_vat       = serializers.BooleanField()
+
+
+class FeesConfigUpdateSerializer(serializers.Serializer):
+    ticket_resell_commission = serializers.IntegerField(required=False, min_value=0, max_value=100)
+    seller_service_fee       = serializers.IntegerField(required=False, min_value=0, max_value=100)
+    buyer_service_fee        = serializers.IntegerField(required=False, min_value=0, max_value=100)
+    vat_enabled              = serializers.BooleanField(required=False)
+    prices_include_vat       = serializers.BooleanField(required=False)
+
+
+# ── Fraud ─────────────────────────────────────────────────────────────────────
+
+class FraudConfigSerializer(serializers.Serializer):
+    fraud_sensitivity = serializers.ChoiceField(choices=["low", "medium", "high"])
+
+
+class FraudConfigUpdateSerializer(serializers.Serializer):
+    fraud_sensitivity = serializers.ChoiceField(
+        choices=["low", "medium", "high"], required=False
+    )
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+class NotificationPrefsSerializer(serializers.Serializer):
+    admin_alerts      = serializers.BooleanField()
+    fraud_alerts      = serializers.BooleanField()
+    high_volume_sales = serializers.BooleanField()
+    failed_payouts    = serializers.BooleanField()
+
+
+class NotificationsConfigSerializer(serializers.Serializer):
+    email_notifications = NotificationPrefsSerializer()
+    sms_notifications   = NotificationPrefsSerializer()
+
+
+class NotificationsConfigUpdateSerializer(serializers.Serializer):
+    email_notifications = NotificationPrefsSerializer(required=False)
+    sms_notifications   = NotificationPrefsSerializer(required=False)
+
+
+# ── Localization ──────────────────────────────────────────────────────────────
+
+class LocalizationConfigSerializer(serializers.Serializer):
+    supported_countries  = serializers.ListField(child=serializers.CharField())
+    supported_currencies = serializers.ListField(child=serializers.CharField())
+    language             = serializers.CharField()
+    date_time_format     = serializers.ChoiceField(choices=["12h", "24h"])
+
+
+class LocalizationConfigUpdateSerializer(serializers.Serializer):
+    supported_countries  = serializers.ListField(child=serializers.CharField(), required=False)
+    supported_currencies = serializers.ListField(child=serializers.CharField(), required=False)
+    language             = serializers.CharField(required=False)
+    date_time_format     = serializers.ChoiceField(choices=["12h", "24h"], required=False)
+
+
+# ── Reset ─────────────────────────────────────────────────────────────────────
+
+class ResetSectionSerializer(serializers.Serializer):
+    section = serializers.ChoiceField(
+        choices=["general", "policies", "fees", "fraud", "notifications", "localization"],
+        required=False,
+    )

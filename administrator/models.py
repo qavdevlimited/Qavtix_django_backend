@@ -164,3 +164,248 @@ class AdminAuditLog(models.Model):
     def __str__(self):
         return f"{self.admin_email} — {self.action} — {self.created_at:%Y-%m-%d %H:%M}"
  
+
+
+
+
+
+class SystemConfig(models.Model):
+    """
+    Key-value store for all admin-configurable system settings.
+    One row per config key — never delete, always update.
+    Snapshot (previous_value) stored on every update for reset-to-last-saved.
+ 
+    All settings live under logical groups (section field).
+    """
+ 
+    SECTION_CHOICES = [
+        ("general",       "General"),
+        ("policies",      "Policies"),
+        ("fees",          "Fees & Commissions"),
+        ("fraud",         "Fraud Detection"),
+        ("notifications", "Notifications"),
+        ("localization",  "Localization"),
+    ]
+ 
+    id             = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    section        = models.CharField(max_length=30, choices=SECTION_CHOICES)
+    key            = models.CharField(max_length=100, unique=True)
+    value          = models.JSONField()            # current value
+    previous_value = models.JSONField(null=True, blank=True)  # last saved before current edit
+    default_value  = models.JSONField()            # factory default — used for full reset
+    label          = models.CharField(max_length=255, blank=True)  # human label for UI
+    updated_at     = models.DateTimeField(auto_now=True)
+    updated_by     = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="config_updates",
+    )
+ 
+    class Meta:
+        ordering = ["section", "key"]
+ 
+    def __str__(self):
+        return f"{self.section}.{self.key} = {self.value}"
+ 
+    @classmethod
+    def get(cls, key, default=None):
+        """Fast read helper."""
+        try:
+            return cls.objects.get(key=key).value
+        except cls.DoesNotExist:
+            return default
+ 
+    @classmethod
+    def set(cls, key, value, user=None):
+        """Updates value, saves current as previous_value."""
+        obj, _ = cls.objects.get_or_create(
+            key=key,
+            defaults={
+                "section":        "general",
+                "value":          value,
+                "default_value":  value,
+            },
+        )
+        obj.previous_value = obj.value
+        obj.value          = value
+        obj.updated_by     = user
+        obj.save(update_fields=["value", "previous_value", "updated_by", "updated_at"])
+        return obj
+ 
+    @classmethod
+    def reset_to_last_saved(cls, keys):
+        """Restores previous_value → value for given keys."""
+        updated = []
+        for obj in cls.objects.filter(key__in=keys):
+            if obj.previous_value is not None:
+                obj.value = obj.previous_value
+                obj.save(update_fields=["value", "updated_at"])
+                updated.append(obj.key)
+        return updated
+ 
+    @classmethod
+    def reset_to_default(cls, keys=None):
+        """Restores default_value → value. If keys=None, resets everything."""
+        qs = cls.objects.all() if keys is None else cls.objects.filter(key__in=keys)
+        updated = []
+        for obj in qs:
+            obj.previous_value = obj.value
+            obj.value          = obj.default_value
+            obj.save(update_fields=["value", "previous_value", "updated_at"])
+            updated.append(obj.key)
+        return updated
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# Default seed data — run once after migration
+# python manage.py shell
+# from administrator.models import SystemConfig
+# SystemConfigSeed.seed()
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+class SystemConfigSeed:
+ 
+    DEFAULTS = [
+        # ── General ────────────────────────────────────────────────────────────
+        {
+            "section": "general",
+            "key":     "platform_support_email",
+            "value":   "inquiries@qavtix.com",
+            "label":   "Platform Support Email",
+        },
+        {
+            "section": "general",
+            "key":     "default_currency",
+            "value":   {"code": "USD", "label": "US Dollar"},
+            "label":   "Default Currency",
+        },
+        {
+            "section": "general",
+            "key":     "default_timezone",
+            "value":   "Africa/Lagos",
+            "label":   "Default Timezone",
+        },
+ 
+        # ── Policies ────────────────────────────────────────────────────────────
+        {
+            "section": "policies",
+            "key":     "seller_verification_required",
+            "value":   True,
+            "label":   "Seller Verification Required",
+        },
+        {
+            "section": "policies",
+            "key":     "auto_approve_listing",
+            "value":   False,
+            "label":   "Auto-Approve Listing",
+        },
+ 
+        # ── Fees ─────────────────────────────────────────────────────────────
+        {
+            "section": "fees",
+            "key":     "ticket_resell_commission",
+            "value":   25,
+            "label":   "Ticket Resell Commission (%)",
+        },
+        {
+            "section": "fees",
+            "key":     "seller_service_fee",
+            "value":   10,
+            "label":   "Seller Service Fee (%)",
+        },
+        {
+            "section": "fees",
+            "key":     "buyer_service_fee",
+            "value":   10,
+            "label":   "Buyer Service Fee (%)",
+        },
+        {
+            "section": "fees",
+            "key":     "vat_enabled",
+            "value":   False,
+            "label":   "Tax/VAT Charges Enabled",
+        },
+        {
+            "section": "fees",
+            "key":     "prices_include_vat",
+            "value":   False,
+            "label":   "Default Pricing Includes VAT",
+        },
+ 
+        # ── Fraud Detection ──────────────────────────────────────────────────
+        {
+            "section": "fraud",
+            "key":     "fraud_sensitivity",
+            "value":   "medium",
+            "label":   "Fraud Detection Sensitivity",
+        },
+ 
+        # ── Notifications ────────────────────────────────────────────────────
+        {
+            "section": "notifications",
+            "key":     "email_notifications",
+            "value":   {
+                "admin_alerts":      True,
+                "fraud_alerts":      True,
+                "high_volume_sales": False,
+                "failed_payouts":    True,
+            },
+            "label": "Email Notification Preferences",
+        },
+        {
+            "section": "notifications",
+            "key":     "sms_notifications",
+            "value":   {
+                "admin_alerts":      False,
+                "fraud_alerts":      True,
+                "high_volume_sales": False,
+                "failed_payouts":    False,
+            },
+            "label": "SMS Notification Preferences",
+        },
+ 
+        # ── Localization ─────────────────────────────────────────────────────
+        {
+            "section": "localization",
+            "key":     "supported_countries",
+            "value":   ["Ghana", "Nigeria", "South Africa","Kenya"],
+            "label":   "Supported Countries",
+        },
+        {
+            "section": "localization",
+            "key":     "supported_currencies",
+            "value":   ["GHS", "NGN", "ZAR", "USD","KES"],
+            "label":   "Supported Currencies",
+        },
+        {
+            "section": "localization",
+            "key":     "language",
+            "value":   "en",
+            "label":   "Platform Language",
+        },
+        {
+            "section": "localization",
+            "key":     "date_time_format",
+            "value":   "24h",
+            "label":   "Date & Time Format",
+        },
+    ]
+ 
+    @classmethod
+    def seed(cls):
+        from administrator.models import SystemConfig
+        created_count = 0
+        for item in cls.DEFAULTS:
+            obj, created = SystemConfig.objects.get_or_create(
+                key=item["key"],
+                defaults={
+                    "section":       item["section"],
+                    "value":         item["value"],
+                    "default_value": item["value"],
+                    "label":         item.get("label", ""),
+                },
+            )
+            if created:
+                created_count += 1
+        print(f"SystemConfig: {created_count} defaults seeded.")

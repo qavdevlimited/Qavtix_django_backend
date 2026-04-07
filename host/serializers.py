@@ -147,6 +147,8 @@ class EventTableSerializer(serializers.ModelSerializer):
     tickets_total_revenue = serializers.SerializerMethodField()
     category= serializers.CharField(source="category.name", read_only=True)
     event_image=serializers.SerializerMethodField()
+    tickets_listed = serializers.SerializerMethodField()
+    tickets_sold = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -160,6 +162,9 @@ class EventTableSerializer(serializers.ModelSerializer):
             "event_location",
             "tickets_sold_percentage",
             "tickets_total_revenue",
+
+            "tickets_listed",
+            "tickets_sold",
             
             "views_count",
             "saves_count",
@@ -176,21 +181,30 @@ class EventTableSerializer(serializers.ModelSerializer):
         return None
 
     def get_event_location(self, obj):
-        if obj.location:
-            return f"{obj.location.address}, {obj.location.city}, {obj.location.state}, {obj.location.country}"
+        if obj.event_location:
+            return f"{obj.event_location.address}, {obj.event_location.city}, {obj.event_location.state}, {obj.event_location.country}"
         return ""
 
+    def get_tickets_listed(self, obj):
+        # Total quantity listed across all ticket types
+        return sum(t.quantity for t in obj.tickets.all())
+
+    def get_tickets_sold(self, obj):
+        # sold_count is the correct field name on the Ticket model
+        return sum(t.sold_count for t in obj.tickets.all())
+
     def get_tickets_sold_percentage(self, obj):
-        # tickets = obj.tickets.all()
-        # total_qty = sum(t.quantity for t in tickets)
-        # sold_qty = sum(t.sold_quantity for t in tickets)
-        # if total_qty:
-        #     return round((sold_qty / total_qty) * 100)
-        return 100
+        tickets   = obj.tickets.all()
+        total_qty = sum(t.quantity for t in tickets)
+        sold_qty  = sum(t.sold_count for t in tickets)   # ← was sold_quantity (wrong)
+        if total_qty:
+            return round((sold_qty / total_qty) * 100)
+        return 0
 
     def get_tickets_total_revenue(self, obj):
-        tickets = obj.tickets.all()
-        return 100
+        # Uses annotation from view queryset — zero extra DB queries
+        val = getattr(obj, "total_revenue", None)
+        return val or 0
 
 
 # Card data serializer (counts per status)

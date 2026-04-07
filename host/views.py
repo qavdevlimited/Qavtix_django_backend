@@ -138,7 +138,12 @@ class EventDashboardView(generics.ListAPIView):
         if not hasattr(user, "host_profile"):
             raise Http404("You are not a host or have no events.")
 
-        return Event.objects.filter(host=user.host_profile)
+        return Event.objects.filter(host=user.host_profile).select_related("category", "event_location").prefetch_related("tickets", "media").annotate(
+                total_revenue=Sum(
+                    "order__total_amount",
+                    filter=Q(order__status="completed",order__marketplace_listing__isnull=True),
+                )
+            )
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())

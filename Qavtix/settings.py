@@ -343,9 +343,17 @@ CELERY_BEAT_SCHEDULE = {
         "task":     "payments.tasks.expire_host_subscriptions",
         "schedule": crontab(minute="*/30"),
     },
+    "send-host-plan-expiry-reminders": {
+        "task":     "payments.tasks.send_plan_expiry_reminders",
+        "schedule": crontab(minute=0),
+    },
     "send-plan-expiry-reminders": {
         "task":     "payments.tasks.send_plan_expiry_reminders",
         "schedule": crontab(minute=0),
+    },
+     "auto-renew-host-subscriptions": {
+        "task":     "payments.tasks.auto_renew_subscriptions",
+        "schedule": crontab(hour=6, minute=0),   # daily at 06:00
     },
     'expire-attendee-subscriptions': {
         'task': 'payments.tasks.expire_attendee_subscriptions',
@@ -364,8 +372,6 @@ CELERY_BEAT_SCHEDULE = {
      "schedule": crontab(minute=0),  # every hour
     },
 }
-
-
 
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5500")
 

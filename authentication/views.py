@@ -3,8 +3,11 @@ from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
 from allauth.socialaccount.providers.facebook.views import FacebookOAuth2Adapter
 from allauth.socialaccount.providers.apple.views import AppleOAuth2Adapter
 from allauth.socialaccount.providers.oauth2.client import OAuth2Client
+from django.http import HttpResponse
 from rest_framework import status
-from .utils import api_response,generate_otp
+
+from authentication.tasks import send_password_change_info_task, send_password_reset_otp_task, send_welcome_email_task
+from .utils import api_response,generate_otp, get_user_display_name
 from rest_framework.exceptions import ValidationError
 from django.conf import settings
 
@@ -133,6 +136,8 @@ class HostRegisterView(APIView):
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
 
+        send_welcome_email_task.delay(user.email, get_user_display_name(user))
+
         return api_response(
             message="Registration Successful",
             status_code=status.HTTP_201_CREATED,
@@ -156,7 +161,7 @@ class AttendeeRegisterView(APIView):
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
 
-
+        send_welcome_email_task.delay(user.email, get_user_display_name(user))
         return api_response(
                 message="Registration Successful",
                 status_code=status.HTTP_201_CREATED,
@@ -255,7 +260,7 @@ class PasswordResetOTPRequestView(APIView):
                 + timedelta(minutes=settings.PASSWORD_RESET_OTP_TTL_MINUTES)
             )
 
-            send_password_reset_otp(user.email, otp)
+            send_password_reset_otp_task.delay(user.email, otp)
 
         except User.DoesNotExist:
             pass
@@ -343,6 +348,8 @@ class PasswordResetConfirmView(APIView):
 
             reset_token.used = True
             reset_token.save()
+
+            send_password_change_info_task.delay(user.email, get_user_display_name(user))
 
             return Response({"message": "Password reset successful"})
 

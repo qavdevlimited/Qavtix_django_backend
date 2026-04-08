@@ -37,6 +37,8 @@ class HostRegisterSerializer(serializers.Serializer):
     state = serializers.CharField()
     city = serializers.CharField()
     postal_code = serializers.CharField(required=False, allow_blank=True)
+    profile_picture = serializers.URLField(allow_blank=True)
+    profile_banner = serializers.URLField(allow_blank=True)
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )

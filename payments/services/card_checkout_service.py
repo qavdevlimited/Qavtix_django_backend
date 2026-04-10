@@ -11,7 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from payments.services.factory import get_gateway
 from payments.models import PaymentCard, Payment
 from payments.services.currency_utils import get_currency_for_event
-from payments.services.checkout_service import CheckoutError
+from payments.services.checkout_service import CheckoutError, _calculate_fees
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,9 @@ class CardCheckoutService:
         line_items = self._validate_tickets(event)
         discount   = self._apply_promo(line_items)
         subtotal   = sum(qty * price for _, qty, price in line_items)
-        total      = max(subtotal - discount, Decimal("0.00"))
+        base_total = max(subtotal - discount, Decimal("0.00"))
+        fees       = _calculate_fees(base_total)
+        total      = base_total + fees
 
         self._reserve_tickets(line_items)
 
@@ -62,6 +64,7 @@ class CardCheckoutService:
             event=event,
             total_amount=total,
             discount=discount,
+            fees=fees,  
             status="pending",
             metadata={
                 "reference":      reference,
@@ -209,7 +212,7 @@ class CardCheckoutService:
         )
 
         issued_ticket                = listing.ticket
-        issued_ticket.original_owner = issued_ticket.ownereyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc0OTA2MTcwLCJpYXQiOjE3NzQ4NzAxNzAsImp0aSI6IjNlZDFlNzUxNTI3MDQwMTRiN2E3NDNmZTkwZDE4YTI0IiwidXNlcl9pZCI6IjMifQ.ZRKAe47oKalpCEKRQA5OetcO9AQRM3lteWwUeGl0Qoc
+        issued_ticket.original_owner = issued_ticket.owner
         issued_ticket.owner          = self.user
         issued_ticket.status         = "resold"
         issued_ticket.transferred_at = timezone.now()

@@ -35,6 +35,35 @@ def _split_expiry(event):
 
     return now + timezone.timedelta(days=days)
 
+def _calculate_fees(total_amount: Decimal) -> Decimal:
+    """
+    Total buyer fee = buyer_service_fee (from DB) + 1.5% (Paystack) + ₦100 flat
+    
+    Example: total = ₦10,000, buyer_service_fee = 7.5%
+      Qavtix fee:   10,000 × 7.5%  = ₦750
+      Paystack fee: 10,000 × 1.5%  = ₦150
+      Flat fee:                     = ₦100
+      Total fees:                   = ₦1,000
+    
+    The buyer pays: total_amount + fees
+    We store fees in Order.fees for reporting.
+    """
+    from administrator.models import SystemConfig
+
+    buyer_service_fee_pct = Decimal(
+        str(SystemConfig.get("buyer_service_fee", 10))
+    ) / 100
+
+    PAYSTACK_PCT  = Decimal("0.015")   # 1.5% — hardcoded, never changes
+    PAYSTACK_FLAT = Decimal("100")     # ₦100 — hardcoded, never changes
+
+    qavtix_fee   = (total_amount * buyer_service_fee_pct).quantize(Decimal("0.01"))
+    paystack_fee = (total_amount * PAYSTACK_PCT).quantize(Decimal("0.01"))
+
+    print(qavtix_fee,paystack_fee,PAYSTACK_FLAT)
+
+    return qavtix_fee + paystack_fee + PAYSTACK_FLAT
+
 
 class CheckoutService:
     """
@@ -69,8 +98,12 @@ class CheckoutService:
         line_items = self._validate_tickets(event)
         discount   = self._apply_promo(line_items)
         subtotal   = sum(qty * price for _, qty, price in line_items)
-        total      = max(subtotal - discount, Decimal("0.00"))
         reference  = self._generate_reference()
+        base_total = max(subtotal - discount, Decimal("0.00"))
+        fees       = _calculate_fees(base_total)
+        total      = base_total + fees
+
+        print(base_total, fees, total)
 
         self._reserve_tickets(line_items)
 
@@ -158,7 +191,9 @@ class CheckoutService:
         line_items = self._validate_tickets(event)
         discount   = self._apply_promo(line_items)
         subtotal   = sum(qty * price for _, qty, price in line_items)
-        total      = max(subtotal - discount, Decimal("0.00"))
+        base_total = max(subtotal - discount, Decimal("0.00"))
+        fees       = _calculate_fees(base_total)
+        total      = base_total + fees
 
         if len(line_items) > 1:
             raise CheckoutError("Split payment only supports one ticket type per order.", 400)
@@ -450,7 +485,7 @@ class CheckoutService:
         for ticket, qty, _ in line_items:
             Ticket.objects.filter(id=ticket.id).update(sold_count=F("sold_count") + qty)
 
-    def _create_order(self, event, line_items, total_amount, discount, metadata,
+    def _create_order(self, event, line_items, total_amount, discount, metadata,fees=Decimal("0.00"),
                       marketplace_listing=None):
         from transactions.models import Order, OrderTicket
 
@@ -463,6 +498,7 @@ class CheckoutService:
             event=event,
             total_amount=total_amount,
             discount=discount,
+            fees=fees, 
             status="pending",
             marketplace_listing=marketplace_listing,
             metadata=metadata,

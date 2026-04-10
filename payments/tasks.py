@@ -1,9 +1,54 @@
 # payments/tasks.py
-
-from celery import shared_task
 import logging
-
+import os
+ 
+from celery import shared_task
+from django.conf import settings
+from django.core.mail import send_mail
+ 
+# ── import our template builder ──────────────────────────────────────────────
+from email_templates import (
+    build_email,
+    body_incomplete_booking,
+    body_welcome,
+    body_otp,
+    body_password_changed,
+    body_booking_confirmed,
+    body_plan_subscribed,
+    body_verification_badge,
+    body_plan_renewed,
+    body_plan_renewal_failed,
+    body_password_reset_otp,
+)
+ 
 logger = logging.getLogger(__name__)
+ 
+# Resolve logo path once at import time so every task reuses it.
+_LOGO_PATH: str = getattr(settings, "QAVTIX_LOGO_PATH", "")
+ 
+ 
+# ─────────────────────────────────────────────────────────────────────────────
+# Low-level helper
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+def _send(to: str, subject: str, title: str, body_html: str) -> None:
+    """Build the branded HTML email and send it."""
+    html = build_email(title=title, body_html=body_html, logo_path=_LOGO_PATH)
+    # Plain-text fallback strips tags crudely — replace with bleach/html2text
+    # in production if you need a polished plain-text version.
+    plain = " ".join(body_html.split())  # minimal fallback
+    try:
+        send_mail(
+            subject=subject,
+            message=plain,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[to],
+            html_message=html,
+            fail_silently=False,
+        )
+    except Exception as exc:
+        logger.error(f"Failed to send email to {to}: {exc}")
+        raise  # allow Celery to retry if the task is configured to do so
 
 
 @shared_task

@@ -1312,31 +1312,16 @@ class CheckInScanView(PlanFeatureMixin,APIView):
 
 
 # ── Endpoint 1: Cards + Revenue Chart ─────────────────────────────────────────
-
 @extend_schema(
     operation_id="host_dashboard_overview",
     parameters=[
-        OpenApiParameter("year",  OpenApiTypes.INT, description="Year for chart e.g. 2025"),
-        OpenApiParameter("month", OpenApiTypes.INT, description="Month 1-12 — daily breakdown"),
-        OpenApiParameter("week",  OpenApiTypes.BOOL, description="true — current week daily breakdown"),
+        OpenApiParameter("year",       OpenApiTypes.INT,  description="Year for chart e.g. 2025"),
+        OpenApiParameter("month",      OpenApiTypes.INT,  description="Month 1-12 — daily breakdown"),
+        OpenApiParameter("week",       OpenApiTypes.BOOL, description="true — current week daily breakdown"),
+        OpenApiParameter("chart_type", OpenApiTypes.STR,  description="revenue | tickets — default is revenue"),
     ],
 )
 class DashboardOverviewView(generics.ListAPIView):
-    """
-    GET /dashboard/overview/
-
-    Returns:
-      cards       : total_revenue, tickets_sold, active_events, pending_payouts
-                    each with a change indicator vs previous period
-      chart       : monthly revenue for the given year (default: current year)
-                    or daily if ?month= or ?week=true is passed
-
-    Query params
-    ────────────
-    year  : int   — which year to show on the chart (default: current year)
-    month : int   — drill into a specific month (daily buckets)
-    week  : bool  — drill into the current week (daily buckets)
-    """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class   = DashboardCardSerializer
 
@@ -1345,14 +1330,21 @@ class DashboardOverviewView(generics.ListAPIView):
         if host is None:
             return api_response(message="You are not a host.", status_code=403)
 
-        year  = int(request.query_params.get("year",  timezone.now().year))
-        month = request.query_params.get("month")
-        week  = request.query_params.get("week", "").lower() == "true"
+        year       = int(request.query_params.get("year", timezone.now().year))
+        month      = request.query_params.get("month")
+        week       = request.query_params.get("week", "").lower() == "true"
+        chart_type = request.query_params.get("chart_type", "revenue")  # ← add this
 
         month = int(month) if month else None
 
         cards = DashboardService.get_cards(host)
-        chart = DashboardService.get_revenue_chart(host, year=year, month=month, week=week)
+        chart = DashboardService.get_revenue_chart(
+            host,
+            year=year,
+            month=month,
+            week=week,
+            chart_type=chart_type,   # ← pass through
+        )
 
         return api_response(
             message="Dashboard overview retrieved successfully",

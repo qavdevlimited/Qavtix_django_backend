@@ -688,28 +688,80 @@ class DashboardService:
         }
 
     @staticmethod
-    def get_revenue_chart(host, year, month=None, week=None):
+    def get_revenue_chart(host, year, month=None, week=None, chart_type="revenue"):
         """
-        year  : returns 12 monthly data points for that year
-        month : additionally filter to a single month (daily breakdown)
-        week  : filter to current week (daily breakdown)
-
-        Default (year only) → 12 monthly buckets.
-        month provided      → daily buckets for that month in that year.
-        week  provided      → daily buckets for the current week.
+        chart_type = "revenue" → sums total_amount (default)
+        chart_type = "tickets" → sums ticket quantities
         """
         from django.db.models.functions import TruncMonth, TruncDay
 
-        base = Order.objects.filter(
-            event__host=host,
-            status="completed",
-        )
+        # ── Ticket chart ──────────────────────────────────────────────────────────
+        if chart_type == "tickets":
+            base = OrderTicket.objects.filter(
+                order__event__host=host,
+                order__status="completed",
+            )
+            if week:
+                now = timezone.now()
+                week_start = now - timedelta(days=now.weekday())
+                week_end = week_start + timedelta(days=7)
+                qs = (
+                    base
+                    .filter(order__created_at__gte=week_start, order__created_at__lt=week_end)
+                    .annotate(period=TruncDay("order__created_at"))
+                    .values("period")
+                    .annotate(amount=Sum("quantity"))
+                    .order_by("period")
+                )
+                return [
+                    {
+                        "label": row["period"].strftime("%a %d"),
+                        "month": row["period"].month,
+                        "amount": row["amount"] or 0,
+                    }
+                    for row in qs if row["period"]
+                ]
+            if month:
+                qs = (
+                    base
+                    .filter(order__created_at__year=year, order__created_at__month=month)
+                    .annotate(period=TruncDay("order__created_at"))
+                    .values("period")
+                    .annotate(amount=Sum("quantity"))
+                    .order_by("period")
+                )
+                return [
+                    {
+                        "label": row["period"].strftime("%d %b"),
+                        "month": row["period"].month,
+                        "amount": row["amount"] or 0,
+                    }
+                    for row in qs if row["period"]
+                ]
+            qs = (
+                base
+                .filter(order__created_at__year=year)
+                .annotate(period=TruncMonth("order__created_at"))
+                .values("period")
+                .annotate(amount=Sum("quantity"))
+                .order_by("period")
+            )
+            monthly = {i: 0 for i in range(1, 13)}
+            for row in qs:
+                if row["period"]:
+                    monthly[row["period"].month] = row["amount"] or 0
+            return [
+                {"label": MONTH_NAMES[m], "month": m, "amount": monthly[m]}
+                for m in range(1, 13)
+            ]
 
+        # ── Revenue chart (default) ───────────────────────────────────────────────
+        base = Order.objects.filter(event__host=host, status="completed",marketplace_listing__isnull=True)
         if week:
             # Current week — daily
-            now      = timezone.now()
+            now = timezone.now()
             week_start = now - timedelta(days=now.weekday())
-            week_end   = week_start + timedelta(days=7)
+            week_end = week_start + timedelta(days=7)
             qs = (
                 base
                 .filter(created_at__gte=week_start, created_at__lt=week_end)
@@ -720,13 +772,12 @@ class DashboardService:
             )
             return [
                 {
-                    "label":  row["period"].strftime("%a %d"),
-                    "month":  row["period"].month,
+                    "label": row["period"].strftime("%a %d"),
+                    "month": row["period"].month,
                     "amount": row["amount"] or Decimal("0"),
                 }
                 for row in qs if row["period"]
             ]
-
         if month:
             # Specific month — daily
             qs = (
@@ -739,13 +790,12 @@ class DashboardService:
             )
             return [
                 {
-                    "label":  row["period"].strftime("%d %b"),
-                    "month":  row["period"].month,
+                    "label": row["period"].strftime("%d %b"),
+                    "month": row["period"].month,
                     "amount": row["amount"] or Decimal("0"),
                 }
                 for row in qs if row["period"]
             ]
-
         # Default: full year — monthly buckets
         qs = (
             base
@@ -755,17 +805,15 @@ class DashboardService:
             .annotate(amount=Sum("total_amount"))
             .order_by("period")
         )
-
         # Build a full 12-month skeleton so months with no revenue show as 0
         monthly = {i: Decimal("0") for i in range(1, 13)}
         for row in qs:
             if row["period"]:
                 monthly[row["period"].month] = row["amount"] or Decimal("0")
-
         return [
             {
-                "label":  MONTH_NAMES[m],
-                "month":  m,
+                "label": MONTH_NAMES[m],
+                "month": m,
                 "amount": monthly[m],
             }
             for m in range(1, 13)

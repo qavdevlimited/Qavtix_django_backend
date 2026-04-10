@@ -152,8 +152,9 @@ class CheckoutService:
         order = self._create_order(
             event=event,
             line_items=line_items,
-            total_amount=total,
+            total_amount=base_total,
             discount=discount,
+            fees=fees,
             metadata={
                 "reference":      reference,
                 "flow":           "normal",
@@ -294,8 +295,9 @@ class CheckoutService:
         order = self._create_order(
             event=event,
             line_items=line_items,
-            total_amount=total,
+            total_amount=base_total,
             discount=discount,
+            fees=fees,
             metadata={
                 "reference": reference,
                 "flow":      "split",

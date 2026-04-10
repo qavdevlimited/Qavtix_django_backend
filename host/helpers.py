@@ -45,7 +45,7 @@ def _apply_date_range(qs, date_range, field="created_at"):
     return qs.filter(**{f"{field}__gte": since})
 
 
-def _base_orders(host, event_id=None, date_range=None, status="completed"):
+def _base_orders(host, event_id=None, date_range=None, status="completed",start_date=None, end_date=None):
     """
     Shared starting queryset used by both views.
     Optionally scoped to a single event and/or a rolling date window.
@@ -55,6 +55,24 @@ def _base_orders(host, event_id=None, date_range=None, status="completed"):
         qs = qs.filter(event_id=event_id)
     if date_range:
         qs = _apply_date_range(qs, date_range)
+
+    if start_date or end_date:
+
+        if start_date and end_date:
+            qs = qs.filter(
+                created_at__date__gte=start_date,
+                created_at__date__lte=end_date
+            )
+
+        elif start_date:
+            qs = qs.filter(
+                created_at__date__gte=start_date
+            )
+
+        elif end_date:
+            qs = qs.filter(
+                created_at__date__lte=end_date
+            )
     return qs
 
 

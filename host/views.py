@@ -1,6 +1,6 @@
 from decimal import Decimal
 import uuid
-from rest_framework import serializers
+from rest_framework import request, serializers
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
@@ -217,6 +217,8 @@ class EventDashboardView(generics.ListAPIView):
         OpenApiParameter("event", OpenApiTypes.UUID, description="Filter by event UUID"),
         OpenApiParameter("ticket_type", OpenApiTypes.INT, description="Filter by Ticket PK"),
         OpenApiParameter("search", OpenApiTypes.STR, description="Search name or email"),
+        OpenApiParameter("start_date", OpenApiTypes.DATE, description="Filter orders from this date (inclusive)"),
+        OpenApiParameter("end_date", OpenApiTypes.DATE, description="Filter orders up to this date (inclusive)"),
     ],
     responses=CustomerListSerializer(many=True),
 )
@@ -238,12 +240,13 @@ class CustomerListView(PlanFeatureMixin,generics.ListAPIView):
     def _get_host(self):
         return getattr(self.request.user, "host_profile", None)
 
-    def _cards(self, host, event_id, date_range, ticket_type):
+    def _cards(self, host, event_id, date_range, ticket_type,start_date, end_date):
         """Cards reflect the SAME filters as the table so numbers always match."""
         now = timezone.now()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        base = _base_orders(host, event_id=event_id, date_range=date_range)
+        base = _base_orders(host, event_id=event_id, date_range=date_range,start_date=start_date,
+    end_date=end_date)
         if ticket_type:
             base = base.filter(tickets__ticket_id=ticket_type)
 
@@ -278,14 +281,20 @@ class CustomerListView(PlanFeatureMixin,generics.ListAPIView):
             "average_spend":   avg,
         }
 
-    def _customer_rows(self, host, event_id, date_range, ticket_type, search):
-        base = _base_orders(host, event_id=event_id, date_range=date_range)
+    def _customer_rows(self, host, event_id, date_range, ticket_type, search,start_date, end_date):
+        base = _base_orders(host, event_id=event_id, date_range=date_range,start_date=start_date,
+    end_date=end_date)
         if ticket_type:
             base = base.filter(tickets__ticket_id=ticket_type)
 
         qs = (
             base
-            .values("user__id", "user__email", "user__attendee_profile__full_name")
+            .values("user__id", "user__email", "user__attendee_profile__full_name","email",                                  
+                "full_name",                               # ← from Order model
+                "user__attendee_profile__profile_picture",
+                "user__attendee_profile__city",
+                "user__attendee_profile__state",
+                "user__attendee_profile__country",)
             .annotate(
                 events_attended=Count("id", distinct=True),
                 total_spent=Sum("total_amount"),
@@ -310,9 +319,11 @@ class CustomerListView(PlanFeatureMixin,generics.ListAPIView):
         event_id    = request.query_params.get("event")            # event UUID
         ticket_type = request.query_params.get("ticket_type")      # ticket int PK
         search      = request.query_params.get("search", "").strip()
+        start_date = request.query_params.get("start_date")
+        end_date   = request.query_params.get("end_date")
 
-        rows  = self._customer_rows(host, event_id, date_range, ticket_type, search)
-        cards = self._cards(host, event_id, date_range, ticket_type)
+        rows  = self._customer_rows(host, event_id, date_range, ticket_type, search,start_date, end_date)
+        cards = self._cards(host, event_id, date_range, ticket_type,start_date, end_date)
 
         row_list = list(rows)
         spends    = sorted([float(r.get("total_spent") or 0) for r in row_list], reverse=True)

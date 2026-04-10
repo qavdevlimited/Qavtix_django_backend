@@ -418,8 +418,10 @@ class CustomerCardSerializer(serializers.Serializer):
 class CustomerListSerializer(serializers.Serializer):
     """Row data for the customer table."""
     user_id = serializers.IntegerField(source="user__id")
-    name = serializers.CharField(source="user__attendee_profile__full_name")
-    email = serializers.CharField(source="user__email")
+    name = serializers.CharField(source="full_name", allow_null=True)
+    profile_picture = serializers.URLField(source="user__attendee_profile__profile_picture", allow_null=True)
+    address = serializers.SerializerMethodField()
+    email = serializers.CharField(allow_null=True)
     status = serializers.SerializerMethodField()
     events_attended = serializers.IntegerField()
     total_spent = serializers.DecimalField(max_digits=10, decimal_places=2)
@@ -437,6 +439,16 @@ class CustomerListSerializer(serializers.Serializer):
         if events_attended == 1:
             return "new_customer"
         return "repeat_buyer"
+
+    
+    def get_address(self, obj):
+        # Since we're using values(), the profile data is flattened
+        city = obj.get("user__attendee_profile__city")
+        state = obj.get("user__attendee_profile__state")
+        country = obj.get("user__attendee_profile__country")
+        
+        parts = [city, state, country]
+        return ", ".join(part for part in parts if part)
 
 
 # ── Detail page ────────────────────────────────────────────────────────────────

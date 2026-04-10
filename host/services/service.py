@@ -38,7 +38,9 @@ class HostService:
         Returns host profile data + balance + payout availability
         """
         try:
-            host = Host.objects.select_related('user').get(user=user)
+            host = Host.objects.select_related('user').prefetch_related(
+                'subscriptions', 'gifted_badges'
+            ).get(user=user)
             is_host = True
         except Host.DoesNotExist:
             host = None
@@ -60,6 +62,8 @@ class HostService:
                 "available_balance": "0.00",
                 "payout_available": False
             }
+            data["subscription"] = False
+            data["verified_badge"] = False
             return data
 
         # Host exists - get full profile
@@ -68,6 +72,12 @@ class HostService:
 
         data["host"] = serializer.data
         data["host"]["currency"] = HostService.get_host_currency(host)
+
+        # === Subscription: True only if active + paid (not free) ===
+        data["subscription"] = HostService.has_active_paid_subscription(host)
+
+        # Verified Badge
+        data["verified_badge"] = HostService.has_active_verified_badge(host)
 
         # Calculate balance and payout status
         data["payout_available"] = HostService.calculate_balance_and_payout(user)
@@ -81,7 +91,23 @@ class HostService:
             from payments.services.currency_utils import get_currency_for_host
             return get_currency_for_host(host)
         except Exception:
-            return "NGN"  # fallback
+            return "NGN"
+
+    @staticmethod
+    def has_active_paid_subscription(host):
+        """
+        Returns True only if the host has an ACTIVE subscription 
+        that is NOT the free plan.
+        """
+        return host.subscriptions.filter(
+            status="active",
+            billing_cycle__in=["monthly", "annual"]   # exclude "free"
+        ).exists()
+
+    @staticmethod
+    def has_active_verified_badge(host):
+        """Check if host has an active verified badge"""
+        return host.gifted_badges.filter(is_active=True).exists()
 
     @staticmethod
     def calculate_balance_and_payout(user):
@@ -93,7 +119,7 @@ class HostService:
         """
         # Total earnings from normal (non-marketplace) completed orders
         normal_earnings = Order.objects.filter(
-            event__host=user.host_profile,        # Adjust this relation if your field name is different
+            event__host=user.host_profile,
             status="completed",
             marketplace_listing__isnull=True
         ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
@@ -101,14 +127,14 @@ class HostService:
         # Total amount successfully withdrawn (approved or paid)
         total_withdrawn = Withdrawal.objects.filter(
             user=user,
-            status__in=["approved", "paid"]   # exclude pending and rejected
+            status__in=["approved", "paid"]
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
         available_balance = normal_earnings - total_withdrawn
 
         # Check if today is Friday
         today = timezone.now().date()
-        is_friday = today.weekday() == 4  # 0=Mon, 4=Fri
+        is_friday = today.weekday() == 4
 
         payout_available = (available_balance >= Decimal('10000')) and is_friday
 

@@ -60,9 +60,51 @@ def _calculate_fees(total_amount: Decimal) -> Decimal:
     qavtix_fee   = (total_amount * buyer_service_fee_pct).quantize(Decimal("0.01"))
     paystack_fee = (total_amount * PAYSTACK_PCT).quantize(Decimal("0.01"))
 
-    print(qavtix_fee,paystack_fee,PAYSTACK_FLAT)
+  
 
     return qavtix_fee + paystack_fee + PAYSTACK_FLAT
+
+
+def _calculate_marketplace_commision(total_amount: Decimal) -> Decimal:
+    """
+    Total buyer fee = buyer_service_fee (from DB) + 1.5% (Paystack) + ₦100 flat
+    
+    Example: total = ₦10,000, buyer_service_fee = 7.5%
+      Qavtix fee:   10,000 × 7.5%  = ₦750
+      Paystack fee: 10,000 × 1.5%  = ₦150
+      Flat fee:                     = ₦100
+      Total fees:                   = ₦1,000
+    
+    The buyer pays: total_amount + fees
+    We store fees in Order.fees for reporting.
+    """
+    from administrator.models import SystemConfig
+
+    ticket_resell_commission_pct = Decimal(
+        str(SystemConfig.get("ticket_resell_commission", 10))
+    ) / 100
+
+    PAYSTACK_PCT  = Decimal("0.015")   # 1.5% — hardcoded, never changes
+    PAYSTACK_FLAT = Decimal("100")     # ₦100 — hardcoded, never changes
+
+    qavtix_fee   = (total_amount * ticket_resell_commission_pct).quantize(Decimal("0.01"))
+    paystack_fee = (total_amount * PAYSTACK_PCT).quantize(Decimal("0.01"))
+
+    
+
+    return qavtix_fee + paystack_fee + PAYSTACK_FLAT
+
+
+def _calculate_paystack_fee(total_amount: Decimal) -> Decimal:
+    """
+    Paystack fee = 1.5% of total_amount + ₦100 flat
+    """
+    PAYSTACK_PCT  = Decimal("0.015")   # 1.5% — hardcoded, never changes
+    PAYSTACK_FLAT = Decimal("100")     # ₦100 — hardcoded, never changes
+
+    paystack_fee = (total_amount * PAYSTACK_PCT).quantize(Decimal("0.01"))
+
+    return paystack_fee + PAYSTACK_FLAT
 
 
 class CheckoutService:
@@ -370,13 +412,19 @@ class CheckoutService:
 
         event    = listing.ticket.event
         currency = get_currency_for_event(event)   # ← derived from host country
-        total    = listing.price
+        ticket_total    = listing.price
+        ticket_commision = _calculate_marketplace_commision(ticket_total)
+        paystack_fee   =   _calculate_paystack_fee(ticket_total)
+        total           = ticket_total  + paystack_fee
+        user_commision= total - ticket_commision
+
         reference = self._generate_reference()
 
         order = self._create_order(
             event=event,
             line_items=None,
-            total_amount=total,
+            total_amount=user_commision,
+            fees=ticket_commision, 
             discount=Decimal("0.00"),
             metadata={
                 "reference":  reference,

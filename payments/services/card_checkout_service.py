@@ -11,7 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from payments.services.factory import get_gateway
 from payments.models import PaymentCard, Payment
 from payments.services.currency_utils import get_currency_for_event
-from payments.services.checkout_service import CheckoutError, _calculate_fees
+from payments.services.checkout_service import CheckoutError, _calculate_fees, _calculate_marketplace_commision, _calculate_paystack_fee
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +162,11 @@ class CardCheckoutService:
 
         event    = listing.ticket.event
         currency = get_currency_for_event(event)   # ← derived from host country
-        total    = listing.price
+        ticket_total    = listing.price
+        ticket_commision = _calculate_marketplace_commision(ticket_total)
+        paystack_fee   =   _calculate_paystack_fee(ticket_total)
+        total           = ticket_total  + paystack_fee
+        user_commision= total - ticket_commision
         reference = self._generate_reference()
 
         order = Order.objects.create(
@@ -172,7 +176,9 @@ class CardCheckoutService:
             phone_number=self.phone_number,
             is_split=False,
             event=event,
-            total_amount=total,
+            total_amount=user_commision,
+            fees=ticket_commision, 
+            discount=Decimal("0.00"),
             discount=Decimal("0.00"),
             status="pending",
             marketplace_listing=listing,

@@ -132,7 +132,7 @@ class EventUpdateView(generics.UpdateAPIView):
     parameters=[
         OpenApiParameter("start_date", OpenApiTypes.DATE),
         OpenApiParameter("end_date", OpenApiTypes.DATE),
-        OpenApiParameter("performance", OpenApiTypes.STR,description="fully_booked"),
+        OpenApiParameter("performance", OpenApiTypes.STR,description="fully_booked | almost_full | moderate_sales | low_sales | no_sales"),
         OpenApiParameter("status", OpenApiTypes.STR,description="active | draft | ended | sold-out | cancelled | banned"),
         OpenApiParameter("category", OpenApiTypes.INT),
     ]

@@ -132,7 +132,7 @@ class EventUpdateView(generics.UpdateAPIView):
     parameters=[
         OpenApiParameter("start_date", OpenApiTypes.DATE),
         OpenApiParameter("end_date", OpenApiTypes.DATE),
-        OpenApiParameter("performance", OpenApiTypes.STR),
+        OpenApiParameter("performance", OpenApiTypes.STR,description="fully_booked"),
         OpenApiParameter("status", OpenApiTypes.STR,description="active | draft | ended | sold-out | cancelled | banned"),
         OpenApiParameter("category", OpenApiTypes.INT),
     ]
@@ -1542,8 +1542,11 @@ class SalesGraphsView(PlanFeatureMixin,APIView):
         OpenApiParameter("ticket_type", OpenApiTypes.INT,  description="Filter by Ticket PK"),
         OpenApiParameter("date_range",  OpenApiTypes.STR,  description="day | week | month"),
         OpenApiParameter("event",       OpenApiTypes.UUID, description="Filter by event UUID"),
-        OpenApiParameter("search",      OpenApiTypes.STR,
-                         description="Search by buyer name, email or event title"),
+        OpenApiParameter("search",      OpenApiTypes.STR,  description="Search by buyer name, email or event title"),
+        OpenApiParameter("start_date",OpenApiTypes.DATE,   description="Start date (YYYY-MM-DD)"
+        ),
+        OpenApiParameter("end_date",OpenApiTypes.DATE,      description="End date (YYYY-MM-DD)"
+        ),
     ],
     responses=TransactionHistorySerializer(many=True),
 )
@@ -1574,6 +1577,8 @@ class TransactionHistoryView(generics.ListAPIView):
             date_range=request.query_params.get("date_range"),
             search=request.query_params.get("search", "").strip() or None,
             event_id=request.query_params.get("event"),
+            start_date=request.query_params.get("start_date"),  
+            end_date=request.query_params.get("end_date"), 
         )
 
         page  = self.paginate_queryset(qs)

@@ -994,6 +994,7 @@ class TransactionHistorySerializer(serializers.Serializer):
         return {
             "full_name": attendee.full_name if attendee else (obj.full_name or obj.email),
             "email":     obj.user.email if obj.user else obj.email,
+            "profile_picture": attendee.profile_picture if attendee else None,
         }
 
     def get_event(self, obj):

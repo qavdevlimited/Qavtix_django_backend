@@ -1291,7 +1291,7 @@ class TransactionService:
 
     @staticmethod
     def get_transactions(host, ticket_type_id=None, date_range=None,
-                         search=None, event_id=None):
+                         search=None, event_id=None,start_date=None,end_date=None):
         qs = (
             Order.objects
             .select_related(
@@ -1301,8 +1301,25 @@ class TransactionService:
                 "event__category",
             )
             .prefetch_related("event__media", "tickets")
-            .filter(event__host=host)
+            .filter(event__host=host,status="completed")
         )
+        if start_date or end_date:
+
+            if start_date and end_date:
+                qs = qs.filter(
+                    created_at__date__gte=start_date,
+                    created_at__date__lte=end_date
+                )
+
+            elif start_date:
+                qs = qs.filter(
+                    created_at__date__gte=start_date
+                )
+
+            elif end_date:
+                qs = qs.filter(
+                    created_at__date__lte=end_date
+                )
 
         if event_id:
             qs = qs.filter(event_id=event_id)

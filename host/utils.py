@@ -26,13 +26,38 @@ class EventDashboardFilter(django_filters.FilterSet):
         ]
 
     def filter_performance(self, queryset, name, value):
+        queryset = queryset.annotate(
+            total_quantity=Coalesce(Sum("tickets__quantity"), 0),
+            total_sold=Coalesce(Sum("tickets__sold_quantity"), 0),
+        )
+
         if value == "fully_booked":
-            queryset = queryset.annotate(
-                total_quantity=Coalesce(Sum("tickets__quantity"), 0),
-                total_sold=Coalesce(Sum("tickets__sold_quantity"), 0),
-            ).filter(total_sold__gte=F("total_quantity"))
+            return queryset.filter(total_sold__gte=F("total_quantity"))
+
+        elif value == "almost_full":
+            return queryset.filter(
+                total_sold__gte=F("total_quantity") * 0.8,
+                total_sold__lt=F("total_quantity"),
+            )
+
+        elif value == "moderate_sales":
+            return queryset.filter(
+                total_sold__gte=F("total_quantity") * 0.3,
+                total_sold__lt=F("total_quantity") * 0.8,
+            )
+
+        elif value == "low_sales":
+            return queryset.filter(
+                total_sold__gt=0,
+                total_sold__lt=F("total_quantity") * 0.3,
+            )
+
+        elif value == "no_sales":
+            return queryset.filter(total_sold=0)
 
         return queryset
+
+        
 
 
 class CustomerListFilter(django_filters.FilterSet):

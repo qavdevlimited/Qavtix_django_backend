@@ -128,7 +128,15 @@ class EventUpdateView(generics.UpdateAPIView):
             data=serializer.data
         )
 
-
+@extend_schema(
+    parameters=[
+        OpenApiParameter("start_date", OpenApiTypes.DATE),
+        OpenApiParameter("end_date", OpenApiTypes.DATE),
+        OpenApiParameter("performance", OpenApiTypes.STR),
+        OpenApiParameter("status", OpenApiTypes.STR,description="active | draft | ended | sold-out | cancelled | banned"),
+        OpenApiParameter("category", OpenApiTypes.INT),
+    ]
+)
 class EventDashboardView(generics.ListAPIView):
     serializer_class = EventTableSerializer
     permission_classes = [permissions.IsAuthenticated]

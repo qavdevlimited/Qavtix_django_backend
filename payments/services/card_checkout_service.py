@@ -179,7 +179,6 @@ class CardCheckoutService:
             total_amount=user_commision,
             fees=ticket_commision, 
             discount=Decimal("0.00"),
-            discount=Decimal("0.00"),
             status="pending",
             marketplace_listing=listing,
             metadata={

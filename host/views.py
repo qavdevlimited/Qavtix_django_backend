@@ -10,7 +10,7 @@ from host.models import Host, HostSubscription
 from host.services.RenewSubscriptionService import RenewSubscriptionService, SubscriptionError
 from host.services.brevoservice import CampaignError, CampaignService   
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
-from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
+from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, HostService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
 from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostSubscriptionStatusSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, SingleEmailCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,DownloadEventAttendeeSerializer,PrivacySettingsSerializer
@@ -43,6 +43,18 @@ from datetime import date, timedelta
 from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter, inline_serializer
 from drf_spectacular.types import OpenApiTypes
 from .mixin import PlanFeatureMixin
+
+
+class HostProfileView(APIView):
+    """
+    GET /api/host/profile/
+    Returns host profile, currency, balance and payout status
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        profile_data = HostService.get_host_profile(request.user)
+        return Response(profile_data, status=status.HTTP_200_OK)
 
 
 class EventCreateView(PlanFeatureMixin,generics.CreateAPIView):

@@ -17,7 +17,102 @@ from host.helpers import _apply_day_range, _pct_change, verify_checkin_token
 
 from django.db.models import Sum, Count, Q, Avg, F
 from django.db.models.functions import TruncDay, TruncMonth
-# ── Promo Codes ────────────────────────────────────────────────────────────────
+
+
+from decimal import Decimal
+from django.utils import timezone
+from django.db.models import Sum
+from django.contrib.auth import get_user_model
+
+from transactions.models import  Order, Withdrawal
+from ..models import Host
+
+User = get_user_model()
+
+
+class HostService:
+
+    @staticmethod
+    def get_host_profile(user):
+        """
+        Returns host profile data + balance + payout availability
+        """
+        try:
+            host = Host.objects.select_related('user').get(user=user)
+            is_host = True
+        except Host.DoesNotExist:
+            host = None
+            is_host = False
+
+        data = {
+            "is_host": is_host,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": getattr(user, 'full_name', user.get_full_name() or user.username),
+            }
+        }
+
+        if not is_host:
+            data["message"] = "You do not have a host profile yet. Please complete host registration."
+            data["payout_available"] = False
+            data["balance"] = {
+                "available_balance": "0.00",
+                "payout_available": False
+            }
+            return data
+
+        # Host exists - get full profile
+        from ..serializers import HostProfileSerializer
+        serializer = HostProfileSerializer(host)
+
+        data["host"] = serializer.data
+        data["host"]["currency"] = HostService.get_host_currency(host)
+
+        # Calculate balance and payout status
+        data["payout_available"] = HostService.calculate_balance_and_payout(user)
+
+        return data
+
+    @staticmethod
+    def get_host_currency(host):
+        """Get currency for host"""
+        try:
+            from payments.services.currency_utils import get_currency_for_host
+            return get_currency_for_host(host)
+        except Exception:
+            return "NGN"  # fallback
+
+    @staticmethod
+    def calculate_balance_and_payout(user):
+        """
+        Calculate host earnings, withdrawals and payout availability.
+        Payout available ONLY when:
+        - Available balance >= 10,000
+        - Today is Friday
+        """
+        # Total earnings from normal (non-marketplace) completed orders
+        normal_earnings = Order.objects.filter(
+            event__host=user.host_profile,        # Adjust this relation if your field name is different
+            status="completed",
+            marketplace_listing__isnull=True
+        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
+
+        # Total amount successfully withdrawn (approved or paid)
+        total_withdrawn = Withdrawal.objects.filter(
+            user=user,
+            status__in=["approved", "paid"]   # exclude pending and rejected
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+        available_balance = normal_earnings - total_withdrawn
+
+        # Check if today is Friday
+        today = timezone.now().date()
+        is_friday = today.weekday() == 4  # 0=Mon, 4=Fri
+
+        payout_available = (available_balance >= Decimal('10000')) and is_friday
+
+        return payout_available
 
 class PromoCodeService:
 

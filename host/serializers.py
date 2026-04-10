@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from host.models import Host, HostSubscription
+from host.services.service import HostService
 from payments.models import HostPlan, PayoutInformation
 from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
 from public.models import Follow
@@ -11,6 +12,50 @@ from transactions.models import Withdrawal
 from django.db.models import Sum
 from datetime import timedelta
 from django.db.models import Count
+from django.contrib.auth import get_user_model
+
+
+User = get_user_model()
+
+class HostProfileSerializer(serializers.ModelSerializer):
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True)
+    currency = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Host
+        fields = [
+            'user_id',
+            'email',
+            'username',
+            'full_name',
+            'description',
+            'business_name',
+            'business_type',
+            'registration_number',
+            'tax_id',
+            'nin',
+            'phone_number',
+            'country',
+            'state',
+            'city',
+            'postal_code',
+            'categories',
+            'registration_date',
+            'role',
+            'followers',
+            'profile_picture',
+            'profile_banner',
+            'show_my_events',
+            'show_past_events',
+            'verified',
+            'currency',
+        ]
+        read_only_fields = ['registration_date', 'role', 'followers', 'verified']
+
+    def get_currency(self, obj):
+        return HostService.get_host_currency(obj)
 
 # Ticket promo codes
 class PromoCodeNestedSerializer(serializers.ModelSerializer):

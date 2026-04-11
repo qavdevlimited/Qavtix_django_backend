@@ -80,7 +80,10 @@ class HostService:
         data["verified_badge"] = HostService.has_active_verified_badge(host)
 
         # Calculate balance and payout status
-        data["payout_available"] = HostService.calculate_balance_and_payout(user)
+        payout_available, available_balance = HostService.calculate_balance_and_payout(user)
+
+        data["payout_available"] = payout_available
+        data["available_balance"] = available_balance
 
         return data
 
@@ -138,7 +141,7 @@ class HostService:
 
         payout_available = (available_balance >= Decimal('10000')) and is_friday
 
-        return payout_available
+        return payout_available,available_balance
 
 class PromoCodeService:
 

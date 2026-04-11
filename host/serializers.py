@@ -886,6 +886,7 @@ class TrendingTicketSerializer(serializers.Serializer):
     tickets_sold    = serializers.IntegerField(source="sold_count")
     conversion_rate = serializers.SerializerMethodField()
     revenue         = serializers.DecimalField(max_digits=14, decimal_places=2)
+    quantity        = serializers.IntegerField()
 
     def get_event_category(self, obj):
         cat = obj.event.category

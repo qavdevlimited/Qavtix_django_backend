@@ -1407,8 +1407,7 @@ class DashboardFeedView(generics.ListAPIView):
         if host is None:
             return api_response(message="You are not a host.", status_code=403)
 
-        # Optionally mark notifications read on the same request
-        # so the frontend can fetch + clear badge in one call
+        
         if request.query_params.get("mark_read", "").lower() == "true":
             DashboardService.mark_notifications_read(host)
 

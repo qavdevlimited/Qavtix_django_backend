@@ -194,6 +194,7 @@ class EventTableSerializer(serializers.ModelSerializer):
     event_image=serializers.SerializerMethodField()
     tickets_listed = serializers.SerializerMethodField()
     tickets_sold = serializers.SerializerMethodField()
+    performance = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -213,6 +214,7 @@ class EventTableSerializer(serializers.ModelSerializer):
             
             "views_count",
             "saves_count",
+            "performance",
         ]
 
     def get_event_image(self, obj):
@@ -250,6 +252,26 @@ class EventTableSerializer(serializers.ModelSerializer):
         # Uses annotation from view queryset — zero extra DB queries
         val = getattr(obj, "total_revenue", None)
         return val or 0
+
+    def get_performance(self, obj):
+        sold = self.get_tickets_sold(obj)
+        listed = self.get_tickets_listed(obj)
+
+        if listed == 0:
+            return "no_tickets"
+
+        percentage = (sold / listed) * 100
+
+        if percentage >= 100:
+            return "fully_booked"
+        elif percentage >= 80:
+            return "almost_full"
+        elif percentage >= 50:
+            return "moderate_sales"
+        elif percentage >0:
+            return "low_sales"
+        else:
+            return "no_sales"
 
 
 # Card data serializer (counts per status)

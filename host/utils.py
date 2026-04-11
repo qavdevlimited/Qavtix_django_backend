@@ -42,7 +42,7 @@ class EventDashboardFilter(django_filters.FilterSet):
 
         elif value == "moderate_sales":
             return queryset.filter(
-                total_sold__gte=F("total_quantity") * 0.3,
+                total_sold__gte=F("total_quantity") * 0.5,
                 total_sold__lt=F("total_quantity") * 0.8,
             )
 

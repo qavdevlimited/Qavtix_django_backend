@@ -507,7 +507,7 @@ class CustomerDetailCardSerializer(serializers.Serializer):
     last_order_value_change = serializers.FloatField()
 
 
-class RevenueChartPointSerializer(serializers.Serializer):
+class CustomerRevenueChartPointSerializer(serializers.Serializer):
     """Single data point on the revenue chart."""
     label = serializers.CharField()        # e.g. "2024-03-01" or "Mon" or "Mar"
     amount = serializers.DecimalField(max_digits=10, decimal_places=2)

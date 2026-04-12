@@ -13,7 +13,14 @@ from host.helpers import _apply_date_range, _available_balance, _base_orders, _g
 from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, HostService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
-from .serializers import AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, CustomerListSerializer, CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostSubscriptionStatusSerializer, HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer, RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, SingleEmailCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,DownloadEventAttendeeSerializer,PrivacySettingsSerializer
+from .serializers import (AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, 
+CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, 
+CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSerializer, EmailCampaignListSerializer, EventSerializer,
+EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostSubscriptionStatusSerializer, 
+HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer,
+ RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, 
+ SingleEmailCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,
+ DownloadEventAttendeeSerializer,PrivacySettingsSerializer, CustomerRevenueChartPointSerializer)
 from public.response import flatten_errors,api_response
 from django.http import Http404
 from rest_framework import generics, permissions, filters
@@ -31,13 +38,6 @@ from rest_framework import generics, permissions, filters
 from rest_framework.response import Response
 from django.db import transaction
 from public.response import api_response
-from .serializers import (
-    CustomerListSerializer,
-    AttendeeProfileSerializer,
-    CustomerDetailCardSerializer,
-    RevenueChartPointSerializer,
-    CustomerOrderHistorySerializer,
-)
 from datetime import date, timedelta
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter, inline_serializer
@@ -587,7 +587,7 @@ class CustomerDetailView(PlanFeatureMixin,generics.ListAPIView):
             data={
                 "cards":         CustomerDetailCardSerializer(cards).data,
                 "profile":       AttendeeProfileSerializer(profile).data,
-                "revenue_chart": RevenueChartPointSerializer(chart_data, many=True).data,
+                "revenue_chart": CustomerRevenueChartPointSerializer(chart_data, many=True).data,
                 "order_history": paginated_history,
             },
         )

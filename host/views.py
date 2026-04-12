@@ -577,9 +577,7 @@ class CustomerDetailView(PlanFeatureMixin,generics.ListAPIView):
 
         paginated_history = {"results": history_serializer.data}
         if page is not None:
-            paginated_history["count"]    = self.paginator.page.paginator.count
-            paginated_history["next"]     = self.paginator.get_next_link()
-            paginated_history["previous"] = self.paginator.get_previous_link()
+            paginated_history.update(pagination_data(self.paginator))
 
         return api_response(
             message="Customer detail retrieved successfully",

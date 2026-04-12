@@ -9,7 +9,7 @@ from events.models import Event
 from host.models import Host, HostSubscription
 from host.services.RenewSubscriptionService import RenewSubscriptionService, SubscriptionError
 from host.services.brevoservice import CampaignError, CampaignService   
-from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
+from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_fees, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
 from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, HostService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
@@ -732,12 +732,16 @@ class HostRevenueOverviewView(generics.ListAPIView):
         # ── cards ─────────────────────────────────────────────────────────────
         total_revenue = _host_revenue(host, date_range)
         total_payout  = _host_payouts(request.user, date_range)
+        total_fees    = _host_fees(host, date_range)or Decimal("0.00")
         balance       = _available_balance(host, request.user)   # always real-time
         next_friday   = _next_friday(date.today())
+
+       
 
         cards = RevenueCardSerializer({
             "total_revenue":    total_revenue,
             "total_payout":     total_payout,
+            "total_fees":       total_fees,
             "available_balance": balance,
             "next_payout_date": next_friday,
         }).data

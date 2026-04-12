@@ -107,10 +107,21 @@ def _host_revenue(host, date_range=None):
     Sum of total_amount from completed orders for this host.
     Fees are already included in total_amount; we return the gross.
     """
-    qs = Order.objects.filter(event__host=host, status="completed")
+    qs = Order.objects.filter(event__host=host, status="completed",marketplace_listing__isnull=True)
     if date_range:
         qs = _apply_date_range(qs, date_range)
     return qs.aggregate(total=Sum("total_amount"))["total"] or Decimal("0.00")
+
+
+def _host_fees(host, date_range=None):
+    """
+    Sum of total_amount from completed orders for this host.
+    Fees are already included in total_amount; we return the gross.
+    """
+    qs = Order.objects.filter(event__host=host, status="completed",marketplace_listing__isnull=True)
+    if date_range:
+        qs = _apply_date_range(qs, date_range)
+    return qs.aggregate(total=Sum("fees"))["total"] or Decimal("0.00")
 
 
 def _host_payouts(host_user, date_range=None):

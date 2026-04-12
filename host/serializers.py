@@ -562,6 +562,7 @@ class RevenueCardSerializer(serializers.Serializer):
     total_payout    = serializers.DecimalField(max_digits=12, decimal_places=2)
     available_balance = serializers.DecimalField(max_digits=12, decimal_places=2)
     next_payout_date  = serializers.DateField()
+    total_fees = serializers.DecimalField(max_digits=12, decimal_places=2)
 
 
 class WithdrawalHistorySerializer(serializers.Serializer):

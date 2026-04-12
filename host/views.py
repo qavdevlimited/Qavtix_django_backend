@@ -657,7 +657,29 @@ class AddPayoutAccountView(APIView):
             data=PayoutInformationSerializer(account).data
         )
 
+class PayoutInformationDeleteView(generics.DestroyAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = PayoutInformation.objects.all()
+    serializer_class = PayoutInformationSerializer
 
+    def delete(self, request, *args, **kwargs):
+        payout_id = kwargs.get("payout_id") 
+
+        try:
+            payout = PayoutInformation.objects.get(id=payout_id, user=request.user)
+        except PayoutInformation.DoesNotExist:
+            return api_response(
+                message="Payout information not found.",
+                status_code=404
+            )
+
+        payout.delete()
+        return api_response(
+            message="Payout information deleted successfully.",
+            status_code=200,
+            data={}
+        )
+    
 class WithdrawalHistoryView(generics.ListAPIView):
     serializer_class = WithdrawalHistorySerializer
     permission_classes = [permissions.IsAuthenticated]

@@ -17,6 +17,7 @@ urlpatterns = [
     #PAYOUTS/FINANCIALS
     path("payouts/list/", ListPayoutAccountsView.as_view(), name="list-payouts"),
     path("payouts/add/", AddPayoutAccountView.as_view(), name="add-payout"),
+    path("payouts/remove/<uuid:payout_id>/", PayoutInformationDeleteView.as_view(), name="delete-payout"),
 
     path("financial/overview/", HostRevenueOverviewView.as_view(), name="host-revenue-overview"),
     path("withdraw/", HostWithdrawalRequestView.as_view(), name="host-withdrawal-request"),

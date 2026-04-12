@@ -358,6 +358,8 @@ class CustomerListView(PlanFeatureMixin,generics.ListAPIView):
         OpenApiParameter("history_date_range", OpenApiTypes.STR, description="day | week | month — order history window"),
         OpenApiParameter("history_event", OpenApiTypes.UUID, description="Filter order history to one event"),
         OpenApiParameter("search", OpenApiTypes.STR, description="Search order history by event title"),
+        OpenApiParameter("start_date", OpenApiTypes.DATE, description="Filter order history from this date (inclusive)"),
+        OpenApiParameter("end_date", OpenApiTypes.DATE, description="Filter order history up to this date (inclusive)"),
     ],
     responses=CustomerOrderHistorySerializer(many=True),
 )
@@ -495,7 +497,7 @@ class CustomerDetailView(PlanFeatureMixin,generics.ListAPIView):
             for row in qs if row["period"]
         ]
 
-    def _order_history(self, host, customer_id, ticket_type, date_range, event_id, search):
+    def _order_history(self, host, customer_id, ticket_type, date_range, event_id, search,start_date=None, end_date=None):
         qs = (
             Order.objects
             .select_related("event", "event__category")
@@ -511,6 +513,23 @@ class CustomerDetailView(PlanFeatureMixin,generics.ListAPIView):
             qs = _apply_date_range(qs, date_range)
         if search:
             qs = qs.filter(event__title__icontains=search)
+        if start_date or end_date:
+
+            if start_date and end_date:
+                qs = qs.filter(
+                    created_at__date__gte=start_date,
+                    created_at__date__lte=end_date
+                )
+
+            elif start_date:
+                qs = qs.filter(
+                    created_at__date__gte=start_date
+                )
+
+            elif end_date:
+                qs = qs.filter(
+                    created_at__date__lte=end_date
+            )
 
         results = []
         for order in qs.order_by("-created_at"):
@@ -554,6 +573,8 @@ class CustomerDetailView(PlanFeatureMixin,generics.ListAPIView):
         history_date_range = request.query_params.get("history_date_range")
         history_event_id   = request.query_params.get("history_event")
         search             = request.query_params.get("search", "").strip()
+        start_date         = request.query_params.get("start_date")
+        end_date           = request.query_params.get("end_date")
 
         profile = self._profile(host, customer_id, date_range, event_id)
         if profile is None:
@@ -568,6 +589,9 @@ class CustomerDetailView(PlanFeatureMixin,generics.ListAPIView):
             date_range=history_date_range,
             event_id=history_event_id,
             search=search,
+            start_date=start_date,
+            end_date=end_date,
+
         )
 
         page = self.paginate_queryset(history_rows)

@@ -2,7 +2,7 @@ from decimal import Decimal
 from django.db.models import Sum, Q
 from django.utils.timezone import now as tnow,timedelta
 from transactions.models import Order, Withdrawal
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from django.core import signing
 from django.utils import timezone
 
@@ -37,13 +37,16 @@ def _host_orders(host):
 
 
 
-def _apply_date_range(qs, date_range, field="created_at"):
-    """Filter a queryset to the chosen rolling window."""
-    if not date_range:
-        return qs
-    since = tnow() - _period_delta(date_range)
-    return qs.filter(**{f"{field}__gte": since})
-
+# def _apply_date_range(qs, date_range, field="created_at"):
+#     """Filter a queryset to the chosen rolling window."""
+#     if not date_range:
+#         return qs
+#     since = tnow() - _period_delta(date_range)
+#     return qs.filter(**{f"{field}__gte": since})
+def parse_date(date_str):
+    if not date_str:
+        return None
+    return datetime.strptime(date_str, "%Y-%m-%d").date()
 
 def _base_orders(host, event_id=None, date_range=None, status="completed",start_date=None, end_date=None):
     """
@@ -55,6 +58,9 @@ def _base_orders(host, event_id=None, date_range=None, status="completed",start_
         qs = qs.filter(event_id=event_id)
     if date_range:
         qs = _apply_date_range(qs, date_range)
+
+    start_date = parse_date(start_date)
+    end_date = parse_date(end_date)
 
     if start_date or end_date:
 
@@ -88,12 +94,12 @@ def _apply_date_range(qs, date_range: str, field: str = "created_at"):
     """Filter a queryset to a rolling time window."""
     if not date_range:
         return qs
-    now = now()
+    current_time = timezone.now()
     delta_map = {"day": timedelta(days=1), "week": timedelta(weeks=1), "month": timedelta(days=30)}
     delta = delta_map.get(date_range)
     if delta is None:
         return qs
-    return qs.filter(**{f"{field}__gte": now - delta})
+    return qs.filter(**{f"{field}__gte": current_time - delta})
 
 
 def _host_revenue(host, date_range=None):

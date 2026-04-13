@@ -1051,7 +1051,7 @@ class SalesGraphService:
         filter_type = "year"  → monthly for given year (default current year)
         """
         now  = timezone.now()
-        base = Order.objects.filter(event__host=host, status="completed")
+        base = Order.objects.filter(event__host=host, status="completed",marketplace_listing__isnull=True)
         if event_id:
             base = base.filter(event_id=event_id)
 

@@ -1,3 +1,7 @@
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.5
+aiohttp-retry==2.9.1
+aiosignal==1.4.0
 amqp==5.3.1
 asgiref==3.11.1
 attrs==25.4.0
@@ -23,15 +27,20 @@ django_celery_results==2.6.0
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
 drf-spectacular==0.29.0
+frozenlist==1.8.0
+gunicorn==25.3.0
 idna==3.11
 inflection==0.5.1
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 kombu==5.6.2
+mailerlite==0.1.10
 MarkupSafe==3.0.3
+multidict==6.7.1
 oauthlib==3.3.1
 packaging==26.0
 prompt_toolkit==3.0.52
+propcache==0.4.1
 psycopg==3.3.2
 psycopg-binary==3.3.2
 pycparser==3.0
@@ -46,9 +55,11 @@ referencing==0.37.0
 requests==2.32.5
 rpds-py==0.30.0
 sendgrid==6.12.5
+sib-api-v3-sdk==7.6.0
 six==1.17.0
 sqlparse==0.5.5
 stripe==14.3.0
+twilio==9.10.4
 typing_extensions==4.15.0
 tzdata==2025.3
 tzlocal==5.3.1
@@ -57,4 +68,4 @@ urllib3==2.6.3
 vine==5.1.0
 wcwidth==0.6.0
 Werkzeug==3.1.5
-gunicorn>=20.1
+yarl==1.23.0

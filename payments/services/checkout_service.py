@@ -771,12 +771,17 @@ class CompleteCheckoutService:
         order.payment_method = "paystack"
         order.save(update_fields=["status", "payment_method"])
 
+        ticket_commision = _calculate_marketplace_commision(listing.price)
+        paystack_fee   =   _calculate_paystack_fee(listing.price)
+        total           = listing.price  + paystack_fee
+        user_commision= total - ticket_commision
+
         AffliateEarnings.objects.get_or_create(
             attendee          = seller_attendee,
             marketplace_order = order,
             earning_type      = "marketplace",
             defaults={
-                "earning": listing.price,
+                "earning": user_commision,
                 "status":  "paid",
             },
         )

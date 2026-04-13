@@ -13,7 +13,7 @@ class TwilioService:
         """
         account_sid = config('TWILIO_ACCOUNT_SID')
         auth_token = config('TWILIO_AUTH_TOKEN')
-        default_from ='+16626399662'
+        default_from =config('TWILIO_PHONE_NUMBER') or '+16626399662'
 
         # Fallback logic: Use provided sender name, else Twilio number
         from_number = default_from

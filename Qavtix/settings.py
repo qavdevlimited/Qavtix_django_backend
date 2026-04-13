@@ -375,6 +375,10 @@ CELERY_BEAT_SCHEDULE = {
     "task":     "administrator.tasks.flag_suspicious_users",
      "schedule": crontab(minute=0),  # every hour
     },
+    'mark-past-events-as-ended': {
+        'task': 'events.tasks.mark_past_events_as_ended',   # Change path if needed
+        'schedule': crontab(minute='*/30'),                # Every 30 minutes
+    },
 }
 
 FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5500")

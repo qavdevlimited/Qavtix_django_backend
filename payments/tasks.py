@@ -79,7 +79,7 @@ def send_split_payment_emails(split_order_id, participant_ids):
             continue
 
         payment_link = (
-            f"{settings.FRONTEND_URL}/split-pay/{participant.pay_token}/"
+            f"https://www.qavtix.com/split-payment/{participant.pay_token}/"
         )
 
         subject = f"You've been invited to split tickets for {event.title}"
@@ -426,7 +426,7 @@ Your {plan.name} plan expires in {day_str} on {expires}.
 Renew your plan to keep access to all {plan.name} features.
 After expiry, your account will be moved to the Free plan.
 
-Renew now: https://qavtix.com/host/plans
+Renew now: https://www.qavtix.com/pricing
 
 — QavTix Team
     """.strip()
@@ -459,7 +459,7 @@ You still have access to all your events and data, but some features are
 now limited under the Free plan.
 
 Upgrade anytime to restore full access:
-https://qavtix.com/host/plans
+https://www.qavtix.com/pricing
 
 — QavTix Team
     """.strip()
@@ -646,7 +646,7 @@ Your {plan.name} attendee plan expires in {day_str} on {expires}.
 Renew now to continue enjoying boosted affiliate rewards, higher ticket discounts,
 early access, and exclusive deals.
 
-Renew here: https://qavtix.com/attendee/plans
+Renew here: https://www.qavtix.com/pricing
 
 — QavTix Team
     """.strip()
@@ -678,7 +678,7 @@ Your {plan.name} attendee plan has expired. Your account has been moved back to 
 You can still buy tickets and earn basic rewards, but many premium benefits are now limited.
 
 Upgrade anytime to restore full access:
-https://qavtix.com/attendee/plans
+https://www.qavtix.com/pricing
 
 — QavTix Team
     """.strip()

@@ -99,7 +99,7 @@ class AffiliateLink(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def get_url(self):
-        return f"https://yourdomain.com/events/{self.event.id}?ref={self.code}"
+        return f"https://www.qavtix.com/split-payment/{self.code}"
 
     def __str__(self):
         return f"{self.user.username} - {self.event.title}"

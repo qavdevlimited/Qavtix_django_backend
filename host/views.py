@@ -1307,6 +1307,7 @@ class CheckInOverviewView(PlanFeatureMixin,generics.ListAPIView):
     total_tickets   : all issued tickets for host's events
     total_checkins  : successfully checked-in tickets
     issues          : duplicate or invalid scans
+    total_not_checked_in : issued but not yet checked in
 
     Query params
     ────────────

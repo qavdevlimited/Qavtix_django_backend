@@ -802,6 +802,7 @@ class CheckInCardSerializer(serializers.Serializer):
     issues          = serializers.IntegerField(
         help_text="Duplicate or invalid scans"
     )
+    total_not_checked_in = serializers.IntegerField()
 
 
 # ── Attendee list ──────────────────────────────────────────────────────────────

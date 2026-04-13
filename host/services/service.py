@@ -458,6 +458,7 @@ class CheckInService:
             "total_tickets":  total_tickets,
             "total_checkins": agg["total_checkins"],
             "issues":         agg["issues"],
+            "total_not_checked_in": total_tickets - agg["total_checkins"],
         }
 
     # ── Attendee list ──────────────────────────────────────────────────────────

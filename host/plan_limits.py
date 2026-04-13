@@ -148,7 +148,7 @@ PLAN_LIMITS = {
         "marketing_dashboard":   True,
         "email_campaigns":       True,
         "email_campaign_limit":  4600,     # same as pro — 100 sends/month
-        "sms_campaign_limit":    1, 
+        "sms_campaign_limit":    100, 
         "sms_campaigns":    True,
         "sponsored_campaigns":   True,
 

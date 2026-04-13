@@ -33,6 +33,8 @@ PLAN_LIMITS = {
         "marketing_dashboard":   False,
         "email_campaigns":       False,
         "email_campaign_limit":  0,
+        "sms_campaign_limit":    0, 
+        "sms_campaigns":    False,
         "sponsored_campaigns":   False,
 
         # Featured
@@ -53,7 +55,7 @@ PLAN_LIMITS = {
         # Group sharing
         "group_sharing":         False,
 
-        "customer_profile_insights": False,
+        "customer_profile_insights": True,
 
         "event_ticket_limit":       750,     # max tickets per event
     },
@@ -89,7 +91,9 @@ PLAN_LIMITS = {
         # Marketing
         "marketing_dashboard":   True,
         "email_campaigns":       True,
-        "email_campaign_limit":  100,
+        "email_campaign_limit":  400,
+        "sms_campaign_limit":    0, 
+        "sms_campaigns":    False,
         "sponsored_campaigns":   False,   # enterprise only
 
         # Featured
@@ -107,7 +111,7 @@ PLAN_LIMITS = {
         "priority_support":      True,    # priority email support
         "dedicated_manager":     False,   # enterprise only
 
-        "customer_profile_insights": False,
+        "customer_profile_insights": True,
 
         "event_ticket_limit":       2500,
     },
@@ -143,7 +147,9 @@ PLAN_LIMITS = {
         # Marketing
         "marketing_dashboard":   True,
         "email_campaigns":       True,
-        "email_campaign_limit":  100,     # same as pro — 100 sends/month
+        "email_campaign_limit":  4600,     # same as pro — 100 sends/month
+        "sms_campaign_limit":    1, 
+        "sms_campaigns":    True,
         "sponsored_campaigns":   True,
 
         # Featured

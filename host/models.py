@@ -279,3 +279,41 @@ class VerifiedBadge(models.Model):
                 name="unique_active_badge_per_host"
             )
         ]
+
+
+class CampaignUsage(models.Model):
+    """
+    Tracks email and SMS sends per host per subscription period.
+    Resets when a new subscription becomes active — no rollover.
+ 
+    One row per host per subscription. When subscription renews,
+    a new row is created and the old one is kept for history.
+    """
+    host             = models.ForeignKey(
+        "Host",
+        on_delete=models.CASCADE,
+        related_name="campaign_usage",
+    )
+    subscription     = models.OneToOneField(
+        "HostSubscription",
+        on_delete=models.CASCADE,
+        related_name="campaign_usage",
+        null=True,
+        blank=True,
+    )
+    # Tracks total sends in this subscription period
+    email_sends_used = models.PositiveIntegerField(default=0)
+    sms_sends_used   = models.PositiveIntegerField(default=0)
+ 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        ordering = ["-created_at"]
+ 
+    def __str__(self):
+        return (
+            f"{self.host} — "
+            f"email: {self.email_sends_used}, "
+            f"sms: {self.sms_sends_used}"
+        )

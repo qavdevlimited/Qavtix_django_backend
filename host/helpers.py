@@ -216,3 +216,26 @@ def verify_checkin_token(token: str, max_age_days: int = 365) -> tuple[str, int]
     except Exception:
         # Covers ValueError (missing separator), malformed payload, etc.
         raise signing.BadSignature("Invalid token format.")
+
+
+
+def _quota_data(host, channel: str) -> dict:
+    """
+    Returns remaining quota info to include in response data.
+    channel: "email" | "sms"
+    """
+    try:
+        from host.services.campaign_quota_service import CampaignQuotaService
+        if channel == "email":
+            quota = CampaignQuotaService.get_email_quota(host)
+        else:
+            quota = CampaignQuotaService.get_sms_quota(host)
+        return {
+            f"{channel}_quota": {
+                "limit":     quota["limit"],
+                "used":      quota["used"],
+                "remaining": quota["remaining"],
+            }
+        }
+    except Exception:
+        return {}

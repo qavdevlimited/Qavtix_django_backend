@@ -1,9 +1,5 @@
-"""
-email_campaigns/services.py
 
-All business logic for creating, sending, and listing email campaigns.
-Views call this; nothing here knows about HTTP request/response.
-"""
+
 import logging
 from django.utils import timezone
 from django.db import transaction
@@ -21,10 +17,6 @@ class CampaignService:
 
     @staticmethod
     def get_host_campaigns(host, search=None):
-        """
-        Return all campaigns for the host, enriched with live Brevo stats.
-        Stats are fetched in a single bulk call to avoid N+1 HTTP requests.
-        """
         qs = (
             EmailCampaign.objects
             .select_related("event", "event__category")
@@ -37,7 +29,6 @@ class CampaignService:
 
         campaigns = list(qs)
 
-        # Bulk-fetch live stats from Brevo for all sent campaigns
         sent_ids = [
             c.brevo_campaign_id for c in campaigns
             if c.brevo_campaign_id and c.status == "sent"
@@ -47,11 +38,9 @@ class CampaignService:
             for campaign in campaigns:
                 if campaign.brevo_campaign_id in stats_map:
                     stats = stats_map[campaign.brevo_campaign_id]
-                    # Update cached values in-place (no DB write on list — see note)
                     campaign.open_rate  = stats["open_rate"]
                     campaign.click_rate = stats["click_rate"]
 
-            # Persist refreshed stats in bulk so the next load is fast
             EmailCampaign.objects.bulk_update(
                 [c for c in campaigns if c.brevo_campaign_id in stats_map],
                 ["open_rate", "click_rate"],
@@ -59,41 +48,39 @@ class CampaignService:
 
         return campaigns
 
-    # ── Create and Send ───────────────────────────────────────────────────────
+    # ── Create and Send Campaign ──────────────────────────────────────────────
 
     @staticmethod
     def create_and_send_campaign(host, data):
         """
-        Single action that:
-          1. Validates event ownership
-          2. Collects attendees from completed orders
-          3. Syncs contacts to a Brevo contact list
-          4. Creates and immediately sends the campaign via Brevo
-          5. Persists the campaign record with full send details
-
-        This matches the frontend flow where create and send are one action.
+        Enforces email quota before sending.
+        Quota is checked against the number of contacts (recipients) BEFORE sending.
+        If quota is insufficient the whole send is blocked — no partial sends.
         """
         from events.models import Event
+        from host.services.campaign_quota_service import CampaignQuotaService, QuotaExceededError
 
-        # ── Validate event ────────────────────────────────────────────────────
         try:
             event = Event.objects.get(id=data["event_id"], host=host)
         except Event.DoesNotExist:
             raise CampaignError("Event not found or does not belong to you.", 404)
 
-        # ── Collect attendees ─────────────────────────────────────────────────
         contacts = CampaignService._build_contact_list(event)
         if not contacts:
             raise CampaignError(
                 "No attendees found for this event. Cannot send to an empty list.", 400
             )
 
+        # ── Quota check BEFORE doing anything ────────────────────────────────
+        # We check against contacts count — that's how many sends this will consume.
+        try:
+            CampaignQuotaService.consume_email_quota(host, count=len(contacts))
+        except QuotaExceededError as e:
+            raise CampaignError(e.message, e.status)
+
         sender_name  = data.get("sender_name")  or event.organizer_display_name
         sender_email = data.get("sender_email") or event.public_email
 
-        # ── Save campaign record OUTSIDE the atomic block ───────────────────
-        # This ensures the record persists even if the Brevo API calls fail,
-        # so we can mark it as failed and the host can see it in the list.
         campaign = EmailCampaign.objects.create(
             host          = host,
             event         = event,
@@ -106,14 +93,7 @@ class CampaignService:
         )
 
         try:
-            # ── All Brevo API calls in one atomic block ────────────────────────
-            # If anything here fails, the campaign record above is already
-            # committed so we can safely update its status to "failed".
             with transaction.atomic():
-                # ── Sync contacts to Brevo list ───────────────────────────────
-                # Reuse the existing Brevo list for this event if one was
-                # already created by a previous campaign. This ensures we
-                # never create duplicate contact lists for the same event.
                 existing = (
                     EmailCampaign.objects
                     .filter(event=event, brevo_list_id__isnull=False)
@@ -128,10 +108,8 @@ class CampaignService:
                     list_name = f"QavTix-Event-{event.id}"
                     list_id   = brevo.create_contact_list(list_name)
 
-                # Always re-sync contacts so new ticket buyers are included
                 brevo.sync_contacts_to_list(list_id, contacts)
 
-                # ── Create and send campaign in Brevo ─────────────────────────
                 brevo_campaign_id = brevo.create_email_campaign(
                     name         = campaign.campaign_name,
                     subject      = campaign.subject,
@@ -142,7 +120,6 @@ class CampaignService:
                 )
                 brevo.send_email_campaign(brevo_campaign_id)
 
-                # ── Persist all Brevo references + final status ───────────────
                 campaign.brevo_list_id     = list_id
                 campaign.brevo_campaign_id = brevo_campaign_id
                 campaign.status            = "sent"
@@ -157,21 +134,73 @@ class CampaignService:
             raise
         except Exception as exc:
             logger.exception("Campaign send failed for event %s: %s", event.id, exc)
-            # Campaign row is guaranteed to exist here — safe to update
             campaign.status = "failed"
             campaign.save(update_fields=["status"])
             raise CampaignError("Failed to send campaign. Please try again.", 500)
 
         return campaign
 
+    # ── Single Email Send ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def send_single_email(host, data):
+        """
+        Consumes 1 email quota before sending.
+        Blocked immediately if quota is 0.
+        """
+        from host.services.campaign_quota_service import CampaignQuotaService, QuotaExceededError
+
+        try:
+            CampaignQuotaService.consume_email_quota(host, count=1)
+        except QuotaExceededError as e:
+            raise CampaignError(e.message, e.status)
+
+        try:
+            brevo.send_transactional_email(
+                to_email     = data["recipient_email"],
+                subject      = data["subject"],
+                html_content = data["html_content"],
+                sender_name  = data.get("sender_name", "QavTix"),
+                sender_email = data.get("sender_email", "savieztech@gmail.com"),
+            )
+        except Exception as exc:
+            logger.exception("Single email send failed: %s", exc)
+            # Quota was already consumed — log it but don't refund
+            # (refunding opens race conditions and is complex to handle safely)
+            raise CampaignError("Failed to send email. Please try again.", 500)
+
+    # ── Single SMS Send ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def send_single_sms(host, data):
+        """
+        Consumes 1 SMS quota before sending.
+        Blocked immediately if quota is 0.
+        """
+        from host.services.campaign_quota_service import CampaignQuotaService, QuotaExceededError
+
+        try:
+            CampaignQuotaService.consume_sms_quota(host, count=1)
+        except QuotaExceededError as e:
+            raise CampaignError(e.message, e.status)
+
+        sender = data.get("sender_name") or "QavTix"
+        sender = "".join(filter(str.isalnum, sender))[:11]
+
+        try:
+            brevo.send_transactional_sms(
+                recipient = data["recipient_phone"],
+                content   = data["message"],
+                sender    = sender,
+            )
+        except Exception as exc:
+            logger.exception("SMS send failed: %s", exc)
+            raise CampaignError(f"Failed to send SMS. Please try again.", 500)
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     @staticmethod
     def _build_contact_list(event) -> list[dict]:
-        """
-        Collect unique attendee emails + names from all completed orders
-        for the event. Returns a list ready for Brevo's import endpoint.
-        """
         rows = (
             Order.objects
             .filter(event=event, status="completed")
@@ -197,49 +226,6 @@ class CampaignService:
                 },
             })
         return contacts
-    
-
-    @staticmethod
-    def send_single_email(host, data):
-        """
-        Sends a one-off transactional email to a single recipient.
-        No campaign record created — purely a direct send.
-        """
-        
-
-        try:
-            brevo.send_transactional_email(
-            to_email      = data["recipient_email"],
-            subject       = data["subject"],
-            html_content  = data["html_content"],
-            sender_name   = data.get("sender_name", "QavTix"),
-            sender_email  = data.get("sender_email", "savieztech@gmail.com"),
-        )
-        except Exception as exc:
-            logger.exception("Single email send failed: %s", exc)
-            raise CampaignError("Failed to send email. Please try again.", 500)
-
-    @staticmethod
-    def send_single_sms(host, data):
-        """
-        Sends a single transactional SMS via Brevo.
-        """
-        sender = data.get("sender_name") or "QavTix"
-        
-        # Ensure sender name is valid for SMS (max 11 alphanumeric characters)
-        sender = "".join(filter(str.isalnum, sender))[:11]
-
-        try:
-            # You will define this in your brevo utility file
-            return brevo.send_transactional_sms(
-                recipient=data["recipient_phone"],
-                content=data["message"],
-                sender=sender
-            )
-        except Exception as e:
-            logger.exception("SMS send failed")
-            raise CampaignError(f"Failed to send SMS: {str(e)}", 500)
-        
 
 
 class CampaignError(Exception):

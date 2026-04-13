@@ -9,7 +9,7 @@ from events.models import Event
 from host.models import Host, HostSubscription
 from host.services.RenewSubscriptionService import RenewSubscriptionService, SubscriptionError
 from host.services.brevoservice import CampaignError, CampaignService   
-from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_fees, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta
+from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_fees, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta, _quota_data
 from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, HostService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
 from transactions.models import Order, OrderTicket, Withdrawal
@@ -1144,46 +1144,53 @@ class EmailCampaignListView(PlanFeatureMixin,generics.ListAPIView):
     request=EmailCampaignCreateSerializer,
     responses=EmailCampaignListSerializer,
 )
-class EmailCampaignCreateAndSendView(APIView):
+class EmailCampaignCreateAndSendView(PlanFeatureMixin, APIView):
     """
     POST /campaigns/send/
-
+ 
     Creates and immediately sends the campaign in a single action.
-
+    Blocked if quota for the active subscription period is exhausted.
+ 
     Body
     ────
     event_id      : uuid
     campaign_name : string
     subject       : string
-    html_content  : string  (full HTML email body)
-    sender_name   : string  (optional — defaults to event organizer name)
-    sender_email  : email   (optional — defaults to event public email)
+    html_content  : string
+    sender_name   : string  (optional)
+    sender_email  : email   (optional)
     """
     permission_classes = [permissions.IsAuthenticated]
-
+    required_feature   = "email_campaigns"  # blocks free plan at mixin level
+ 
     def post(self, request):
         host = _get_host(request)
         if host is None:
             return api_response(message="You are not a host.", status_code=403)
-
+ 
         serializer = EmailCampaignCreateSerializer(data=request.data)
         if not serializer.is_valid():
             return api_response(message=serializer.errors, status_code=400)
-
+ 
         try:
             campaign = CampaignService.create_and_send_campaign(
                 host=host,
                 data=serializer.validated_data,
             )
         except CampaignError as e:
-            return api_response(message=e.message, status_code=e.status)
-
+            return api_response(
+                message=e.message,
+                status_code=e.status,
+                data=_quota_data(host, "email") if e.status == 400 else {},
+            )
+ 
         return api_response(
             message="Campaign sent successfully.",
             status_code=201,
             data=EmailCampaignListSerializer(campaign).data,
         )
-
+ 
+ 
 @extend_schema(
     operation_id="host_campaign_send_single",
     request=SingleEmailCampaignSerializer,
@@ -1192,13 +1199,13 @@ class EmailCampaignCreateAndSendView(APIView):
 class SingleEmailSendView(PlanFeatureMixin, APIView):
     """
     POST /campaigns/send-single/
-
+ 
     Sends a one-off email to a single recipient.
-    Does not create a campaign record — just sends the email.
-
+    Consumes 1 email send from the active subscription quota.
+ 
     Body
     ────
-    recipient_email : email  — who to send to
+    recipient_email : email
     subject         : string
     html_content    : string
     sender_name     : string  (optional)
@@ -1206,30 +1213,32 @@ class SingleEmailSendView(PlanFeatureMixin, APIView):
     """
     permission_classes = [permissions.IsAuthenticated]
     required_feature   = "email_campaigns"
-
+ 
     def post(self, request):
         host = _get_host(request)
         if host is None:
             return api_response(message="You are not a host.", status_code=403)
-
+ 
         serializer = SingleEmailCampaignSerializer(data=request.data)
         if not serializer.is_valid():
             return api_response(message=serializer.errors, status_code=400)
-
-        data = serializer.validated_data
-
+ 
         try:
-            CampaignService.send_single_email(
-                host=host,
-                data=data,
-            )
+            CampaignService.send_single_email(host=host, data=serializer.validated_data)
         except CampaignError as e:
-            return api_response(message=e.message, status_code=e.status)
-
+            return api_response(
+                message=e.message,
+                status_code=e.status,
+                data=_quota_data(host, "email") if e.status == 400 else {},
+            )
+ 
         return api_response(
-            message=f"Email sent to {data['recipient_email']} successfully.",
+            message=f"Email sent to {serializer.validated_data['recipient_email']} successfully.",
             status_code=200,
-            data={"recipient": data["recipient_email"]},
+            data={
+                "recipient": serializer.validated_data["recipient_email"],
+                **_quota_data(host, "email"),
+            },
         )
 
 @extend_schema(
@@ -1268,7 +1277,8 @@ class SingleSMSSendView(PlanFeatureMixin, APIView):
             TwilioService.send_single_sms(
                 recipient=data["recipient_phone"],
                 message=data["message"],
-                sender=data.get("sender_name")
+                sender=data.get("sender_name"),
+                host=host, data=data
             )
         except CampaignError as e:
             return api_response(message=e.message, status_code=e.status)

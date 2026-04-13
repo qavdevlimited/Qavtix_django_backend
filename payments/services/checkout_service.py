@@ -145,7 +145,6 @@ class CheckoutService:
         fees       = _calculate_fees(base_total)
         total      = base_total + fees
 
-        print(base_total, fees, total)
 
         self._reserve_tickets(line_items)
 
@@ -955,6 +954,46 @@ class SplitExpiryService:
 
         split_order.order.status = "cancelled"
         split_order.order.save(update_fields=["status"])
+
+
+class PendingOrderExpiryService:
+
+    @transaction.atomic
+    def run(self):
+        from transactions.models import Order
+        from django.utils import timezone
+        from django.db.models import F
+
+        # Expire orders that are pending for more than X minutes (e.g. 15-30 min)
+        expiry_window = timezone.now() - timezone.timedelta(minutes=20)
+
+        expired_orders = Order.objects.select_for_update().filter(
+            status="pending",
+            created_at__lt=expiry_window,
+            is_split=False,                    
+            marketplace_listing__isnull=True 
+        )
+
+        for order in expired_orders:
+            self._cancel_pending_order(order)
+
+    def _cancel_pending_order(self, order):
+        from events.models import Ticket
+        from django.db.models import F
+
+        logger.info(f"Expiring abandoned order {order.id} for event {order.event.id}")
+
+        # Release the tickets
+        for order_ticket in order.tickets.all():
+            Ticket.objects.filter(id=order_ticket.ticket_id).update(
+                sold_count=F("sold_count") - order_ticket.quantity
+            )
+
+        # Optional: create a cancelled record or just mark as expired
+        order.status = "expired"          # or "cancelled"
+        order.save(update_fields=["status"])
+
+        # You can also send an email if you want: "Your reservation expired"
 
 
 class CheckoutError(Exception):

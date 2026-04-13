@@ -50,6 +50,14 @@ def _send(to: str, subject: str, title: str, body_html: str) -> None:
         logger.error(f"Failed to send email to {to}: {exc}")
         raise  # allow Celery to retry if the task is configured to do so
 
+@shared_task
+def expire_pending_orders():
+    """
+    Periodic task — runs every 10 or 15 minutes.
+    Cancels normal pending orders where user never completed payment.
+    """
+    from payments.services.checkout_service import PendingOrderExpiryService
+    PendingOrderExpiryService().run()
 
 @shared_task
 def send_split_payment_emails(split_order_id, participant_ids):

@@ -327,6 +327,10 @@ CELERY_RESULT_SERIALIZER = "json"
 
 
 CELERY_BEAT_SCHEDULE = {
+    'expire-pending-orders-every-15-min': {
+        'task': 'payments.tasks.expire_pending_orders',
+        'schedule': crontab(minute='*/15'),   # every 15 minutes
+    },
     "expire-split-orders": {
         "task":     "payments.tasks.expire_split_orders",
         "schedule": crontab(minute="*/30"),  # every 30 minutes

@@ -36,6 +36,7 @@ urlpatterns = [
     path("campaigns/", EmailCampaignListView.as_view(), name="campaign-list"),
     path("campaigns/send/", EmailCampaignCreateAndSendView.as_view(), name="campaign-send"),
     path("campaigns/send-single/", SingleEmailSendView.as_view(), name="campaign-send-single"),
+    path("campaigns/send-single-sms/", SingleSMSSendView.as_view(), name="campaign-send-single-sms"),   
 
     # CHECK IN SYSTEM
     path("checkin/overview/",  CheckInOverviewView.as_view(),     name="checkin-overview"),

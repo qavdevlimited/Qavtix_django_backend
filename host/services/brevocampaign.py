@@ -8,6 +8,9 @@ knows about Brevo's API shape.
 import logging
 import requests
 from django.conf import settings
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
+
 
 logger = logging.getLogger(__name__)
 
@@ -159,3 +162,23 @@ def send_transactional_email(
         },
     )
     response.raise_for_status()
+
+
+def send_transactional_sms(recipient, content, sender):
+    configuration = sib_api_v3_sdk.Configuration()
+    configuration.api_key['api-key'] = 'YOUR_BREVO_API_KEY'
+    
+    api_instance = sib_api_v3_sdk.TransactionalSMSApi(sib_api_v3_sdk.ApiClient(configuration))
+    
+    send_transac_sms = sib_api_v3_sdk.SendTransacSms(
+        sender=sender,
+        recipient=recipient,
+        content=content,
+        type="transactional"
+    )
+
+    try:
+        api_response = api_instance.send_transac_sms(send_transac_sms)
+        return api_response
+    except ApiException as e:
+        raise Exception(f"Exception when calling TransactionalSMSApi->send_transac_sms: {e}")

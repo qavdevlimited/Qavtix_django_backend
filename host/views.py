@@ -19,7 +19,7 @@ CustomerOrderHistorySerializer, DashboardCardSerializer, EmailCampaignCreateSeri
 EventCardSerializer,EventTableSerializer, GeoBreakdownSerializer, HostActivitySerializer, HostNotificationSerializer, HostSubscriptionStatusSerializer, 
 HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSerializer, PromoCodeListSerializer, RevenueCardSerializer,
  RevenueChartPointSerializer, RevenuePointSerializer, SalesBreakdownSerializer, SalesCardSerializer, ScanInputSerializer, ScanResultSerializer, 
- SingleEmailCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,
+ SingleEmailCampaignSerializer, SingleSMSCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,
  DownloadEventAttendeeSerializer,PrivacySettingsSerializer, CustomerRevenueChartPointSerializer)
 from public.response import flatten_errors,api_response
 from django.http import Http404
@@ -1232,6 +1232,53 @@ class SingleEmailSendView(PlanFeatureMixin, APIView):
             data={"recipient": data["recipient_email"]},
         )
 
+@extend_schema(
+    operation_id="host_campaign_send_single_sms",
+    request=SingleSMSCampaignSerializer,
+    responses={200: OpenApiResponse(description="SMS sent successfully")},
+)
+class SingleSMSSendView(PlanFeatureMixin, APIView):
+    """
+    POST /campaigns/send-single-sms/
+    Sends a one-off SMS to a single recipient.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    required_feature   = "email_campaigns" # Ensure this is in your PlanFeatureMixin
+
+    def post(self, request):
+        host = _get_host(request)
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        serializer = SingleSMSCampaignSerializer(data=request.data)
+        if not serializer.is_valid():
+            # Your exception handler will now flatten this to a string
+            return api_response(message=serializer.errors, status_code=400)
+
+        data = serializer.validated_data
+
+        # try:
+        #     CampaignService.send_single_sms(host=host, data=data)
+        # except CampaignError as e:
+        #     return api_response(message=e.message, status_code=e.status)
+        try:
+            # We call our new TwilioService instead of the old Brevo one
+            from  .services.twiloservice import TwilioService
+            
+            TwilioService.send_single_sms(
+                recipient=data["recipient_phone"],
+                message=data["message"],
+                sender=data.get("sender_name")
+            )
+        except CampaignError as e:
+            return api_response(message=e.message, status_code=e.status)
+
+        return api_response(
+            message=f"SMS sent to {data['recipient_phone']} successfully.",
+            status_code=200,
+            data={"recipient": data["recipient_phone"]},
+        )
+    
 
 #CHECK IN FEATURE VIEWS
 @extend_schema(

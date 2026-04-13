@@ -218,6 +218,27 @@ class CampaignService:
         except Exception as exc:
             logger.exception("Single email send failed: %s", exc)
             raise CampaignError("Failed to send email. Please try again.", 500)
+
+    @staticmethod
+    def send_single_sms(host, data):
+        """
+        Sends a single transactional SMS via Brevo.
+        """
+        sender = data.get("sender_name") or "QavTix"
+        
+        # Ensure sender name is valid for SMS (max 11 alphanumeric characters)
+        sender = "".join(filter(str.isalnum, sender))[:11]
+
+        try:
+            # You will define this in your brevo utility file
+            return brevo.send_transactional_sms(
+                recipient=data["recipient_phone"],
+                content=data["message"],
+                sender=sender
+            )
+        except Exception as e:
+            logger.exception("SMS send failed")
+            raise CampaignError(f"Failed to send SMS: {str(e)}", 500)
         
 
 

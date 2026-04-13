@@ -781,6 +781,11 @@ class SingleEmailCampaignSerializer(serializers.Serializer):
     sender_name  = serializers.CharField(max_length=255, required=False)
     sender_email = serializers.EmailField(required=False)
 
+class SingleSMSCampaignSerializer(serializers.Serializer):
+    recipient_phone = serializers.CharField(help_text="Format: +2348000000000")
+    message = serializers.CharField(max_length=160) # Standard SMS length
+    sender_name = serializers.CharField(max_length=11, required=False)
+    
 
 class EmailCampaignSendSerializer(serializers.Serializer):
     """Body is empty — campaign_id comes from the URL."""

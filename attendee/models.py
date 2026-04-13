@@ -3,6 +3,7 @@ from public.models import Category
 from django.conf import settings
 import uuid
 from django.contrib.auth.models import User
+from rest_framework.exceptions import ValidationError
 
 class Attendee(models.Model):
     user = models.OneToOneField(
@@ -26,6 +27,23 @@ class Attendee(models.Model):
     profile_picture=models.URLField(blank=True,null=True)
     show_events_attending = models.BooleanField(default=True)
     show_favorites = models.BooleanField(default=True)
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            old = Attendee.objects.get(pk=self.pk)
+
+            immutable_fields = ["country", "state", "city"]
+
+            for field in immutable_fields:
+                old_value = getattr(old, field)
+                new_value = getattr(self, field)
+
+                if old_value and old_value != new_value:
+                    raise ValidationError(
+                "Country cannot be changed once set."
+            )
+
+        super().save(*args, **kwargs)
 
 
     def __str__(self):

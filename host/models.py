@@ -3,7 +3,7 @@ import uuid
 from django.db import models
 from public.models import Category
 from django.conf import settings
-
+from rest_framework.exceptions import ValidationError
 
 
 
@@ -39,6 +39,25 @@ class Host(models.Model):
     show_my_events = models.BooleanField(default=True)
     show_past_events = models.BooleanField(default=True)
     verified=models.BooleanField(default=False)
+
+
+    def save(self, *args, **kwargs):
+        if self.pk:  # object already exists
+            old = Host.objects.get(pk=self.pk)
+
+            # BLOCK CHANGES if already set before
+            immutable_fields = ["country", "state", "city"]
+
+            for field in immutable_fields:
+                old_value = getattr(old, field)
+                new_value = getattr(self, field)
+
+                if old_value and old_value != new_value:
+                    raise ValidationError(
+                "Country cannot be changed once set."
+            )
+
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.full_name

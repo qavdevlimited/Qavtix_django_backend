@@ -1,6 +1,7 @@
 from decimal import Decimal
 from django.db.models import Sum, Q
 from django.utils.timezone import now as tnow,timedelta
+from host.models import FeatureUsage
 from transactions.models import Order, Withdrawal
 from datetime import date, datetime, timedelta
 from django.core import signing
@@ -239,3 +240,26 @@ def _quota_data(host, channel: str) -> dict:
         }
     except Exception:
         return {}
+    
+
+def can_use_featured(host):
+    from host.plan_limits import get_host_plan_slug
+
+    plan = get_host_plan_slug(host)
+
+    if plan != "enterprise":
+        return False, "Upgrade to enterprise to use this feature."
+
+    sub = host.subscriptions.filter(status="active").first()
+    if not sub:
+        return False, "No active subscription."
+
+    usage, _ = FeatureUsage.objects.get_or_create(
+        host=host,
+        subscription=sub,
+    )
+
+    if usage.featured_used:
+        return False, "You have already used your free featured listing for this plan."
+
+    return True, usage

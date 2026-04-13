@@ -352,3 +352,27 @@ class CampaignUsage(models.Model):
             f"email: {self.email_sends_used}, "
             f"sms: {self.sms_sends_used}"
         )
+    
+
+
+class FeatureUsage(models.Model):
+    """
+    Tracks one-off feature usage per subscription.
+    """
+
+    host = models.ForeignKey(
+        "Host",
+        on_delete=models.CASCADE,
+        related_name="feature_usage",
+    )
+
+    subscription = models.OneToOneField(
+        "HostSubscription",
+        on_delete=models.CASCADE,
+        related_name="feature_usage",
+    )
+
+    # FEATURE FLAGS
+    featured_used = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)

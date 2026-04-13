@@ -6,6 +6,8 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
+from host.models import FeatureUsage
+from host.plan_limits import get_host_plan_slug
 from payments.services.factory import get_gateway
 from payments.models import PaymentCard, Payment
 
@@ -71,6 +73,58 @@ class FeaturedInitiateService:
             )
         except FeaturedPlan.DoesNotExist:
             raise FeaturedError("Featured plan not found.", 404)
+        
+        plan_slug = get_host_plan_slug(event.host)
+
+        if plan_slug == "enterprise":
+            sub = (
+                event.host.subscriptions
+                .select_for_update()
+                .filter(status="active")
+                .first()
+            )
+
+            if sub is not None:
+                usage, _ = FeatureUsage.objects.select_for_update().get_or_create(
+                    host=event.host,
+                    subscription=sub,
+                )
+
+                if not usage.featured_used:
+                    now = timezone.now()
+                    FREE_DAYS = 14
+
+                    featured = FeaturedEvent.objects.create(
+                        event=event,
+                        user=self.user,
+                        end_date=now + timezone.timedelta(days=FREE_DAYS),
+                        payment_amount=Decimal("0.00"),
+                        payment_method="free_quota",
+                        status="active",
+                        metadata={
+                            "reference": f"free_feat_{uuid.uuid4().hex[:12]}",
+                            "plan_slug": plan.slug,
+                            "flow": "featured",
+                            "duration_days": FREE_DAYS,
+                            "free_quota_used": True,
+                            "completed_by": "enterprise_free",
+                            "original_price": str(plan.price),
+                        },
+                    )
+
+                    usage.featured_used = True
+                    usage.save(update_fields=["featured_used"])
+
+                    from transactions.tasks import send_featured_activation_email
+                    send_featured_activation_email.delay(str(featured.id))
+
+                    return {
+                        "flow": "free",
+                        "featured_id": str(featured.id),
+                        "status": "active",
+                        "message": "Activated using your free 2-week enterprise quota.",
+                        "expires_at": featured.end_date.isoformat(),
+                    }
 
         reference   = f"qavtix_feat_{uuid.uuid4().hex[:16]}"
         amount_kobo = int(float(plan.price) * 100)

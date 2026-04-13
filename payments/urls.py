@@ -18,7 +18,8 @@ from payments.views import (
     DeleteCardView,
     SplitPayView,
     SubscribeInitiateView,
-    SubscriptionHistoryView
+    SubscriptionHistoryView,
+    ActivateFreeTrialView
 )
 from transactions.views import CompleteFeaturedView, FeaturedInitiateView, FeaturedPlanListView
 
@@ -50,6 +51,7 @@ urlpatterns = [
     path("plans/subscribe/",  SubscribeInitiateView.as_view()),
     path("plans/complete/",   CompleteSubscriptionView.as_view()),
     path("plans/cancel/", CancelSubscriptionView.as_view()),
+    path('plans/free-trial/', ActivateFreeTrialView.as_view(), name='free-trial'),
 
 
     path('attendee-plans/subscribe/', AttendeeSubscribeInitiateView.as_view(), name='attendee-subscribe'),

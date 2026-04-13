@@ -15,7 +15,7 @@ from payments.services.checkout_service import CheckoutService, CheckoutError
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from decimal import Decimal
 from django.utils import timezone
-from payments.services.subscription_service import CompleteSubscriptionService, SubscriptionError, SubscriptionInitiateService
+from payments.services.subscription_service import CompleteSubscriptionService, FreeTrialService, SubscriptionError, SubscriptionInitiateService
 from payments.services.webhook_service import PaystackWebhookService
 from public.response import flatten_errors,api_response
 from stripe import StripeError, InvalidRequestError
@@ -1160,3 +1160,42 @@ class AttendeeCancelSubscriptionView(APIView):
                 "status":     "cancelled",
             },
         )
+    
+
+
+@extend_schema(
+    request=None,  # No body required
+    responses={200: {"message": "14-day free Pro plan activated successfully"}},
+    description="Activate one-time 14-day free Pro trial (requires saved card)"
+)
+class ActivateFreeTrialView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            service = FreeTrialService(user=request.user)
+            result = service.run()
+
+            return api_response(
+                message=result["message"],
+                status_code=200,
+                data={
+                    "subscription_id": result["subscription_id"],
+                    "plan": result["plan"],
+                    "billing_cycle": result["billing_cycle"],
+                    "expires_at": result["expires_at"],
+                    "days_remaining": result["days_remaining"],
+                }
+            )
+
+        except SubscriptionError as e:
+            return api_response(
+                message=str(e),
+                status_code=e.status
+            )
+        except Exception as e:
+            logger.error(f"Free trial activation failed: {e}", exc_info=True)
+            return api_response(
+                message="An unexpected error occurred while activating free trial.",
+                status_code=500
+            )

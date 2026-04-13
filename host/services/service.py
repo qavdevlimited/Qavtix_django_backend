@@ -6,6 +6,7 @@ from django.utils import timezone
 from events.models import Ticket, PromoCode,Event
 from attendee.models import AffiliateLink          # adjust to your path
 from host.models import CheckIn, HostActivity, HostNotification
+from payments.models import PaymentCard
 from transactions.models import IssuedTicket, Order, OrderTicket
 
 from django.core import signing
@@ -85,6 +86,9 @@ class HostService:
         data["payout_available"] = payout_available
         data["available_balance"] = available_balance
 
+        eligible, message = HostService.can_activate_free_trial(host)
+        data["can_activate_free_trial"] = eligible
+
         return data
 
     @staticmethod
@@ -142,6 +146,51 @@ class HostService:
         payout_available = (available_balance >= Decimal('10000')) and is_friday
 
         return payout_available,available_balance
+
+
+    @staticmethod
+    def can_activate_free_trial(host):
+        """
+        Returns True/False + reason (for FE to show proper message)
+        Optimized - minimal queries, no N+1.
+        """
+        if not host:
+            return False, "You need to create a host profile first."
+
+        # Use the same queryset to avoid multiple hits
+        subscriptions_qs = host.subscriptions.all()
+
+        # 1. Already has active paid plan?
+        has_active_paid = subscriptions_qs.filter(
+            status="active",
+            billing_cycle__in=["monthly", "annual"]
+        ).exists()
+
+        if has_active_paid:
+            return False, "You already have an active paid subscription."
+
+        # 2. Has ever paid for any plan before?
+        has_paid_before = subscriptions_qs.filter(
+            amount_paid__gt=0
+        ).exists()
+
+        if has_paid_before:
+            return False, "You are not eligible for the free trial because you have previously paid for a plan."
+
+        # 3. Has already used the free trial?
+        has_used_trial = subscriptions_qs.filter(
+            metadata__used_free_trial=True
+        ).exists()
+
+        if has_used_trial:
+            return False, "You have already used your one-time 14-day free Pro trial."
+
+        # 4. Has at least one saved card?
+        has_card = PaymentCard.objects.filter(user=host.user).exists()
+        if not has_card:
+            return False, "Please add a payment card to your account before activating the free trial."
+
+        return True, "You are eligible for the 14-day free Pro trial."
 
 class PromoCodeService:
 

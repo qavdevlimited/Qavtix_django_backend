@@ -306,6 +306,113 @@ class CompleteSubscriptionService:
         subscription.save(update_fields=["status"])
 
 
+
+
+class FreeTrialService:
+    """
+    Handles one-time 14-day free Pro plan activation.
+    Optimized to avoid unnecessary queries (no N+1).
+    """
+
+    def __init__(self, user):
+        self.user = user
+
+    @transaction.atomic
+    def run(self):
+        from host.models import HostSubscription
+        from payments.models import HostPlan, PaymentCard
+
+        host = getattr(self.user, "host_profile", None)
+        if not host:
+            raise SubscriptionError("Only hosts can activate the free trial.", 403)
+
+        # === Optimized Eligibility Check (Single combined query where possible) ===
+        subscriptions_qs = HostSubscription.objects.filter(host=host)
+
+        # Check active non-free plan
+        active_paid = subscriptions_qs.filter(
+            status="active"
+        ).exclude(plan_slug="free").first()
+
+        if active_paid:
+            raise SubscriptionError(
+                f"You already have an active {active_paid.plan_slug} plan.", 400
+            )
+
+        # Check if ever paid
+        has_paid_before = subscriptions_qs.filter(amount_paid__gt=0).exists()
+        if has_paid_before:
+            raise SubscriptionError(
+                "You are not eligible for the free trial as you have previously paid for a plan.", 
+                400
+            )
+
+        # Check if already used free trial
+        used_trial = subscriptions_qs.filter(metadata__used_free_trial=True).exists()
+        if used_trial:
+            raise SubscriptionError(
+                "You have already used your one-time 14-day free Pro trial.", 
+                400
+            )
+
+        # === Must have at least one saved card ===
+        if not PaymentCard.objects.filter(user=self.user).exists():
+            raise SubscriptionError(
+                "Please add a payment card to your account before activating the free trial.",
+                400
+            )
+
+        # === Get Pro Plan ===
+        try:
+            pro_plan = HostPlan.objects.get(slug="pro", is_active=True)
+        except HostPlan.DoesNotExist:
+            raise SubscriptionError("Pro plan configuration not found.", 500)
+
+        # === Create Free Trial ===
+        expires_at = timezone.now() + timezone.timedelta(days=14)
+
+        subscription = HostSubscription.objects.create(
+            host=host,
+            plan=pro_plan,
+            plan_slug="pro",
+            billing_cycle="free",
+            status="active",
+            amount_paid=Decimal("0.00"),
+            currency="NGN",
+            expires_at=expires_at,
+            auto_renew=False,
+            metadata={
+                "used_free_trial": True,
+                "trial_activated_at": timezone.now().isoformat(),
+                "source": "free_trial_service",
+                "is_free_trial": True,
+            }
+        )
+
+        # Cancel any other active subscriptions (usually just the free one)
+        HostSubscription.objects.filter(
+            host=host,
+            status="active"
+        ).exclude(id=subscription.id).update(
+            status="cancelled",
+            cancelled_at=timezone.now()
+        )
+
+        # Send activation email (same as your paid flow)
+        from payments.tasks import send_plan_activated_email
+        send_plan_activated_email.delay(str(subscription.id))
+
+        logger.info(f"14-day free Pro trial activated for user {self.user.id} (host {host.id})")
+
+        return {
+            "message": "14-day free Pro plan activated successfully",
+            "subscription_id": str(subscription.id),
+            "plan": "pro",
+            "billing_cycle": "free",
+            "expires_at": expires_at.isoformat(),
+            "days_remaining": 14,
+        }
+
 class SubscriptionError(Exception):
     def __init__(self, message, status=400):
         self.message = message

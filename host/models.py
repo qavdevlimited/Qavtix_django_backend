@@ -260,6 +260,41 @@ class HostSubscription(models.Model):
     def __str__(self):
         return f"{self.host} — {self.plan_slug} — {self.status}"
     
+    @classmethod
+    def is_eligible_for_free_trial(cls, host):
+        """Check if host can activate 14-day free Pro trial"""
+        if not host:
+            return False, "Host profile not found."
+
+        # 1. Already has active non-free plan?
+        active_sub = cls.objects.filter(
+            host=host, 
+            status="active"
+        ).exclude(plan_slug="free").first()
+
+        if active_sub:
+            return False, f"You already have an active {active_sub.plan_slug} plan."
+
+        # 2. Has ever paid for any plan?
+        has_paid_before = cls.objects.filter(
+            host=host, 
+            amount_paid__gt=0
+        ).exists()
+
+        if has_paid_before:
+            return False, "You are not eligible for the free trial as you have previously paid for a plan."
+
+        # 3. Has already used the free trial?
+        used_trial = cls.objects.filter(
+            host=host,
+            metadata__used_free_trial=True
+        ).exists()
+
+        if used_trial:
+            return False, "You have already used your one-time 14-day free Pro trial."
+
+        return True, None
+    
 
 
 class VerifiedBadge(models.Model):

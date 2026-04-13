@@ -75,6 +75,14 @@ class PayoutInformation(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'bank_name', 'account_number'], 
+                name='unique_user_payout_account'
+            )
+        ]
+
     
 
     def __str__(self):

@@ -29,7 +29,7 @@ from django.http import Http404
 from .utils import EventDashboardFilter, apply_date_range_qs,pagination_data
 from django.http import Http404
 from django.db.models import (
-    Count, Sum, Max, Min, Q, OuterRef, Subquery, DecimalField
+    Count, Sum, Max, Min, Q, OuterRef, Subquery, DecimalField,ProtectedError
 )
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 from django.utils import timezone
@@ -673,7 +673,13 @@ class PayoutInformationDeleteView(generics.DestroyAPIView):
                 status_code=404
             )
 
-        payout.delete()
+        try:
+            payout.delete()
+        except ProtectedError:
+            return api_response(
+                message="Cannot delete this account because it is linked to existing withdrawals.",
+                status_code=400
+            )
         return api_response(
             message="Payout information deleted successfully.",
             status_code=200,

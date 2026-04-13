@@ -2,7 +2,7 @@ import django
 from django.utils import timezone
 from decimal import Decimal
 from django.contrib.auth.password_validation import validate_password
-from rest_framework import serializers
+from rest_framework import serializers,validators
 from host.models import Host, HostSubscription
 from host.services.service import HostService
 from payments.models import HostPlan, PayoutInformation
@@ -533,6 +533,14 @@ class PayoutInformationSerializer(serializers.ModelSerializer):
         model = PayoutInformation
         fields = ["id", "bank_name", "account_name", "account_number", "is_default", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+        validators = [
+            validators.UniqueTogetherValidator(
+                queryset=PayoutInformation.objects.all(),
+                fields=['bank_name', 'account_number'],
+                message="You have already added this payout account."
+            )
+        ]
 
 
 class WithdrawalHistorySerializer(serializers.ModelSerializer):

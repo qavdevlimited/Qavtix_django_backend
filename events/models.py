@@ -74,7 +74,7 @@ class Event(models.Model):
 
     # Affiliate
     affiliate_enabled = models.BooleanField(default=False)
-    commission_percentage = models.PositiveIntegerField(null=True, blank=True)
+    commission_percentage = models.DecimalField( max_digits=5, decimal_places=2, null=True, blank=True)
     affiliate_start = models.DateTimeField(null=True, blank=True)
     affiliate_end = models.DateTimeField(null=True, blank=True)
 

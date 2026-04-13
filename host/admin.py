@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from host.models import Host,HostSubscription,HostNotification
+from host.models import Host,HostSubscription,HostNotification,EmailCampaign
 
 # Register your models here.
 
@@ -8,3 +8,4 @@ from host.models import Host,HostSubscription,HostNotification
 admin.site.register(Host)
 admin.site.register(HostSubscription)
 admin.site.register(HostNotification)
+admin.site.register(EmailCampaign)

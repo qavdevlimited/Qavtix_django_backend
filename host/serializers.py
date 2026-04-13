@@ -129,6 +129,17 @@ class EventSerializer(serializers.ModelSerializer):
         if instance and str(instance.status).lower() == "banned":
             from .exceptions import EventBannedException
             raise EventBannedException()  
+        
+        affiliate_enabled = attrs.get('affiliate_enabled', instance.affiliate_enabled if instance else False)
+        commission = attrs.get('commission_percentage', instance.commission_percentage if instance else 0)
+
+        if affiliate_enabled:
+            # Use Decimal('1') for a safe comparison
+            if commission is None or commission < Decimal('1'):
+                raise serializers.ValidationError(
+                    "Commission percentage must be at least 1%  or above  when affiliates are enabled."
+                )
+            
         return attrs
 
     def create(self, validated_data):

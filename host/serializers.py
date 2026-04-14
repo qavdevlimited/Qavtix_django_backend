@@ -832,11 +832,19 @@ class CheckInAttendeeSerializer(serializers.Serializer):
     checked_in_at   = serializers.SerializerMethodField()
 
     def get_full_name(self, obj):
-        attendee = getattr(obj.owner, "attendee_profile", None)
-        return attendee.full_name if attendee else obj.owner.email
+        if obj.owner:
+            attendee = getattr(obj.owner, "attendee_profile", None)
+            if attendee and attendee.full_name:
+                return attendee.full_name
+            return obj.owner.email
+
+        # guest fallback
+        return obj.guest_email or "Guest User"
 
     def get_email(self, obj):
-        return obj.owner.email
+        if obj.owner:
+            return obj.owner.email
+        return obj.guest_email
 
     def get_qr_token(self, obj):
         from .helpers import generate_checkin_token

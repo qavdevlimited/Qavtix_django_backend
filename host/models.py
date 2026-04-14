@@ -133,7 +133,7 @@ class CheckIn(models.Model):
     ]
 
     id            = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    issued_ticket = models.OneToOneField(
+    issued_ticket = models.ForeignKey(
         "transactions.IssuedTicket",
         on_delete=models.CASCADE,
         related_name="checkin",

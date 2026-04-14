@@ -614,7 +614,7 @@ class CheckInService:
         # ── Step 4: check for existing check-in ──────────────────────────────
         # OneToOne guarantees only one CheckIn per ticket.
         # If one already exists, return early with a clear message.
-        existing = getattr(ticket, "checkin", None)
+        existing = ticket.checkin.filter(status="checked_in").first()
         if existing:
             return {
                 "status":           "already_checked_in",

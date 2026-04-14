@@ -863,13 +863,11 @@ class CheckInAttendeeSerializer(serializers.Serializer):
         return media.image_url if media else None
 
     def get_checkin_status(self, obj):
-        checkin = getattr(obj, "checkin", None)
-        if checkin is None:
-            return "pending"
-        return checkin.status
+        checkin = obj.checkin.all().first()
+        return checkin.status if checkin else "pending"
 
     def get_checked_in_at(self, obj):
-        checkin = getattr(obj, "checkin", None)
+        checkin = obj.checkin.all().first()
         return checkin.checked_in_at if checkin else None
 
 

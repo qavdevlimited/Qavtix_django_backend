@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.db.models import OuterRef, Subquery, Sum, Count,Prefetch
 from django.http import Http404
 from attendee.service import get_affiliate_dashboard
+from attendee.tasks import send_attendee_data_export
 from payments.services.currency_utils import get_currency_for_country, get_currency_for_event
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
@@ -1422,33 +1423,14 @@ class DownloadMyDataView(APIView):
     def post(self, request):
         user = request.user
 
-        # Collect data (simplified, you can serialize all related models)
-        data = {
-            "user": {
-                "email": user.email,
-                "username": user.username,
-            },
-            "profile": {
-                "full_name": user.attendee_profile.full_name,
-                "phone_number": user.attendee_profile.phone_number,
-                "dob": user.attendee_profile.dob,
-                "gender": user.attendee_profile.gender,
-                "country": user.attendee_profile.country,
-                "state": user.attendee_profile.state,
-                "city": user.attendee_profile.city,
-            },
-            # Add favorites, orders, tickets, groups, etc.
-        }
+        # fire-and-forget task
+        send_attendee_data_export.delay(user.id)
 
-        # Here you can attach this data to email or generate a file
-        # send_mail(
-        #     subject="Your Data Download",
-        #     message=str(data),  # ideally JSON attachment
-        #     from_email="no-reply@yourdomain.com",
-        #     recipient_list=[user.email]
-        # )
-
-        return api_response("Your data has been sent to your email", 200, {})
+        return api_response(
+            "Your data is being prepared and will be sent to your email shortly",
+            200,
+            {}
+        )
 
 
 class PrivacySettingsView(APIView):

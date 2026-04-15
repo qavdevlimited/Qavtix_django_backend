@@ -2104,7 +2104,7 @@ class CustomerCSVExportView(PlanFeatureMixin, generics.GenericAPIView):
             "end_date": request.query_params.get("end_date"),
         }
 
-    # ✅ FIXED: moved OUTSIDE get() and removed self
+   
     def _customer_rows(self, host, event_id, date_range, ticket_type, search, start_date, end_date):
 
         base = _base_orders(
@@ -2153,7 +2153,7 @@ class CustomerCSVExportView(PlanFeatureMixin, generics.GenericAPIView):
 
         filters = self._get_filters(request)
 
-        # ✅ correct call (NO nested function)
+        
         qs = self._customer_rows(
             host=host,
             event_id=filters["event_id"],

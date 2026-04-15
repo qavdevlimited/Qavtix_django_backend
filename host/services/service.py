@@ -88,6 +88,7 @@ class HostService:
 
         eligible, message = HostService.can_activate_free_trial(host)
         data["can_activate_free_trial"] = eligible
+        data["plan_type"] = HostService.get_host_plan_name(host)
 
         return data
 
@@ -110,6 +111,18 @@ class HostService:
             status="active",
             billing_cycle__in=["monthly", "annual"]   # exclude "free"
         ).exists()
+
+    @staticmethod
+    def get_host_plan_name(host):
+        """
+        Returns the name of the currently active plan, or None if no active subscription.
+        If multiple active subscriptions exist (shouldn't happen), returns the one with the latest start date.
+        """
+        active_subs = host.subscriptions.filter(status="active").order_by("-started_at")
+        if active_subs.exists():
+            return active_subs.first().plan_slug
+        return None 
+    
 
     @staticmethod
     def has_active_verified_badge(host):

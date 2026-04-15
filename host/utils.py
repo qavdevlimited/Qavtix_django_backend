@@ -28,7 +28,7 @@ class EventDashboardFilter(django_filters.FilterSet):
     def filter_performance(self, queryset, name, value):
         queryset = queryset.annotate(
             total_quantity=Coalesce(Sum("tickets__quantity"), 0),
-            total_sold=Coalesce(Sum("tickets__sold_quantity"), 0),
+            total_sold=Coalesce(Sum("tickets__sold_count"), 0),
         )
 
         if value == "fully_booked":

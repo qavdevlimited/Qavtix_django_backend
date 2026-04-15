@@ -6,6 +6,7 @@ from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 from django.http import HttpResponse
 from rest_framework import status
 
+from authentication.mixins import SocialLoginRestrictionMixin
 from authentication.tasks import send_password_change_info_task, send_password_reset_otp_task, send_welcome_email_task
 from .utils import api_response,generate_otp, get_user_display_name
 from rest_framework.exceptions import ValidationError
@@ -77,14 +78,17 @@ class CustomLoginView(APIView):
         )
 
     
-class FacebookLogin(SocialLoginView):
+class FacebookLogin(SocialLoginRestrictionMixin,SocialLoginView):
     adapter_class = FacebookOAuth2Adapter
     client_class = OAuth2Client
     callback_url = settings.FACEBOOK_CALLBACK_URL
+    provider_name = "facebook"
 
     def post(self, request, *args, **kwargs):
         try:
             response = super().post(request, *args, **kwargs)
+            user = self.user
+            self.enforce_2fa_restriction(user)
             return api_response("Login successful", status.HTTP_200_OK, response.data)
         except ValidationError as e:
             # Flatten DRF validation errors
@@ -92,15 +96,18 @@ class FacebookLogin(SocialLoginView):
         except Exception as e:
             return api_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class GoogleLogin(SocialLoginView):
+class GoogleLogin(SocialLoginRestrictionMixin,SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
     client_class = OAuth2Client
     callback_url = settings.CALLBACK_URL
+    provider_name = "google"
 
 
     def post(self, request, *args, **kwargs):
         try:
             response = super().post(request, *args, **kwargs)
+            user = self.user  # set by allauth
+            self.enforce_2fa_restriction(user)
             return api_response("Login successful", status.HTTP_200_OK, response.data)
         except ValidationError as e:
             # Flatten DRF validation errors

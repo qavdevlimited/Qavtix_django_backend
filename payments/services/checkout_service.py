@@ -107,6 +107,18 @@ def _calculate_paystack_fee(total_amount: Decimal) -> Decimal:
     return paystack_fee + PAYSTACK_FLAT
 
 
+def _calculate_vat(amount: Decimal) -> Decimal:
+    from administrator.models import SystemConfig
+
+    vat_enabled = SystemConfig.get("vat_enabled", False)
+    if not vat_enabled:
+        return Decimal("0.00")
+
+    vat_pct = Decimal(str(SystemConfig.get("vat_percentage", 0))) / 100
+
+    return (amount * vat_pct).quantize(Decimal("0.01"))
+
+
 class CheckoutService:
     """
     Handles all checkout flows.
@@ -143,7 +155,9 @@ class CheckoutService:
         reference  = self._generate_reference()
         base_total = max(subtotal - discount, Decimal("0.00"))
         fees       = _calculate_fees(base_total)
-        total      = base_total + fees
+        vat  = _calculate_vat(base_total)
+        total      = base_total + fees + vat
+
 
 
         self._reserve_tickets(line_items)
@@ -154,6 +168,7 @@ class CheckoutService:
             total_amount=base_total,
             discount=discount,
             fees=fees,
+            vat=vat,
             metadata={
                 "reference":      reference,
                 "flow":           "normal",
@@ -238,7 +253,8 @@ class CheckoutService:
         subtotal   = sum(qty * price for _, qty, price in line_items)
         base_total = max(subtotal - discount, Decimal("0.00"))
         fees       = _calculate_fees(base_total)
-        total      = base_total + fees
+        vat        = _calculate_vat(base_total)
+        total      = base_total + fees + vat
 
         if len(line_items) > 1:
             raise CheckoutError("Split payment only supports one ticket type per order.", 400)
@@ -300,6 +316,7 @@ class CheckoutService:
             total_amount=base_total,
             discount=discount,
             fees=fees,
+            vat=vat,
             metadata={
                 "reference": reference,
                 "flow":      "split",
@@ -419,7 +436,8 @@ class CheckoutService:
         ticket_total    = listing.price
         ticket_commision = _calculate_marketplace_commision(ticket_total)
         paystack_fee   =   _calculate_paystack_fee(ticket_total)
-        total           = ticket_total  + paystack_fee
+        vat         = _calculate_vat(ticket_total)
+        total           = ticket_total  + paystack_fee + vat   
         user_commision= total - ticket_commision
 
         reference = self._generate_reference()
@@ -430,6 +448,7 @@ class CheckoutService:
             total_amount=user_commision,
             fees=ticket_commision, 
             discount=Decimal("0.00"),
+            vat=vat,
             metadata={
                 "reference":  reference,
                 "flow":       "marketplace",
@@ -538,7 +557,7 @@ class CheckoutService:
             Ticket.objects.filter(id=ticket.id).update(sold_count=F("sold_count") + qty)
 
     def _create_order(self, event, line_items, total_amount, discount, metadata,fees=Decimal("0.00"),
-                      marketplace_listing=None):
+                      marketplace_listing=None,vat=Decimal("0.00"),):
         from transactions.models import Order, OrderTicket
 
         order = Order.objects.create(
@@ -551,6 +570,7 @@ class CheckoutService:
             total_amount=total_amount,
             discount=discount,
             fees=fees, 
+            vat=vat,
             status="pending",
             marketplace_listing=marketplace_listing,
             metadata=metadata,

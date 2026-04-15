@@ -140,6 +140,7 @@ class Order(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     metadata = models.JSONField(blank=True, null=True) 
     is_split=models.BooleanField(default=False) 
+    vat  =  models.DecimalField(max_digits=10, decimal_places=2, default=0)
     marketplace_listing = models.ForeignKey(
         "marketplace.MarketListing",
         null=True,

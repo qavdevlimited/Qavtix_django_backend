@@ -332,7 +332,13 @@ class SystemConfigSeed:
             "value":   False,
             "label":   "Default Pricing Includes VAT",
         },
- 
+        {
+            "section": "fees",
+            "key":      "vat_percentage",
+            "value":    7.5,
+            "label": "  VAT (%)",
+        },
+        
         # ── Fraud Detection ──────────────────────────────────────────────────
         {
             "section": "fraud",

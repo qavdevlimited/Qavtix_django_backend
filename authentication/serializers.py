@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from administrator.models import SystemConfig
 from public.models import Category
 from host.models import Host
 from attendee.models import Attendee
@@ -39,6 +40,7 @@ class HostRegisterSerializer(serializers.Serializer):
     postal_code = serializers.CharField(required=False, allow_blank=True)
     profile_picture = serializers.URLField(allow_blank=True)
     profile_banner = serializers.URLField(allow_blank=True)
+    nin  =  serializers.CharField(required=False, allow_blank=True)
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )
@@ -76,7 +78,15 @@ class HostRegisterSerializer(serializers.Serializer):
                 "detail": "Registration failed. If you already have an account, please login."
             })
 
-        host = Host.objects.create(user=user, **validated_data)
+        seller_verification_required = SystemConfig.get(
+        "seller_verification_required", True
+        )
+
+        host = Host.objects.create(
+            user=user,
+            verified=not seller_verification_required,
+            **validated_data
+        )
         host.categories.set(categories)
 
         return user

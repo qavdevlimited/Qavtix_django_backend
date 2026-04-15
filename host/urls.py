@@ -14,6 +14,7 @@ urlpatterns = [
     # customers
     path("customers/", CustomerListView.as_view(), name="customer-list"),
     path("customers/<int:user_id>/", CustomerDetailView.as_view(), name="customer-detail"),
+    path("customers/export/", CustomerCSVExportView.as_view(), name="export-customers"),
 
     #PAYOUTS/FINANCIALS
     path("payouts/list/", ListPayoutAccountsView.as_view(), name="list-payouts"),

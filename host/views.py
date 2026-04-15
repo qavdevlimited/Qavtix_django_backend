@@ -1,3 +1,4 @@
+import csv
 from decimal import Decimal
 import uuid
 from rest_framework import request, serializers
@@ -22,7 +23,7 @@ HostWithdrawalRequestSerializer, PayoutInformationSerializer, PromoCodeCreateSer
  SingleEmailCampaignSerializer, SingleSMSCampaignSerializer, TransactionHistorySerializer, TrendingTicketSerializer, WeekAnalysisSerializer, WithdrawalHistorySerializer,
  DownloadEventAttendeeSerializer,PrivacySettingsSerializer, CustomerRevenueChartPointSerializer)
 from public.response import flatten_errors,api_response
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from rest_framework import generics, permissions, filters
 from django_filters.rest_framework import DjangoFilterBackend
 from django.http import Http404
@@ -2083,3 +2084,115 @@ class ToggleAutoRenewView(APIView):
             status_code=200,
             data=serializer.data
         )
+
+
+
+class CustomerCSVExportView(PlanFeatureMixin, generics.GenericAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    required_feature = "customer_profile_insights"
+
+    def _get_host(self):
+        return getattr(self.request.user, "host_profile", None)
+
+    def _get_filters(self, request):
+        return {
+            "date_range": request.query_params.get("date_range"),
+            "event_id": request.query_params.get("event"),
+            "ticket_type": request.query_params.get("ticket_type"),
+            "search": request.query_params.get("search", "").strip(),
+            "start_date": request.query_params.get("start_date"),
+            "end_date": request.query_params.get("end_date"),
+        }
+
+    # ✅ FIXED: moved OUTSIDE get() and removed self
+    def _customer_rows(self, host, event_id, date_range, ticket_type, search, start_date, end_date):
+
+        base = _base_orders(
+            host,
+            event_id=event_id,
+            date_range=date_range,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        if ticket_type:
+            base = base.filter(tickets__ticket_id=ticket_type)
+
+        qs = (
+            base.values(
+                "user__id",
+                "user__email",
+                "user__attendee_profile__full_name",
+                "email",
+                "full_name",
+                "user__attendee_profile__profile_picture",
+                "user__attendee_profile__city",
+                "user__attendee_profile__state",
+                "user__attendee_profile__country",
+            )
+            .annotate(
+                events_attended=Count("id", distinct=True),
+                total_spent=Sum("total_amount"),
+                last_purchase_date=Max("created_at"),
+            )
+            .order_by("-total_spent")
+        )
+
+        if search:
+            qs = qs.filter(
+                Q(user__email__icontains=search) |
+                Q(user__attendee_profile__full_name__icontains=search)
+            )
+
+        return qs
+
+    def get(self, request, *args, **kwargs):
+        host = self._get_host()
+        if host is None:
+            return api_response(message="You are not a host.", status_code=403)
+
+        filters = self._get_filters(request)
+
+        # ✅ correct call (NO nested function)
+        qs = self._customer_rows(
+            host=host,
+            event_id=filters["event_id"],
+            date_range=filters["date_range"],
+            ticket_type=filters["ticket_type"],
+            search=filters["search"],
+            start_date=filters["start_date"],
+            end_date=filters["end_date"],
+        )
+
+        # CSV response
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="customers.csv"'
+
+        writer = csv.writer(response)
+
+        # headers
+        writer.writerow([
+            "Full Name",
+            "Email",
+            "Events Attended",
+            "Total Spent",
+            "Last Purchase Date",
+            "City",
+            "State",
+            "Country",
+        ])
+
+        # rows
+        for row in qs:
+            writer.writerow([
+                row.get("user__attendee_profile__full_name") or row.get("full_name"),
+                row.get("user__email"),
+                row.get("events_attended"),
+                row.get("total_spent"),
+                row.get("last_purchase_date"),
+                row.get("user__attendee_profile__city"),
+                row.get("user__attendee_profile__state"),
+                row.get("user__attendee_profile__country"),
+            ])
+
+        return response

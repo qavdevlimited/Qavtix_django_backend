@@ -122,6 +122,7 @@ class Order(models.Model):
         ("completed", "Completed"),
         ("cancelled", "Cancelled"),
         ("refunded", "Refunded"),
+        ("expired", "Expired"), 
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

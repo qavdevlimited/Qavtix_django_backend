@@ -137,17 +137,6 @@ def send_featured_expiry_reminders():
         featured.save(update_fields=["metadata"])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Add to CELERY_BEAT_SCHEDULE in settings.py:
-# ─────────────────────────────────────────────────────────────────────────────
-# "expire-featured-events": {
-#     "task":     "payments.tasks.expire_featured_events",
-#     "schedule": crontab(minute="*/30"),
-# },
-# "send-featured-expiry-reminders": {
-#     "task":     "payments.tasks.send_featured_expiry_reminders",
-#     "schedule": crontab(minute=0),
-# },
 
 
 def _send_email(to, subject, body):

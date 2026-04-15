@@ -60,6 +60,47 @@ def expire_pending_orders():
     PendingOrderExpiryService().run()
 
 @shared_task
+def send_pending_order_reminder_email(order_id):
+    """
+    Sends reminder email for incomplete order after ~15 minutes.
+    """
+    from transactions.models import Order
+
+    try:
+        order = Order.objects.select_related("event").get(id=order_id)
+    except Order.DoesNotExist:
+        return
+
+    # safety check
+    if order.status != "pending":
+        return
+
+    event = order.event
+
+    payment_link = order.metadata.get('checkout_url')
+
+    subject = f"Complete your booking for {event.title}"
+    body = f"""
+Hi {order.full_name or order.email},
+
+You started booking tickets for:
+
+Event: {event.title}
+Date:  {event.start_datetime.strftime('%A, %d %B %Y %H:%M')}
+
+Your reservation is still pending and will expire soon.
+
+Complete your payment here:
+{payment_link}
+
+If you don’t complete your booking, your reserved tickets will be released.
+
+— QavTix
+    """.strip()
+
+    _send_email(to=order.email, subject=subject, body=body)
+
+@shared_task
 def send_split_payment_emails(split_order_id, participant_ids):
     """
     Sends payment request emails to non-initiator split participants.

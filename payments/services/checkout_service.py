@@ -168,6 +168,9 @@ class CheckoutService:
             reference=reference,
         )
 
+        order.metadata["checkout_url"] = init["checkout_url"]
+        order.save(update_fields=["metadata"])
+
         return {
             "flow":         "normal",
             "order_id":     str(order.id),
@@ -999,6 +1002,38 @@ class PendingOrderExpiryService:
         order.save(update_fields=["status"])
 
         # You can also send an email if you want: "Your reservation expired"
+
+class PendingOrderReminderService:
+
+    def run(self):
+        from transactions.models import Order
+        from django.utils import timezone
+
+        # 15–20 min window (avoid duplicates + race with expiry)
+        window_start = timezone.now() - timezone.timedelta(minutes=20)
+        window_end   = timezone.now() - timezone.timedelta(minutes=15)
+
+        orders = Order.objects.filter(
+            status="pending",
+            created_at__gte=window_start,
+            created_at__lt=window_end,
+            is_split=False,
+            marketplace_listing__isnull=True,
+        ).exclude(metadata__reminder_sent=True)
+
+        for order in orders:
+            self._send_reminder(order)
+
+    def _send_reminder(self, order):
+        from payments.tasks import send_pending_order_reminder_email
+
+        send_pending_order_reminder_email.delay(str(order.id))
+
+        # prevent duplicate emails
+        metadata = order.metadata or {}
+        metadata["reminder_sent"] = True
+        order.metadata = metadata
+        order.save(update_fields=["metadata"])
 
 
 class CheckoutError(Exception):

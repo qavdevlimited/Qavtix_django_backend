@@ -206,6 +206,7 @@ class EventTableSerializer(serializers.ModelSerializer):
     tickets_listed = serializers.SerializerMethodField()
     tickets_sold = serializers.SerializerMethodField()
     performance = serializers.SerializerMethodField()
+    is_featured = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
@@ -226,6 +227,7 @@ class EventTableSerializer(serializers.ModelSerializer):
             "views_count",
             "saves_count",
             "performance",
+            "is_featured",
         ]
 
     def get_event_image(self, obj):
@@ -283,6 +285,9 @@ class EventTableSerializer(serializers.ModelSerializer):
             return "low_sales"
         else:
             return "no_sales"
+
+    def get_is_featured(self, obj):
+        return obj.featured.filter(status="active").exists()
 
 
 # Card data serializer (counts per status)

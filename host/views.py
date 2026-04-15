@@ -205,7 +205,44 @@ class EventDashboardView(generics.ListAPIView):
         )
 
 
+class EventDeleteDraftView(generics.DestroyAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "id"
 
+    def get_queryset(self):
+        user = self.request.user
+
+        if not hasattr(user, "host_profile"):
+            return Event.objects.none()
+
+        return Event.objects.filter(host=user.host_profile)
+
+    def delete(self, request, *args, **kwargs):
+        event = self.get_object()
+
+        # ── 1. Check status ─────────────────────────
+        if event.status != "draft":
+            return api_response(
+                message="Only draft events can be deleted.",
+                status_code=400
+            )
+
+        # ── 2. Check if orders exist ────────────────
+        has_orders = Order.objects.filter(event=event).exists()
+
+        if has_orders:
+            return api_response(
+                message="This event cannot be deleted because it has associated orders.",
+                status_code=400
+            )
+
+        # ── 3. Safe to delete ──────────────────────
+        event.delete()
+
+        return api_response(
+            message="Draft event deleted successfully.",
+            status_code=200
+        )
 
 
 ### CDUSTOMER ANALYTICS DASHBOARD ###

@@ -7,6 +7,7 @@ urlpatterns = [
     path('events/create/', EventCreateView.as_view(), name='event-create'),
     path("events/<uuid:id>/update/",EventUpdateView.as_view(),name="event-update"),
     path("events/management/", EventDashboardView.as_view(), name="events-dashboard"),
+    path("events/delete/<uuid:id>/", EventDeleteDraftView.as_view(), name="event-delete-draft"),
     #DOWNLOADS
     path("events/<uuid:event_id>/attendees/", DownloadEventAttendeeView.as_view(), name="download-event-attendees"),
 

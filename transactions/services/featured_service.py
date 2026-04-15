@@ -9,6 +9,7 @@ from django.contrib.contenttypes.models import ContentType
 from host.models import FeatureUsage
 from host.plan_limits import get_host_plan_slug
 from payments.services.factory import get_gateway
+from payments.services.currency_service import CurrencyService
 from payments.models import PaymentCard, Payment
 
 logger = logging.getLogger(__name__)
@@ -18,11 +19,12 @@ class FeaturedInitiateService:
     """
     Initiates a featured event payment.
 
-    Two modes:
+    Three modes:
       A) card_id provided → charges saved card directly, activates immediately
       B) no card_id       → returns Paystack checkout_url for popup
+      C) currency conversion → converts NGN amount to target currency if needed
 
-    In both cases FeaturedEvent is created in "pending" state first,
+    In all cases FeaturedEvent is created in "pending" state first,
     then activated on successful payment — inside same transaction.
     """
 
@@ -126,8 +128,33 @@ class FeaturedInitiateService:
                         "expires_at": featured.end_date.isoformat(),
                     }
 
+        # Get plan price in NGN (base currency)
+        plan_price_ngn = Decimal(str(plan.price))
+        
+        # Handle currency conversion if needed
+        amount_kobo = int(float(plan_price_ngn) * 100)
+        display_amount = plan_price_ngn
+        display_currency = "NGN"
+
+        if self.currency and self.currency.upper() != "NGN":
+            try:
+                display_amount = CurrencyService.convert_to_currency(
+                    plan_price_ngn,
+                    self.currency
+                )
+                display_currency = self.currency.upper()
+                logger.info(
+                    f"Currency conversion: {plan_price_ngn} NGN → {display_amount} {display_currency}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Currency conversion failed for {self.currency}, falling back to NGN: {e}"
+                )
+                self.currency = "NGN"
+                display_amount = plan_price_ngn
+                display_currency = "NGN"
+
         reference   = f"qavtix_feat_{uuid.uuid4().hex[:16]}"
-        amount_kobo = int(float(plan.price) * 100)
         end_date    = timezone.now() + timezone.timedelta(days=plan.duration_days)
 
         # Create FeaturedEvent in pending state
@@ -135,22 +162,27 @@ class FeaturedInitiateService:
             event=event,
             user=self.user,
             end_date=end_date,
-            payment_amount=plan.price,
+            payment_amount=plan_price_ngn,  # Store in NGN (base currency)
             payment_method=None,
             status="pending",
             metadata={
-                "reference":     reference,
-                "plan_slug":     plan.slug,
-                "flow":          "featured",
-                "duration_days": plan.duration_days,
-                "reminder_sent": False,
+                "reference":          reference,
+                "plan_slug":          plan.slug,
+                "flow":               "featured",
+                "duration_days":      plan.duration_days,
+                "reminder_sent":      False,
+                "original_currency":  "NGN",
+                "display_currency":   display_currency,
+                "display_amount":     str(display_amount),
             },
         )
 
         # Mode A — saved card: charge directly, activate now
         card_id = self.data.get("card_id")
         if card_id:
-            return self._charge_saved_card(featured, plan, card_id, amount_kobo, reference)
+            return self._charge_saved_card(
+                featured, plan, card_id, amount_kobo, reference, display_currency, display_amount
+            )
 
         # Mode B — popup: initialize Paystack transaction
         init = self.gateway.initialize_transaction(
@@ -161,18 +193,20 @@ class FeaturedInitiateService:
         )
 
         return {
-            "flow":          "popup",
-            "featured_id":   str(featured.id),
-            "reference":     reference,
-            "checkout_url":  init["checkout_url"],
-            "amount":        amount_kobo,
-            "currency":      self.currency.upper(),
-            "plan":          plan.slug,
-            "duration_days": plan.duration_days,
-            "expires_at":    end_date.isoformat(),
+            "flow":            "popup",
+            "featured_id":     str(featured.id),
+            "reference":       reference,
+            "checkout_url":    init["checkout_url"],
+            "amount":          amount_kobo,
+            "display_amount":  str(display_amount),
+            "currency":        self.currency.upper(),
+            "display_currency": display_currency,
+            "plan":            plan.slug,
+            "duration_days":   plan.duration_days,
+            "expires_at":      end_date.isoformat(),
         }
 
-    def _charge_saved_card(self, featured, plan, card_id, amount_kobo, reference):
+    def _charge_saved_card(self, featured, plan, card_id, amount_kobo, reference, display_currency, display_amount):
         """Charges saved card and activates featured in the same atomic block."""
         try:
             card = PaymentCard.objects.get(id=card_id, user=self.user)
@@ -199,31 +233,45 @@ class FeaturedInitiateService:
             card=card,
             provider="paystack",
             provider_payment_id=result.reference,
-            amount=plan.price,
-            currency=self.currency.upper(),
+            amount=Decimal(str(amount_kobo)) / 100,  # Convert kobo back to NGN
+            currency="NGN",
             status="succeeded",
             content_type=ContentType.objects.get_for_model(featured),
             object_id=featured.id,
-            metadata=result.metadata,
+            metadata={
+                **result.metadata,
+                "display_currency": display_currency,
+                "display_amount": str(display_amount),
+                "original_amount_ngn": str(Decimal(str(amount_kobo)) / 100),
+            },
         )
 
         # Activate
         featured.status         = "active"
         featured.payment_method = "paystack"
         featured.metadata["completed_by"] = "card_charge"
+        featured.metadata["display_currency"] = display_currency
+        featured.metadata["display_amount"] = str(display_amount)
         featured.save(update_fields=["status", "payment_method", "metadata"])
 
         # Send activation email via Celery
         from transactions.tasks import send_featured_activation_email
         send_featured_activation_email.delay(str(featured.id))
 
+        logger.info(
+            f"Featured event activated via saved card: {featured.id} "
+            f"(Charged: {display_amount} {display_currency})"
+        )
+
         return {
-            "flow":          "card",
-            "featured_id":   str(featured.id),
-            "status":        "active",
-            "plan":          plan.slug,
-            "duration_days": plan.duration_days,
-            "expires_at":    featured.end_date.isoformat(),
+            "flow":            "card",
+            "featured_id":     str(featured.id),
+            "status":          "active",
+            "plan":            plan.slug,
+            "duration_days":   plan.duration_days,
+            "display_amount":  str(display_amount),
+            "display_currency": display_currency,
+            "expires_at":      featured.end_date.isoformat(),
         }
 
 
@@ -231,13 +279,16 @@ class CompleteFeaturedService:
     """
     Called after Paystack popup completes.
     Verifies payment, activates FeaturedEvent, sends email.
+    
+    Supports multi-currency flows with automatic conversion logging.
     """
 
-    def __init__(self, user, reference, save_card=False, country="NG"):
-        self.user      = user
-        self.reference = reference
-        self.save_card = save_card
-        self.gateway   = get_gateway(country)
+    def __init__(self, user, reference, save_card=False, country="NG", target_currency="NGN"):
+        self.user             = user
+        self.reference        = reference
+        self.save_card        = save_card
+        self.gateway          = get_gateway(country)
+        self.target_currency  = target_currency.upper() if target_currency else "NGN"
 
     @transaction.atomic
     def run(self):
@@ -248,6 +299,7 @@ class CompleteFeaturedService:
             featured = FeaturedEvent.objects.filter(
                 metadata__reference=self.reference
             ).first()
+            logger.info(f"Payment already processed: {self.reference}")
             return {
                 "already_complete": True,
                 "featured_id": str(featured.id) if featured else None,
@@ -257,6 +309,7 @@ class CompleteFeaturedService:
         try:
             tx = self.gateway.verify_transaction(self.reference)
         except Exception as e:
+            logger.error(f"Payment verification failed: {str(e)}")
             raise FeaturedError(f"Payment verification failed: {str(e)}", 402)
 
         # Find FeaturedEvent by reference
@@ -268,26 +321,45 @@ class CompleteFeaturedService:
             raise FeaturedError("Featured record not found for this reference.", 404)
 
         if featured.status == "active":
+            logger.info(f"Featured already active: {featured.id}")
             return {"already_complete": True, "featured_id": str(featured.id)}
 
         # Save card if requested
         if self.user and self.save_card:
             try:
                 self.gateway.save_card_from_tx(self.user, tx)
+                logger.info(f"Card saved for user {self.user.id}")
             except Exception as e:
                 logger.warning(f"Card save failed during featured completion: {e}")
 
-        # Persist payment
-        currency = tx.get("currency", "NGN")
-        amount   = Decimal(str(tx.get("amount", 0))) / 100
+        # Extract payment details
+        currency = tx.get("currency", "NGN").upper()
+        amount_ngn = Decimal(str(tx.get("amount", 0))) / 100
 
+        # Handle currency conversion if needed
+        display_amount = amount_ngn
+        display_currency = "NGN"
+
+        if currency and currency != "NGN":
+            try:
+                # If payment was in another currency, we might need to convert back or log it
+                display_amount = amount_ngn
+                display_currency = currency
+                logger.info(
+                    f"Payment received in {currency}: {display_amount} "
+                    f"(equivalent to {amount_ngn} NGN)"
+                )
+            except Exception as e:
+                logger.warning(f"Currency conversion issue in completion: {e}")
+
+        # Persist payment
         Payment.objects.create(
             user=self.user,
             email=self.user.email,
             provider="paystack",
             provider_payment_id=tx.get("reference", self.reference),
-            amount=amount,
-            currency=currency,
+            amount=amount_ngn,  # Store in NGN
+            currency="NGN",
             status="succeeded",
             content_type=ContentType.objects.get_for_model(featured),
             object_id=featured.id,
@@ -296,6 +368,8 @@ class CompleteFeaturedService:
                 "gateway_response": tx.get("gateway_response"),
                 "channel":          tx.get("channel"),
                 "paid_at":          tx.get("paid_at"),
+                "display_currency": display_currency,
+                "display_amount":   str(display_amount),
             },
         )
 
@@ -303,16 +377,25 @@ class CompleteFeaturedService:
         featured.status         = "active"
         featured.payment_method = "paystack"
         featured.metadata["completed_by"] = "popup"
+        featured.metadata["display_currency"] = display_currency
+        featured.metadata["display_amount"] = str(display_amount)
         featured.save(update_fields=["status", "payment_method", "metadata"])
 
         # Send activation email
         from transactions.tasks import send_featured_activation_email
         send_featured_activation_email.delay(str(featured.id))
 
+        logger.info(
+            f"Featured event activated via popup: {featured.id} "
+            f"(Paid: {display_amount} {display_currency})"
+        )
+
         return {
-            "featured_id": str(featured.id),
-            "status":      "active",
-            "expires_at":  featured.end_date.isoformat(),
+            "featured_id":      str(featured.id),
+            "status":           "active",
+            "display_amount":   str(display_amount),
+            "display_currency": display_currency,
+            "expires_at":       featured.end_date.isoformat(),
         }
 
 

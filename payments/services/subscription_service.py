@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
+from payments.services.currency_service import CurrencyService
 from payments.services.factory import get_gateway
 from payments.models import Payment, PaymentCard
 from payments.services.currency_utils import get_gateway_country_code
@@ -49,14 +50,37 @@ class SubscriptionInitiateService:
 
         # Determine base price (you can later add currency conversion here if needed)
         if billing_cycle == "annual":
-            amount    = plan.annual_price
+            amount_ngn    = plan.annual_price
             days      = 365
         else:
-            amount    = plan.monthly_price
+            amount_ngn   = plan.monthly_price
             days      = 30
 
-        if amount <= 0:
+        if amount_ngn <= 0:
             raise SubscriptionError("Invalid plan price.", 400)
+
+        
+        if self.currency == "NGN":
+            final_amount = amount_ngn
+        else:
+            final_amount = CurrencyService.convert_to_currency(amount_ngn, self.currency)
+            print(amount_ngn,final_amount)
+
+        # Round nicely for display/payment
+        final_amount = final_amount.quantize(Decimal("0.01"))
+
+        # Optional: Log the conversion for debugging
+        if self.currency != "NGN":
+            logger.info(f"Converted {amount_ngn} NGN → {final_amount} {self.currency}")
+
+        
+        supported_currencies = {"NGN", "USD", "GHS", "KES", "ZAR"}
+        if self.currency not in supported_currencies:
+            raise SubscriptionError(
+                f"Currency '{self.currency}' is not supported for payment. "
+                "Please choose NGN, USD, GHS, KES or ZAR.", 
+                400
+            )
 
         # === Existing Plan Validation (unchanged) ===
         existing = (
@@ -92,7 +116,7 @@ class SubscriptionInitiateService:
             plan_slug=plan_slug,
             billing_cycle=billing_cycle,
             status="pending",
-            amount_paid=amount,
+            amount_paid=final_amount,
             currency=self.currency,                    # ← Store chosen currency
             expires_at=expires_at,
             metadata={
@@ -107,11 +131,11 @@ class SubscriptionInitiateService:
         card_id = self.data.get("card_id")
         if card_id:
             return self._charge_saved_card(
-                subscription, plan, card_id, amount, reference, existing
+                subscription, plan, card_id, final_amount, reference, existing
             )
 
         # Mode B — Paystack Popup
-        amount_in_smallest_unit = int(float(amount) * 100)   # Paystack expects kobo/pesewas/cents
+        amount_in_smallest_unit = int(float(final_amount) * 100)   # Paystack expects kobo/pesewas/cents
 
         init = self.gateway.initialize_transaction(
             email=self.user.email,
@@ -129,7 +153,7 @@ class SubscriptionInitiateService:
             "subscription_id": str(subscription.id),
             "reference":       reference,
             "checkout_url":    init["checkout_url"],
-            "amount":          amount,                    # base amount
+            "amount":          final_amount,                    # base amount
             "currency":        self.currency,
             "plan":            plan_slug,
             "billing_cycle":   billing_cycle,

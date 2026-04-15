@@ -381,7 +381,9 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5500")
+FRONTEND_URL = config("FRONTEND_URL", default="https://qavtix.com")
+
+CURRENCY_API_KEY = config("CURRENCY_API_KEY")
 
 
 

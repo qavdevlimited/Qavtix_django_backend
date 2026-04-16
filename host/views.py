@@ -120,6 +120,7 @@ class EventUpdateView(generics.UpdateAPIView):
                 message=serializer.errors,
                 status_code=400
             )
+        print(serializer.validated_data)
 
         self.perform_update(serializer)
 

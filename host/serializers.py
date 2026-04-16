@@ -109,7 +109,7 @@ class EventSerializer(serializers.ModelSerializer):
     tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
     media = EventMediaNestedSerializer(many=True, required=False)
     event_name=serializers.CharField(source="title")
-    event_status=serializers.CharField(source="status", read_only=True)
+    event_status=serializers.CharField(source="status")
 
     class Meta:
         model = Event

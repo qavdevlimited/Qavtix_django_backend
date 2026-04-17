@@ -106,7 +106,17 @@ class EventSerializer(serializers.ModelSerializer):
     event_location = EventLocationNestedSerializer(required=True)
     social_links = OrganizerSocialLinkNestedSerializer(many=True, required=False)
     permissions=EventPermissionSerializer(many=True,required=False)
-    tags = serializers.SlugRelatedField(slug_field='name', queryset=Tag.objects.all(), many=True)
+    tags = serializers.SlugRelatedField(
+    many=True,
+    read_only=True,
+    slug_field="name"
+    )
+
+    tags_input = serializers.ListField(
+        child=serializers.CharField(),
+        write_only=True,
+        required=False
+    )
     media = EventMediaNestedSerializer(many=True, required=False)
     event_name=serializers.CharField(source="title")
     event_status=serializers.CharField(source="status")
@@ -114,7 +124,7 @@ class EventSerializer(serializers.ModelSerializer):
     class Meta:
         model = Event
         fields = [
-            'id', 'event_name', 'category', 'tags', 'event_type', 'start_datetime', 'end_datetime',
+            'id', 'event_name', 'category', 'tags',"tags_input",  'event_type', 'start_datetime', 'end_datetime',
             'location_type', 'short_description', 'full_description',
             'organizer_display_name', 'organizer_description', 'public_email', 'phone_number',
             'refund_policy', 'refund_percentage', 'qr_enabled', 'age_restriction',
@@ -153,7 +163,7 @@ class EventSerializer(serializers.ModelSerializer):
         location_data = validated_data.pop('event_location')
         permission_data=validated_data.pop('permissions', [])
         social_links_data = validated_data.pop('social_links', [])
-        tags_data = validated_data.pop('tags', [])
+        tags_data = validated_data.pop('tags_input', [])
         media_data = validated_data.pop('media', [])
 
         from payments.services.currency_utils import get_currency_for_host
@@ -163,7 +173,18 @@ class EventSerializer(serializers.ModelSerializer):
 
         with transaction.atomic():
             event = Event.objects.create(host=host, **validated_data)
-            event.tags.set(tags_data)
+            cleaned_tags = {
+                tag.strip().lower()
+                for tag in tags_data
+                if tag and tag.strip()
+            }
+
+            tag_instances = [
+                Tag.objects.get_or_create(name=tag)[0]
+                for tag in cleaned_tags
+            ]
+
+            event.tags.set(tag_instances)
 
             # create location
             EventLocation.objects.create(event=event, **location_data)

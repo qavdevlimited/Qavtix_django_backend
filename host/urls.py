@@ -10,6 +10,7 @@ urlpatterns = [
     path("events/delete/<uuid:id>/", EventDeleteDraftView.as_view(), name="event-delete-draft"),
     #DOWNLOADS
     path("events/<uuid:event_id>/attendees/", DownloadEventAttendeeView.as_view(), name="download-event-attendees"),
+    path("events/<uuid:id>/", EventRetrieveView.as_view(), name="event-detail"),
 
     # customers
     path("customers/", CustomerListView.as_view(), name="customer-list"),

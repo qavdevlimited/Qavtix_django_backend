@@ -130,6 +130,22 @@ class EventUpdateView(generics.UpdateAPIView):
             data=serializer.data
         )
 
+class EventRetrieveView(generics.RetrieveAPIView):
+    queryset = Event.objects.all()
+    serializer_class = EventSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "id"
+
+    def retrieve(self, request, *args, **kwargs):
+        event = self.get_object()
+        serializer = self.get_serializer(event)
+
+        return api_response(
+            message="Event fetched successfully",
+            status_code=200,
+            data=serializer.data
+        )
+
 @extend_schema(
     parameters=[
         OpenApiParameter("start_date", OpenApiTypes.DATE),

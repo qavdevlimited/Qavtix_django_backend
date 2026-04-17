@@ -77,6 +77,8 @@ class Event(models.Model):
     commission_percentage = models.DecimalField( max_digits=5, decimal_places=2, null=True, blank=True)
     affiliate_start = models.DateTimeField(null=True, blank=True)
     affiliate_end = models.DateTimeField(null=True, blank=True)
+    is_scheduled  = models.BooleanField(default=False)
+    schedule_time = models.DateTimeField(null=True, blank=True)
 
     currency = models.CharField(max_length=10, default="NGN")
 
@@ -110,11 +112,11 @@ class Event(models.Model):
 class EventLocation(models.Model):
     event = models.OneToOneField(Event, on_delete=models.CASCADE, related_name="event_location")
 
-    venue_name = models.CharField(max_length=255)
-    address = models.TextField()
-    country = models.CharField(max_length=100)
-    state = models.CharField(max_length=100)
-    city = models.CharField(max_length=100)
+    venue_name = models.CharField(max_length=255, blank=True)
+    address = models.TextField(blank=True)
+    country = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=100, blank=True)
+    city = models.CharField(max_length=100, blank=True)
     postal_code = models.CharField(max_length=20, blank=True)
 
     def __str__(self):

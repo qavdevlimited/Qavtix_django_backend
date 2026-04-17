@@ -131,7 +131,7 @@ class EventSerializer(serializers.ModelSerializer):
             'order_confirmation', 'ticket_delivery', 'reminders', 'post_event_emails',
             'customize_sender_name', 'affiliate_enabled', 'commission_percentage',
             'affiliate_start', 'affiliate_end',
-            'event_location', 'social_links', 'tickets','permissions','event_status','media',"currency","is_scheduled","schedule_time"
+            'event_location', 'social_links', 'tickets','permissions','event_status','media',"currency","is_scheduled","schedule_time","minimum_age"
         ]
     
     def validate(self, attrs):

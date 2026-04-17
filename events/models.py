@@ -79,6 +79,7 @@ class Event(models.Model):
     affiliate_end = models.DateTimeField(null=True, blank=True)
     is_scheduled  = models.BooleanField(default=False)
     schedule_time = models.DateTimeField(null=True, blank=True)
+    minimum_age = models.PositiveIntegerField(null=True, blank=True)
 
     currency = models.CharField(max_length=10, default="NGN")
 

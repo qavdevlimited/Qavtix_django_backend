@@ -24,6 +24,8 @@ class MarketListingSerializer(serializers.ModelSerializer):
 
     is_mine = serializers.SerializerMethodField()
     is_favorite = serializers.SerializerMethodField()
+    marketplace_id = serializers.CharField(source='id')
+    id = serializers.CharField(source='ticket.event.id', read_only=True)
 
     class Meta:
         model = MarketListing
@@ -43,6 +45,7 @@ class MarketListingSerializer(serializers.ModelSerializer):
             "is_mine",
             "is_favorite",
             'event_description',
+            'marketplace_id',
         ]
 
     def get_is_mine(self, obj):

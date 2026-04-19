@@ -3,7 +3,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, BulkPayoutActionSerializer, FeesConfigSerializer, FeesConfigUpdateSerializer, FraudConfigSerializer, FraudConfigUpdateSerializer, FraudConfigUpdateSerializer, GeneralConfigSerializer, GeneralConfigUpdateSerializer, GiftBadgeSerializer, HostActivitySerializer, LocalizationConfigSerializer, LocalizationConfigUpdateSerializer, NotificationsConfigSerializer, NotificationsConfigUpdateSerializer, PoliciesConfigSerializer, PoliciesConfigUpdateSerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
+from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, BulkPayoutActionSerializer, CombinedProfileSerializer, FeesConfigSerializer, FeesConfigUpdateSerializer, FraudConfigSerializer, FraudConfigUpdateSerializer, FraudConfigUpdateSerializer, GeneralConfigSerializer, GeneralConfigUpdateSerializer, GiftBadgeSerializer, HostActivitySerializer, LocalizationConfigSerializer, LocalizationConfigUpdateSerializer, NotificationsConfigSerializer, NotificationsConfigUpdateSerializer, PoliciesConfigSerializer, PoliciesConfigUpdateSerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
 from administrator.service.audit import AdminAuditLogService, AuditLogMixin
 from administrator.service.auth_service import AdminAuthService, AuthError
 from administrator.service.customer_details_service import  UserDetailCardService, UserDetailOrderHistoryService, UserDetailProfileService, UserDetailSpendChartService
@@ -48,9 +48,6 @@ from public.pagination import CustomPagination
 from .utils import pagination_data
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Sum
-from rest_framework.pagination import PageNumberPagination
-from django.db.models import Sum
-
 logger = logging.getLogger(__name__)
 
 
@@ -2078,3 +2075,17 @@ class AdminConfigResetAllView(AuditLogMixin, APIView):
             },
         )
  
+
+
+
+class AdminProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        serializer = CombinedProfileSerializer(request.user)
+
+        return api_response(
+            message="Profile retrieved.",
+            status_code=200,
+            data=serializer.data,
+        )

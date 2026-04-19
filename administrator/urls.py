@@ -97,6 +97,9 @@ urlpatterns = [
  
     # POST — resets ALL config to factory defaults
     path("admin/config/reset-all/", AdminConfigResetAllView.as_view(), name="admin-config-reset-all"),
+
+
+    path("admin/profile/", AdminProfileView.as_view(), name="admin-profile"),
 ]
 
 

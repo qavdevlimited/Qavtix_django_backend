@@ -1,5 +1,6 @@
 from rest_framework import serializers, status
 
+from administrator.models import Admin
 from host.models import HostActivity
 
 
@@ -901,3 +902,26 @@ class ResetSectionSerializer(serializers.Serializer):
         choices=["general", "policies", "fees", "fraud", "notifications", "localization"],
         required=False,
     )
+
+class CombinedProfileSerializer(serializers.Serializer):
+    # Attendee fields
+    full_name = serializers.CharField(source="attendee_profile.full_name", allow_null=True)
+    phone_number = serializers.CharField(source="attendee_profile.phone_number", allow_null=True)
+    country = serializers.CharField(source="attendee_profile.country", allow_null=True)
+    state = serializers.CharField(source="attendee_profile.state", allow_null=True)
+    city = serializers.CharField(source="attendee_profile.city", allow_null=True)
+    profile_picture = serializers.CharField(source="attendee_profile.profile_picture", allow_null=True)
+
+    # Admin fields (optional)
+    admin_full_name = serializers.SerializerMethodField()
+
+    # Role
+    role = serializers.SerializerMethodField()
+
+    def get_admin_full_name(self, obj):
+        if hasattr(obj, "admin_profile"):
+            return obj.admin_profile.full_name
+        return None
+
+    def get_role(self, obj):
+        return "admin" if hasattr(obj, "admin_profile") else "attendee"

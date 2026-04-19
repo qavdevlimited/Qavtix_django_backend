@@ -2,6 +2,7 @@ from rest_framework import serializers, status
 
 from administrator.models import Admin
 from host.models import HostActivity
+from payments.services.currency_utils import get_currency_for_country
 
 
 
@@ -911,9 +912,8 @@ class CombinedProfileSerializer(serializers.Serializer):
     state = serializers.CharField(source="attendee_profile.state", allow_null=True)
     city = serializers.CharField(source="attendee_profile.city", allow_null=True)
     profile_picture = serializers.CharField(source="attendee_profile.profile_picture", allow_null=True)
+    currency   =  serializers.SerializerMethodField()
 
-    # Admin fields (optional)
-    admin_full_name = serializers.SerializerMethodField()
 
     # Role
     role = serializers.SerializerMethodField()
@@ -925,3 +925,8 @@ class CombinedProfileSerializer(serializers.Serializer):
 
     def get_role(self, obj):
         return "admin" if hasattr(obj, "admin_profile") else "attendee"
+
+    
+    def get_currency(self, obj):
+        currency = get_currency_for_country(obj.attendee_profile.country) if hasattr(obj, "attendee_profile") else None
+        return currency

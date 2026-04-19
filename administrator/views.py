@@ -2081,6 +2081,12 @@ class AdminConfigResetAllView(AuditLogMixin, APIView):
 class AdminProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+
+    @extend_schema(
+        summary="Get combined user profile",
+        description="Returns attendee profile and admin info if user is an admin.",
+        responses=CombinedProfileSerializer
+    )
     def get(self, request):
         serializer = CombinedProfileSerializer(request.user)
 

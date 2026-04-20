@@ -20,6 +20,7 @@ from email_templates import (
     body_plan_renewal_failed,
     body_password_reset_otp,
 )
+from notification.email import send_templated_email
  
 logger = logging.getLogger(__name__)
  
@@ -59,46 +60,73 @@ def expire_pending_orders():
     from payments.services.checkout_service import PendingOrderExpiryService
     PendingOrderExpiryService().run()
 
-@shared_task
-def send_pending_order_reminder_email(order_id):
-    """
-    Sends reminder email for incomplete order after ~15 minutes.
-    """
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_pending_order_reminder_email(self, order_id: int):
     from transactions.models import Order
 
     try:
         order = Order.objects.select_related("event").get(id=order_id)
-    except Order.DoesNotExist:
-        return
 
-    # safety check
-    if order.status != "pending":
-        return
+        # safety check
+        if order.status != "pending":
+            return
 
-    event = order.event
+        event = order.event
+        payment_link = order.metadata.get("checkout_url")
 
-    payment_link = order.metadata.get('checkout_url')
+        send_templated_email(
+            subject=f"Complete your booking for {event.title}",
+            to_email=order.email,
+            template_name="emails/abandoned.html",
+            context={
+                "first_name": order.full_name or "there",
+                "order_id": str(order.id)[:8].upper(),
+                "booking_date": event.start_datetime.strftime("%A, %d %B %Y %H:%M"),
+                "event_title": event.title,
+                "payment_link": payment_link,
+                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+            },
+        )
 
-    subject = f"Complete your booking for {event.title}"
-    body = f"""
-Hi {order.full_name or order.email},
+    except Exception as exc:
+        raise self.retry(exc=exc)
 
-You started booking tickets for:
 
-Event: {event.title}
-Date:  {event.start_datetime.strftime('%A, %d %B %Y %H:%M')}
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_booking_confirmation_email(self, order_id):
+    from transactions.models import Order
 
-Your reservation is still pending and will expire soon.
+    try:
+        order = Order.objects.select_related("event").get(id=order_id)
 
-Complete your payment here:
-{payment_link}
+        send_templated_email(
+            subject=f"Booking Confirmed – {order.event.title}",
+            to_email=order.email,
+            template_name="emails/succesfulorder.html",
+            context={
+                "first_name": order.full_name or "Guest",
+                "order_id": order.id,
+                "event_name": order.event.title,
+                "start_date": order.event.start_datetime,
+                "end_date": order.event.end_datetime,
+                "location": getattr(order.event, "location", ""),
+                "ticket_type": ", ".join(
+                    [ot.ticket.ticket_type for ot in order.tickets.all()]
+                ),
+                "quantity": sum(ot.quantity for ot in order.tickets.all()),
+                "host_name": order.event.host.full_name,
+                "host_email": order.event.host.user.email,
+                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+            },
+        )
 
-If you don’t complete your booking, your reserved tickets will be released.
+    except Exception as exc:
+        raise self.retry(exc=exc)
 
-— QavTix
-    """.strip()
-
-    _send_email(to=order.email, subject=subject, body=body)
+    except Exception as exc:
+        raise self.retry(exc=exc)
 
 @shared_task
 def send_split_payment_emails(split_order_id, participant_ids):

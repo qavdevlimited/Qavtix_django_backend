@@ -2,58 +2,29 @@ from celery import shared_task
 from django.core.mail import send_mail
 from django.conf import settings
 import logging
+from notification.email import send_templated_email
  
 logger = logging.getLogger(__name__)
 
-
-@shared_task(
-    bind=True,
-    max_retries=3,
-    default_retry_delay=10,   # retry after 10s on failure
-)
-def send_otp_email(self, user_email: str, full_name: str, otp: str):
-    """
-    Sends the OTP email asynchronously via Brevo (django-anymail).
-    Retries up to 3 times on failure with a 10 second delay.
-    """
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_otp_email(self, user_email, full_name, otp):
     try:
-        send_mail(
-            subject="Your QavTix Admin Login Code",
-            message=(
-                f"Hi {full_name},\n\n"
-                f"Your one-time login code is: {otp}\n\n"
-                f"This code expires in 10 minutes.\n"
-                f"If you did not request this, please contact support immediately.\n\n"
-                f"— QavTix Security"
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user_email],
-            html_message=f"""
-                <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto;">
-                    <h2 style="color: #1a1a1a;">Admin Login Verification</h2>
-                    <p>Hi <strong>{full_name}</strong>,</p>
-                    <p>Use the code below to complete your login. It expires in <strong>10 minutes</strong>.</p>
-                    <div style="
-                        background: #f4f4f4;
-                        border-radius: 8px;
-                        padding: 24px;
-                        text-align: center;
-                        margin: 24px 0;
-                    ">
-                        <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #1a1a1a;">
-                            {otp}
-                        </span>
-                    </div>
-                    <p style="color: #666; font-size: 13px;">
-                        If you did not attempt to log in, please contact support immediately.
-                    </p>
-                </div>
-            """,
-            fail_silently=False,
+        send_templated_email(
+            subject="Your OTP Code",
+            to_email=user_email,
+            template_name="emails/otp.html",
+            context={
+                "full_name": full_name,
+                "otp_digits": list(otp),
+                "expires_minutes": 5,
+                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+                "action_url": "#",
+                "button_text": "Verify",
+            },
         )
     except Exception as exc:
         raise self.retry(exc=exc)
-    
 
 
 

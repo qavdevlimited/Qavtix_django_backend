@@ -13,6 +13,7 @@ from email_templates import (
     body_password_changed,
     body_password_reset_otp,
 )
+from notification.email import send_templated_email
  
 logger = logging.getLogger(__name__)
  
@@ -40,45 +41,57 @@ def _send(to: str, subject: str, title: str, body_html: str) -> None:
         raise  # allow Celery to retry if the task is configured to do so
 
 
- 
-@shared_task
-def send_password_reset_otp_task(email: str, otp: str):
-    """
-    Replaces the plain send_password_reset_otp() function.
-    Call with: send_password_reset_otp_task.delay(email, otp)
-    """
-    _send(
-        to=email,
-        subject="Your QavTix Password Reset Code",
-        title="Password Reset Verification",
-        body_html=body_password_reset_otp(otp=otp),
-    )
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_password_reset_otp_task(self, user_email: str,  otp :str):
+    try:
+        send_templated_email(
+            subject="Your OTP Code",
+            to_email=user_email,
+            template_name="emails/otp.html",
+            context={
+                "otp_digits": list(otp),
+                "expires_minutes": 5,
+                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+                "action_url": "#",
+                "button_text": "Verify",
+            },
+        )
+    except Exception as exc:
+        raise self.retry(exc=exc)
 
 
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_password_change_info_task(self, email: str, first_name: str):
+    try:
+        send_templated_email(
+            subject="Change In Password",
+             to_email=email,
+            template_name="emails/passwordchange.html",
+            context={
+                "first_name": first_name,
+                "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+            },
+        )
 
-@shared_task
-def send_password_change_info_task(email: str, first_name: str):
-    """
-    Replaces the plain send_password_reset_otp() function.
-    Call with: send_password_reset_otp_task.delay(email, otp)
-    """
-    _send(
-        to=email,
-        subject="Your QavTix Password Changed",
-        title="Password Changed Confirmation",
-        body_html=body_password_changed(first_name=first_name),
-    )
+    except Exception as exc:
+        raise self.retry(exc=exc)
 
 
-@shared_task
-def send_welcome_email_task(email: str, first_name: str):
-    """
-    Replaces the plain send_password_reset_otp() function.
-    Call with: send_password_reset_otp_task.delay(email, otp)
-    """
-    _send(
-        to=email,
-        subject="Welcome to QavTix",
-        title="Welcome!",
-        body_html=body_welcome(first_name=first_name),
-    )
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_welcome_email_task(self, email: str, first_name: str):
+    try:
+        send_templated_email(
+            subject="Welcome to QavTix 🎉",
+             to_email=email,
+            template_name="emails/welcome.html",
+            context={
+                "first_name": first_name,
+                "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+            },
+        )
+
+    except Exception as exc:
+        raise self.retry(exc=exc)

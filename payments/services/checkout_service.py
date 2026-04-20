@@ -882,7 +882,7 @@ class CompleteCheckoutService:
         order.save(update_fields=["status", "payment_method"])
 
         from payments.tasks import send_booking_confirmation_email
-        send_booking_confirmation_email.delay(str(split_order.order.id))
+        send_booking_confirmation_email.delay(str(split_order.id))
 
     def _credit_affiliate(self, order):
         from attendee.models import AffiliateLink

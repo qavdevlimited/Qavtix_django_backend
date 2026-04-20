@@ -562,6 +562,8 @@ class PaystackWebhookService:
                     status="active",
                     metadata={"fulfilled_by": "webhook"},
                 )
+        from payments.tasks import send_booking_confirmation_email
+        send_booking_confirmation_email.delay(str(order.id))
 
     def _finalise_split(self, split_order):
         from transactions.models import IssuedTicket
@@ -576,8 +578,8 @@ class PaystackWebhookService:
         order.payment_method = "paystack"
         order.save(update_fields=["status", "payment_method"])
 
-        from payments.tasks import send_split_completion_emails
-        send_split_completion_emails.delay(str(split_order.id))
+        from payments.tasks import send_booking_confirmation_email
+        send_booking_confirmation_email.delay(str(split_order.id))
 
     def _credit_affiliate(self, order):
         from attendee.models import AffiliateLink, AffliateEarnings

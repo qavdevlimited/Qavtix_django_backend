@@ -124,6 +124,97 @@ class AdminPayoutActionService:
                 failed.append({"id": str(wid), "reason": str(e)})
 
         return succeeded, failed
+    
+    @staticmethod
+    def force_payout(host_id, admin_user):
+        """
+        Calculates the host's available balance, creates a Withdrawal record
+        for the full balance, marks it approved, and queues the Paystack transfer.
+        Uses the host's default payout account.
+        """
+        from host.models import Host
+        from transactions.models import Withdrawal, Order
+        from payments.models import PayoutInformation
+        from django.db.models import Sum
+
+        # ── Resolve host ──────────────────────────────────────────────
+        try:
+            host = Host.objects.select_related("user").get(id=host_id)
+        except Host.DoesNotExist:
+            return False, "Host not found.", None
+
+        user = host.user
+
+        # ── Calculate available balance (same formula as withdrawal view) ─
+        with transaction.atomic():
+            total_revenue = (
+                Order.objects
+                .filter(event__host=host, status="completed")
+                .aggregate(total=Sum("total_amount"))["total"]
+                or Decimal("0.00")
+            )
+
+            total_claimed = (
+                Withdrawal.objects
+                .select_for_update()
+                .filter(user=user)
+                .exclude(status="rejected")
+                .aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
+            )
+
+            available = max(total_revenue - total_claimed, Decimal("0.00"))
+
+            if available < MINIMUM_PAYOUT_AMOUNT:
+                return False, (
+                    f"Available balance ₦{available:,.2f} is below the minimum "
+                    f"payout amount of ₦{MINIMUM_PAYOUT_AMOUNT:,.2f}."
+                ), None
+
+            # ── Resolve default payout account ────────────────────────
+            payout_account = (
+                PayoutInformation.objects
+                .filter(user=user, is_default=True)
+                .first()
+            ) or (
+                PayoutInformation.objects
+                .filter(user=user)
+                .first()
+            )
+
+            if not payout_account:
+                return False, "Host has no registered payout account.", None
+
+            if not payout_account.bank_code:
+                return False, (
+                    "Host payout account is missing bank_code. "
+                    "Ask the host to re-save their bank details."
+                ), None
+
+            # ── Create withdrawal and mark approved in one atomic block ──
+            withdrawal = Withdrawal.objects.create(
+                user           = user,
+                payout_account = payout_account,
+                amount         = available,
+                status         = "approved",   # skip pending — admin forced it
+                metadata       = {
+                    "force_payout":     True,
+                    "forced_by":        admin_user.email,
+                    "forced_at":        timezone.now().isoformat(),
+                    "calculated_balance": str(available),
+                },
+            )
+
+        # ── Queue Paystack transfer outside the atomic block ──────────
+        from administrator.task import process_single_payout
+        process_single_payout.delay(str(withdrawal.id), admin_user.email)
+
+        logger.info(
+            f"Force payout initiated by {admin_user.email} for host {host_id}: "
+            f"₦{available:,.2f} → withdrawal {withdrawal.id}"
+        )
+
+        return True, f"Force payout of ₦{available:,.2f} initiated.", withdrawal
 
 
 # ─────────────────────────────────────────────────────────────────────────────

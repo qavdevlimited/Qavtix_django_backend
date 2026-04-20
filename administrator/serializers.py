@@ -930,3 +930,6 @@ class CombinedProfileSerializer(serializers.Serializer):
     def get_currency(self, obj):
         currency = get_currency_for_country(obj.attendee_profile.country) if hasattr(obj, "attendee_profile") else None
         return currency
+
+class ForcePayoutSerializer(serializers.Serializer):
+    host_id = serializers.IntegerField()

@@ -3,7 +3,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, BulkPayoutActionSerializer, CombinedProfileSerializer, FeesConfigSerializer, FeesConfigUpdateSerializer, FraudConfigSerializer, FraudConfigUpdateSerializer, FraudConfigUpdateSerializer, GeneralConfigSerializer, GeneralConfigUpdateSerializer, GiftBadgeSerializer, HostActivitySerializer, LocalizationConfigSerializer, LocalizationConfigUpdateSerializer, NotificationsConfigSerializer, NotificationsConfigUpdateSerializer, PoliciesConfigSerializer, PoliciesConfigUpdateSerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
+from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, BulkPayoutActionSerializer, CombinedProfileSerializer, FeesConfigSerializer, FeesConfigUpdateSerializer, ForcePayoutSerializer, FraudConfigSerializer, FraudConfigUpdateSerializer, FraudConfigUpdateSerializer, GeneralConfigSerializer, GeneralConfigUpdateSerializer, GiftBadgeSerializer, HostActivitySerializer, LocalizationConfigSerializer, LocalizationConfigUpdateSerializer, NotificationsConfigSerializer, NotificationsConfigUpdateSerializer, PoliciesConfigSerializer, PoliciesConfigUpdateSerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
 from administrator.service.audit import AdminAuditLogService, AuditLogMixin
 from administrator.service.auth_service import AdminAuthService, AuthError
 from administrator.service.customer_details_service import  UserDetailCardService, UserDetailOrderHistoryService, UserDetailProfileService, UserDetailSpendChartService
@@ -1636,46 +1636,52 @@ class AdminPayoutDeclineView(AuditLogMixin, APIView):
         )
  
 @extend_schema(
-    operation_id="admin_payout_approve",
-    request=BulkPayoutActionSerializer,
-    responses={200: OpenApiResponse(description="Payouts approved and transfer initiated")},
-    summary="Admin — Bulk Approve Payouts",
+    operation_id="admin_payout_force",
+    request=ForcePayoutSerializer,
+    responses={200: OpenApiResponse(description="Force payout initiated")},
+    summary="Admin — Force Payout",
     description=(
-        "Approves one or more pending withdrawal requests and immediately "
-        "initiates Paystack transfers to each user's registered bank account. "
-        "If Paystack transfer fails for any, it stays 'approved' for retry."
+        "Calculates the host's full available balance, creates a withdrawal for "
+        "that amount using their default bank account, and immediately initiates "
+        "a Paystack transfer. Bypasses the normal pending → approved flow."
     ),
 )
 class AdminPayoutForceView(AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
- 
+
     def post(self, request):
-        serializer = BulkPayoutActionSerializer(data=request.data)
+        serializer = ForcePayoutSerializer(data=request.data)
         if not serializer.is_valid():
             return api_response(message=serializer.errors, status_code=400)
- 
-        withdrawal_ids = serializer.validated_data["withdrawal_ids"]
-        succeeded, failed = AdminPayoutActionService.bulk_approve(
-            withdrawal_ids=withdrawal_ids,
-            admin_user=request.user,
-        )
- 
-        # Log each approved withdrawal
-        for wid in succeeded:
-            self.log_action(
-                request,
-                action       = "withdrawal_approve",
-                target_type  = "withdrawal",
-                target_id    = str(wid),
-                details      = f"Approved and Paystack transfer initiated by {request.user.email}",
-            )
- 
-        return api_response(
-            message=f"{len(succeeded)} payout(s) approved. {len(failed)} failed.",
-            status_code=200,
-            data={"succeeded": succeeded, "failed": failed},
+
+        host_id = serializer.validated_data["host_id"]
+
+        success, message, withdrawal = AdminPayoutActionService.force_payout(
+            host_id    = host_id,
+            admin_user = request.user,
         )
 
+        if not success:
+            return api_response(message=message, status_code=400)
+
+        self.log_action(
+            request,
+            action       = "force_payout",
+            target_type  = "host",
+            target_id    = str(host_id),
+            details      = f"Force payout of ₦{withdrawal.amount:,.2f} initiated by {request.user.email}",
+        )
+
+        return api_response(
+            message=message,
+            status_code=200,
+            data={
+                "withdrawal_id": str(withdrawal.id),
+                "amount":        str(withdrawal.amount),
+                "status":        withdrawal.status,
+                "host_id":       host_id,
+            },
+        )
  
 @extend_schema(
     operation_id="admin_marketplace_listings",

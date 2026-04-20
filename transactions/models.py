@@ -266,6 +266,7 @@ class Withdrawal(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     idempotency_key = models.UUIDField(null=True, blank=True, unique=True)
+    metadata = models.JSONField(null=True, blank=True, default=dict)
 
     def __str__(self):
         return f"{self.user.username} - {self.amount}"

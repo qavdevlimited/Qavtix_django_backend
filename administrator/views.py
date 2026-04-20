@@ -1635,7 +1635,46 @@ class AdminPayoutDeclineView(AuditLogMixin, APIView):
             data={"succeeded": succeeded, "failed": failed},
         )
  
+@extend_schema(
+    operation_id="admin_payout_approve",
+    request=BulkPayoutActionSerializer,
+    responses={200: OpenApiResponse(description="Payouts approved and transfer initiated")},
+    summary="Admin — Bulk Approve Payouts",
+    description=(
+        "Approves one or more pending withdrawal requests and immediately "
+        "initiates Paystack transfers to each user's registered bank account. "
+        "If Paystack transfer fails for any, it stays 'approved' for retry."
+    ),
+)
+class AdminPayoutForceView(AuditLogMixin, APIView):
+    permission_classes = [permissions.IsAuthenticated]
  
+    def post(self, request):
+        serializer = BulkPayoutActionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response(message=serializer.errors, status_code=400)
+ 
+        withdrawal_ids = serializer.validated_data["withdrawal_ids"]
+        succeeded, failed = AdminPayoutActionService.bulk_approve(
+            withdrawal_ids=withdrawal_ids,
+            admin_user=request.user,
+        )
+ 
+        # Log each approved withdrawal
+        for wid in succeeded:
+            self.log_action(
+                request,
+                action       = "withdrawal_approve",
+                target_type  = "withdrawal",
+                target_id    = str(wid),
+                details      = f"Approved and Paystack transfer initiated by {request.user.email}",
+            )
+ 
+        return api_response(
+            message=f"{len(succeeded)} payout(s) approved. {len(failed)} failed.",
+            status_code=200,
+            data={"succeeded": succeeded, "failed": failed},
+        )
 
  
 @extend_schema(

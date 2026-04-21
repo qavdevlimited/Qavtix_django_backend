@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>{{ email_subject }} – QavTix</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap"
+        rel="stylesheet" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #f0f2f5;
+            font-family: 'Inter', Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            color: #1a1a2e;
+        }
+
+        .email-wrapper {
+            width: 100%;
+            background-color: #f0f2f5;
+            padding: 0px 0px;
+        }
+
+        .email-card {
+            max-width: 584px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 0 0 16px 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        .email-header img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .email-body {
+            padding: 40px 48px 36px;
+        }
+
+        .greeting {
+            font-family: 'Space Grotesk', Arial, sans-serif;
+            font-size: 22px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 4px;
+        }
+
+        .order-box {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 28px;
+        }
+
+        .order-box-title {
+            font-family: 'Space Grotesk', Arial, sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+
+        .order-number {
+            font-family: 'Space Grotesk', Arial, sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 16px;
+        }
+
+        .cta-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #3b5bdb 0%, #1e40af 100%);
+            color: #ffffff !important;
+            text-decoration: none;
+            font-family: 'Space Grotesk', Arial, sans-serif;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 11px 32px;
+            border-radius: 50px;
+            letter-spacing: 0.01em;
+            box-shadow: 0 4px 14px rgba(59, 91, 219, 0.3);
+            margin-bottom: 20px;
+        }
+
+        .section-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+
+        .company-name {
+            font-family: 'Space Grotesk', Arial, sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 4px;
+        }
+
+        .body-text {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.75;
+            margin-bottom: 20px;
+        }
+
+        .body-text a {
+            color: #3b5bdb;
+            text-decoration: underline;
+        }
+
+        .body-text strong {
+            font-weight: 600;
+            color: #0f172a;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px solid #e5e7eb;
+            margin: 28px 0;
+        }
+
+        /* Items table */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 0;
+        }
+
+        .items-table th {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0 0 10px 0;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+        }
+
+        .items-table th:nth-child(2),
+        .items-table th:nth-child(3) {
+            text-align: center;
+        }
+
+        .items-table th:last-child,
+        .items-table td:last-child {
+            text-align: right;
+        }
+
+        .items-table td {
+            font-size: 14px;
+            color: #1f2937;
+            padding: 14px 0;
+            border-bottom: 1px solid #f3f4f6;
+            vertical-align: top;
+        }
+
+        .items-table td:nth-child(2) {
+            text-align: center;
+        }
+
+        .item-name {
+            font-weight: 600;
+            color: #0f172a;
+            margin-bottom: 2px;
+        }
+
+        .item-sub {
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .total-row td {
+            font-family: 'Space Grotesk', Arial, sans-serif;
+            font-weight: 700;
+            font-size: 15px;
+            color: #0f172a;
+            border-bottom: none;
+            padding-top: 16px;
+        }
+
+        .vat-row td {
+            font-size: 13px;
+            color: #6b7280;
+            border-bottom: none;
+            padding: 4px 0;
+        }
+
+        .payment-box {
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+        }
+
+        .payment-box-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+
+        .payment-box-text {
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.6;
+        }
+
+        .payment-box-text a {
+            color: #3b5bdb;
+            text-decoration: underline;
+        }
+
+        .footer-links {
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.7;
+            margin-bottom: 20px;
+        }
+
+        .footer-links a {
+            color: #3b5bdb;
+            text-decoration: underline;
+        }
+
+        .sign-off {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.7;
+        }
+
+        .sign-off .brand-name {
+            font-weight: 700;
+            color: #3b5bdb;
+        }
+
+        .email-footer img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .footer-line {
+            background-color: #D9D9D9;
+            border: none;
+            height: 1px;
+        }
+
+        .copyright {
+            font-family: Inter;
+            font-weight: 400;
+            font-size: 12px;
+            text-align: center;
+            color: #6B7280;
+            margin-block: 20px;
+        }
+
+        /* Utility classes */
+        .hidden {
+            display: none;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .mt-0 {
+            margin-top: 0;
+        }
+
+        .mt-1 {
+            margin-top: 4px;
+        }
+
+        .mb-1 {
+            margin-bottom: 4px;
+        }
+
+        .mb-2 {
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="email-wrapper">
+        <div class="email-card">
+
+            <!-- Header -->
+            <div class="email-header">
+                <img src="{{ header_image_url }}" style="width:100%;" />
+            </div>
+
+            <!-- Body -->
+            <div class="email-body">
+
+                <!-- Greeting + Order Box (Optional) -->
+                {% if show_order_box %}
+                <div class="order-box">
+                    <p class="order-box-title">{{ order_box_label }}</p>
+                    {% if order_box_meta %}
+                    <p style="font-size:12px;color:#6b7280;margin-bottom:12px;">{{ order_box_meta }}</p>
+                    {% endif %}
+                    <p class="order-number"># {{ order_number }}</p>
+                    {% if order_url %}
+                    <a href="{{ order_url }}" class="cta-btn">{{ button_label }}</a>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Company + Title -->
+                {% if company_label %}
+                <p class="section-label">{{ company_label }}</p>
+                {% endif %}
+                {% if email_title %}
+                <p class="company-name">{{ email_title }}</p>
+                {% endif %}
+                {% if show_divider_after_title %}
+                <hr class="divider" />
+                {% endif %}
+
+                <!-- Main Content (Dynamic Body) -->
+                <div class="email-content">
+                    {{ email_body_html }}
+                </div>
+
+                <!-- Items Table (Optional) -->
+                {% if show_items_table %}
+                <hr class="divider" />
+                <table class="items-table" role="presentation">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Quantity</th>
+                            <th>Price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td>
+                                <p class="item-name">{{ item.name }}</p>
+                                {% if item.subtitle %}
+                                <p class="item-sub">{{ item.subtitle }}</p>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.quantity }}</td>
+                            <td>{{ item.price }}</td>
+                        </tr>
+                        {% endfor %}
+                        {% if vat_amount %}
+                        <tr class="vat-row">
+                            <td colspan="2" style="text-align:right;padding-right:8px;">Includes VAT (7.5%)</td>
+                            <td>{{ vat_amount }}</td>
+                        </tr>
+                        {% endif %}
+                        {% if total_amount %}
+                        <tr class="total-row">
+                            <td colspan="2">Total</td>
+                            <td>{{ total_amount }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+                {% endif %}
+
+                <!-- Payment Boxes (Optional) -->
+                {% if payment_boxes %}
+                <hr class="divider" />
+                {% for box in payment_boxes %}
+                <div class="payment-box">
+                    <p class="payment-box-title">{{ box.title }}</p>
+                    <p class="payment-box-text">{{ box.content }}</p>
+                </div>
+                {% endfor %}
+                {% endif %}
+
+                <!-- Footer Links (Optional) -->
+                {% if footer_links %}
+                <p class="footer-links">
+                    {% for link in footer_links %}
+                    {% if not loop.first %} &nbsp;&bull;&nbsp; {% endif %}
+                    {% if link.url %}
+                    <a href="{{ link.url }}">{{ link.text }}</a>
+                    {% else %}
+                    {{ link.text }}
+                    {% endif %}
+                    {% endfor %}
+                </p>
+                {% endif %}
+
+                <!-- Bottom note (Optional) -->
+                {% if bottom_note %}
+                <p class="body-text" style="font-size:13px;color:#6b7280;">
+                    {{ bottom_note }}
+                </p>
+                {% endif %}
+
+                <!-- Sign-off -->
+                {% if show_sign_off %}
+                <hr class="divider" />
+                <p class="sign-off">
+                    {% if sign_off_greeting %}{{ sign_off_greeting }}<br /><br />{% endif %}
+                    <span class="brand-name">{{ sign_off_name }}</span>
+                </p>
+                {% endif %}
+
+            </div>
+
+            <!-- Footer -->
+            <hr class="footer-line" />
+            <p class="copyright">© 2026 Qavtix. All rights reserved.</p>
+            <div class="email-footer">
+                <img src="{{ footer_image_url }}" style="width:100%;" />
+            </div>
+
+        </div>
+    </div>
+</body>
+
+</html>

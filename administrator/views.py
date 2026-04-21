@@ -14,6 +14,7 @@ from administrator.service.host_service import AdminBadgeService, AdminHostCardS
 from administrator.service.payout_service import AdminPayoutActionService
 from administrator.service.system_config_service import SystemConfigService
 from administrator.service.uptime_service import UptimeService
+from administrator.task import send_blue_badge_gift_email
 from authentication.serializers import CustomLoginSerializer
 from public.pagination import CustomPagination
 from public.response import api_response
@@ -1089,6 +1090,7 @@ class GiftBadgeView(APIView):
                 status_code=400,
                 data=None,
             )
+        send_blue_badge_gift_email.delay(host_id)
 
         return api_response(
             message="Badge gifted successfully",

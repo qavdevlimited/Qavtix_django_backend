@@ -1,6 +1,6 @@
 from rest_framework import serializers, status
 
-from administrator.models import Admin
+from administrator.models import Admin, AutoPayout
 from host.models import HostActivity
 from payments.services.currency_utils import get_currency_for_country
 
@@ -397,12 +397,13 @@ class AdminHostDetailProfileSerializer(serializers.Serializer):
     city                = serializers.CharField()
     followers           = serializers.IntegerField()
     verified            = serializers.BooleanField()
-    relevant_links      = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+    relevant_links      = serializers.JSONField(allow_null=True)
     date_joined         = serializers.DateTimeField()
     bank_accounts       = AdminBankAccountSerializer(many=True)
     account_status      = serializers.CharField()
     is_subscribed       = serializers.BooleanField()
     is_verified   = serializers.BooleanField()
+    auto_payout   = serializers.BooleanField()
 
 
 
@@ -933,3 +934,9 @@ class CombinedProfileSerializer(serializers.Serializer):
 
 class ForcePayoutSerializer(serializers.Serializer):
     host_id = serializers.IntegerField()
+
+
+class AutoPayoutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AutoPayout
+        fields = ["is_enabled"]

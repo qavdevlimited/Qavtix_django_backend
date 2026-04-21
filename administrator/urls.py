@@ -101,6 +101,8 @@ urlpatterns = [
 
 
     path("admin/profile/", AdminProfileView.as_view(), name="admin-profile"),
+
+    path('admin/auto-payout/<str:host_id>/',AutoPayoutConfigAPIView.as_view(),name='auto-payout-config'),
 ]
 
 

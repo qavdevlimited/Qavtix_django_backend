@@ -415,3 +415,51 @@ class SystemConfigSeed:
             if created:
                 created_count += 1
         print(f"SystemConfig: {created_count} defaults seeded.")
+
+
+class AutoPayout(models.Model):
+    """
+    Enable/disable automatic payout processing for a host.
+    When enabled, withdrawals are processed automatically without admin approval.
+    Payouts occur every Friday.
+    """
+    host = models.OneToOneField(
+        'host.Host',
+        on_delete=models.CASCADE,
+        related_name='auto_payout'
+    )
+    
+    # Enable/disable automatic payout
+    is_enabled = models.BooleanField(default=False)
+    
+    # Last payout date for tracking
+    last_payout_date = models.DateTimeField(null=True, blank=True)
+    
+    # Metadata for tracking failures
+    metadata = models.JSONField(default=dict, blank=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'transactions_auto_payout'
+        verbose_name = 'Auto Payout Configuration'
+        verbose_name_plural = 'Auto Payout Configurations'
+    
+    def __str__(self):
+        status = 'Enabled' if self.is_enabled else 'Disabled'
+        return f"AutoPayout({self.host.user.email}) - {status}"
+    
+    def to_dict(self):
+        """Return serializable dict representation"""
+        return {
+            'id': str(self.id),
+            'host_id': str(self.host.id),
+            'host_email': self.host.user.email,
+            'is_enabled': self.is_enabled,
+            'last_payout_date': self.last_payout_date.isoformat() if self.last_payout_date else None,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+        }
+ 

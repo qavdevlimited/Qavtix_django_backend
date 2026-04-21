@@ -1,9 +1,9 @@
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, BulkPayoutActionSerializer, CombinedProfileSerializer, FeesConfigSerializer, FeesConfigUpdateSerializer, ForcePayoutSerializer, FraudConfigSerializer, FraudConfigUpdateSerializer, FraudConfigUpdateSerializer, GeneralConfigSerializer, GeneralConfigUpdateSerializer, GiftBadgeSerializer, HostActivitySerializer, LocalizationConfigSerializer, LocalizationConfigUpdateSerializer, NotificationsConfigSerializer, NotificationsConfigUpdateSerializer, PoliciesConfigSerializer, PoliciesConfigUpdateSerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
+from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, AutoPayoutSerializer, BulkPayoutActionSerializer, CombinedProfileSerializer, FeesConfigSerializer, FeesConfigUpdateSerializer, ForcePayoutSerializer, FraudConfigSerializer, FraudConfigUpdateSerializer, FraudConfigUpdateSerializer, GeneralConfigSerializer, GeneralConfigUpdateSerializer, GiftBadgeSerializer, HostActivitySerializer, LocalizationConfigSerializer, LocalizationConfigUpdateSerializer, NotificationsConfigSerializer, NotificationsConfigUpdateSerializer, PoliciesConfigSerializer, PoliciesConfigUpdateSerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
 from administrator.service.audit import AdminAuditLogService, AuditLogMixin
 from administrator.service.auth_service import AdminAuthService, AuthError
 from administrator.service.customer_details_service import  UserDetailCardService, UserDetailOrderHistoryService, UserDetailProfileService, UserDetailSpendChartService
@@ -11,11 +11,12 @@ from administrator.service.dashboard_service import ActivityService, AdminDashbo
 from administrator.service.event_service import AdminEventActionService, AdminEventAttendeeService, AdminEventCardService, AdminEventListService
 from administrator.service.financial_service import AdminFeaturedPaymentService, AdminFinancialCardService, AdminFinancialResaleCardService, AdminMarketplaceListingService, AdminPayoutRequestService, AdminSubscriptionPaymentService
 from administrator.service.host_service import AdminBadgeService, AdminHostCardService, AdminHostChartService, AdminHostDetailCardService, AdminHostDetailProfileService, AdminHostEventsService, AdminHostListService, AdminHostVerificationService
-from administrator.service.payout_service import AdminPayoutActionService
+from administrator.service.payout_service import AdminPayoutActionService, AutoPayoutService
 from administrator.service.system_config_service import SystemConfigService
 from administrator.service.uptime_service import UptimeService
 from administrator.task import send_blue_badge_gift_email
 from authentication.serializers import CustomLoginSerializer
+from host.models import Host
 from public.pagination import CustomPagination
 from public.response import api_response
 from rest_framework.views import APIView
@@ -2142,3 +2143,123 @@ class AdminProfileView(APIView):
             status_code=200,
             data=serializer.data,
         )
+
+
+
+
+class AutoPayoutConfigAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+
+    @extend_schema(
+        summary="Retrieve auto-payout status",
+        description="Get auto-payout configuration (is_enabled) for a specific host.",
+        parameters=[
+            OpenApiParameter(
+                name="host_id",
+                description="ID of the host",
+                required=True,
+                type=str,
+                location=OpenApiParameter.PATH,
+            ),
+        ],
+        responses={
+            200: AutoPayoutSerializer,
+            404: OpenApiResponse(description="Host not found"),
+            400: OpenApiResponse(description="Bad request"),
+        },
+    )
+    def get(self, request, host_id):
+        try:
+            config = AutoPayoutService.get_or_create_config(host_id)
+            serializer = AutoPayoutSerializer(config)
+
+            return api_response(
+                message="Retrieval successful",
+                status_code=200,
+                data=serializer.data,
+            )
+
+        except ValueError as e:
+            return api_response(
+                message=str(e),
+                status_code=404,
+                data=None,
+            )
+
+        except Exception as e:
+            logger.error(f"Error fetching auto-payout config: {e}")
+            return api_response(
+                message="An error occurred",
+                status_code=400,
+                data=None,
+            )
+
+    @extend_schema(
+        summary="Enable/Disable auto-payout",
+        description="Toggle auto-payout for a host.",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "is_enabled": {
+                        "type": "boolean",
+                        "example": True
+                    }
+                },
+                "required": ["is_enabled"],
+            }
+        },
+        responses={
+            200: AutoPayoutSerializer,
+            400: OpenApiResponse(description="Invalid input"),
+        },
+    )
+    def put(self, request, host_id):
+        host = get_object_or_404(Host, id=host_id)
+
+        is_enabled = request.data.get("is_enabled")
+
+        if is_enabled is None:
+            return api_response(
+                message="Missing required field: is_enabled (true/false)",
+                status_code=400,
+                data=None,
+            )
+
+        if not isinstance(is_enabled, bool):
+            return api_response(
+                message="is_enabled must be a boolean (true or false)",
+                status_code=400,
+                data=None,
+            )
+
+        try:
+            if is_enabled:
+                config = AutoPayoutService.enable_auto_payout(host_id)
+                action = "enabled"
+                logger.info(
+                    f"Admin {request.user.email} enabled auto-payout for host {host_id}"
+                )
+            else:
+                config = AutoPayoutService.disable_auto_payout(host_id)
+                action = "disabled"
+                logger.info(
+                    f"Admin {request.user.email} disabled auto-payout for host {host_id}"
+                )
+
+            serializer = AutoPayoutSerializer(config)
+
+            return api_response(
+                message=f"Auto-payout {action} for {host.user.email}",
+                status_code=200,
+                data=serializer.data,
+            )
+
+        except Exception as e:
+            logger.error(f"Error updating auto-payout: {e}")
+            return api_response(
+                message=str(e),
+                status_code=400,
+                data=None,
+            )

@@ -27,7 +27,7 @@ class Host(models.Model):
     state=models.CharField(max_length=30)
     city=models.CharField(max_length=30)
     postal_code=models.CharField(max_length=20, blank=True, null=True)
-    relevant_links = models.JSONField(default=list, blank=True)
+    relevant_links = models.JSONField(default=dict, blank=True)
     categories = models.ManyToManyField(Category,related_name="hosts", blank=True)
     registration_date=models.DateTimeField(auto_now_add=True)
     agree_to_terms=models.BooleanField(default=False)

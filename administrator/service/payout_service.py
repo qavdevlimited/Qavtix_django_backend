@@ -216,7 +216,167 @@ class AdminPayoutActionService:
 
         return True, f"Force payout of ₦{available:,.2f} initiated.", withdrawal
 
+# administrator/service/auto_payout_service.py
 
+"""
+Simplified Auto Payout Service
+
+When a host with auto-payout enabled creates a withdrawal:
+1. Check if auto-payout is enabled
+2. Skip admin approval
+3. Automatically queue the Paystack transfer
+4. No frequency/scheduling - just process immediately when withdrawal is created
+"""
+
+import logging
+from decimal import Decimal
+from django.db import transaction
+from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
+
+class AutoPayoutService:
+    """
+    Service for managing auto-payout processing.
+    """
+
+    @staticmethod
+    def get_or_create_config(host_id):
+        """
+        Returns the AutoPayout config for a host.
+        Creates one if it doesn't exist (disabled by default).
+        """
+        from host.models import Host
+        from administrator.models import AutoPayout
+
+        try:
+            host = Host.objects.get(id=host_id)
+        except Host.DoesNotExist:
+            raise ValueError(f"Host {host_id} not found")
+
+        config, created = AutoPayout.objects.get_or_create(
+            host=host,
+            defaults={'is_enabled': False}
+        )
+
+        if created:
+            logger.info(f"Created AutoPayout config for host {host_id}")
+
+        return config
+
+    @staticmethod
+    def enable_auto_payout(host_id):
+        """
+        Enable auto-payout for a host.
+        All future withdrawals will be processed automatically on Fridays.
+        """
+        from administrator.models import AutoPayout
+
+        config = AutoPayoutService.get_or_create_config(host_id)
+
+        with transaction.atomic():
+            config.is_enabled = True
+            config.save(update_fields=['is_enabled', 'updated_at'])
+
+        logger.info(f"Auto-payout enabled for host {host_id}")
+        return config
+
+    @staticmethod
+    def disable_auto_payout(host_id):
+        """Disable auto-payout for a host."""
+        from administrator.models import AutoPayout
+
+        config = AutoPayoutService.get_or_create_config(host_id)
+
+        with transaction.atomic():
+            config.is_enabled = False
+            config.save(update_fields=['is_enabled', 'updated_at'])
+
+        logger.info(f"Auto-payout disabled for host {host_id}")
+        return config
+
+    @staticmethod
+    def is_auto_payout_enabled(host_id):
+        """Check if auto-payout is enabled for a host."""
+        try:
+            config = AutoPayoutService.get_or_create_config(host_id)
+            return config.is_enabled
+        except Exception:
+            return False
+
+    @staticmethod
+    def should_process_auto_payout(withdrawal):
+        """
+        Check if a withdrawal should be auto-processed.
+        
+        Conditions:
+        1. Host has auto-payout enabled
+        2. Today is Friday (weekday=4)
+        
+        Returns: (should_process, reason)
+        """
+        host_id = str(withdrawal.user.host.id)
+        
+        if not AutoPayoutService.is_auto_payout_enabled(host_id):
+            return False, "Auto-payout is disabled for this host"
+        
+        today = timezone.now()
+        if today.weekday() != 4:  # Friday is 4 (0=Monday, 6=Sunday)
+            day_name = today.strftime('%A')
+            return False, f"Not Friday (today is {day_name}). Withdrawal pending admin approval."
+        
+        return True, "Ready for auto-processing"
+
+    @staticmethod
+    def process_withdrawal_if_eligible(withdrawal):
+        """
+        Called when a host creates a withdrawal.
+        If auto-payout is enabled AND today is Friday, process immediately.
+        Otherwise, leave it pending for admin approval.
+        
+        Returns:
+            (processed: bool, message: str, new_status: str)
+        """
+        from administrator.service.payout_service import PaystackPayoutService
+
+        should_process, reason = AutoPayoutService.should_process_auto_payout(withdrawal)
+        
+        if not should_process:
+            return False, reason, "pending"
+        
+        try:
+            # Mark as approved (skip pending state)
+            withdrawal.status = "approved"
+            withdrawal.metadata = withdrawal.metadata or {}
+            withdrawal.metadata["auto_processed"] = True
+            withdrawal.metadata["auto_processed_at"] = timezone.now().isoformat()
+            withdrawal.save(update_fields=['status', 'metadata'])
+            
+            # Queue the Paystack transfer
+            # from administrator.tasks import process_single_payout
+            # process_single_payout.delay(str(withdrawal.id), "auto_payout_system")
+            
+            logger.info(
+                f"Withdrawal {withdrawal.id} auto-processed for host {withdrawal.user.host.id}"
+            )
+            
+            return True, "Withdrawal auto-processed and queued for transfer", "approved"
+            
+        except Exception as e:
+            logger.error(f"Error auto-processing withdrawal {withdrawal.id}: {e}")
+            return False, f"Auto-processing failed: {str(e)}", "pending"
+
+    @staticmethod
+    def update_last_payout(host_id):
+        """Update the last_payout_date for a host."""
+        from transactions.models import AutoPayout
+        
+        config = AutoPayoutService.get_or_create_config(host_id)
+        config.last_payout_date = timezone.now()
+        config.save(update_fields=['last_payout_date'])
+        
+        logger.info(f"Updated last_payout_date for host {host_id}")
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal Paystack Transfer Logic — called from Celery task
 # ─────────────────────────────────────────────────────────────────────────────

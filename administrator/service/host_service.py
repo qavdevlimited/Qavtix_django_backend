@@ -336,6 +336,11 @@ class AdminHostDetailProfileService:
         except Host.DoesNotExist:
             return None
 
+        try:
+            auto_payout_status = host.auto_payout.is_enabled
+        except Exception:
+            auto_payout_status = False
+
         bank_accounts = list(
             PayoutInformation.objects
             .filter(user=host.user)
@@ -392,6 +397,7 @@ class AdminHostDetailProfileService:
             "account_status":      account_status,
             "is_subscribed":       is_subscribed,
             "is_verified":   is_verified_badge,
+            "auto_payout": auto_payout_status,
 
         }
 

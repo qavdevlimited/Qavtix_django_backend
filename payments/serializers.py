@@ -91,9 +91,9 @@ class CheckoutSerializer(serializers.Serializer):
                     today = date.today()
                     age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
-                    if age < 18:
+                    if age < event.minimum_age if event.minimum_age is not None else 18:
                         raise serializers.ValidationError(
-                            {"date_of_birth": "You must be 18+ to purchase tickets for this event."}
+                            {"date_of_birth": "You must reach the approved age to purchase tickets for this event."}
                         )
 
         return data

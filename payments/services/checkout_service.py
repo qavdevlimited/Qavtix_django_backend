@@ -222,9 +222,9 @@ class CheckoutService:
                 today.year - initiator_dob.year -
                 ((today.month, today.day) < (initiator_dob.month, initiator_dob.day))
             )
-            if initiator_age < 18:
+            if initiator_age < event.minimum_age if event.minimum_age is not None else 18:
                 raise CheckoutError(
-                    "You (as initiator) must be 18+ to purchase tickets for this event.", 400
+                    "You (as initiator) must reach the age requirement  to purchase tickets for this event.", 400
                 )
 
             # 2. Every other split member (the ones sent in the request)
@@ -241,10 +241,10 @@ class CheckoutService:
                     today.year - member_dob.year -
                     ((today.month, today.day) < (member_dob.month, member_dob.day))
                 )
-                if member_age < 18:
+                if member_age < event.minimum_age:
                     raise CheckoutError(
                         f"The user with email {member.get('email')} does not meet the age requirement "
-                        "(must be 18+) for this event.", 400
+                        " for this event.", 400
                     )
                 
         currency   = get_currency_for_event(event)   # ← derived from host country

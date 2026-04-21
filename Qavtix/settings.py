@@ -383,6 +383,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'events.tasks.mark_past_events_as_ended',   # Change path if needed
         'schedule': crontab(minute='*/30'),                # Every 30 minutes
     },
+    "activate-scheduled-events-every-minute": {
+        "task": "events.tasks.activate_scheduled_events",  # adjust path
+        "schedule": crontab(minute="*/1"),  # every minute
+    },
 }
 
 FRONTEND_URL = config("FRONTEND_URL", default="https://qavtix.com")

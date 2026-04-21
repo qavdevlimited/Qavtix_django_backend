@@ -95,3 +95,21 @@ def send_welcome_email_task(self, email: str, first_name: str):
 
     except Exception as exc:
         raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_host_welcome_email_task(self, email: str, first_name: str):
+    try:
+        send_templated_email(
+            subject="Welcome to QavTix 🎉",
+             to_email=email,
+            template_name="emails/hostwelcome.html",
+            context={
+                "first_name": first_name,
+                "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+            },
+        )
+
+    except Exception as exc:
+        raise self.retry(exc=exc)

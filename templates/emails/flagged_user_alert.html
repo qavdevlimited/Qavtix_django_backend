@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Successful Sign Up – QavTix</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600;700&display=swap"
+        rel="stylesheet" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #f0f2f5;
+            font-family: 'Inter', Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            color: #1a1a2e;
+        }
+
+        .email-wrapper {
+            width: 100%;
+            background-color: #f0f2f5;
+            padding: 40px 16px;
+        }
+
+        .email-card {
+            max-width: 584px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 0 0 16px 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        }
+
+        .email-header img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .email-body {
+            padding: 40px 48px 36px;
+        }
+
+        .greeting {
+            font-family: 'Space Grotesk', Arial, sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 12px;
+        }
+
+        .welcome-line {
+            font-size: 15px;
+            color: #374151;
+            margin-bottom: 16px;
+            line-height: 1.6;
+        }
+
+        .welcome-line strong {
+            font-weight: 600;
+            color: #0f172a;
+        }
+
+        .body-text {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.75;
+            margin-bottom: 20px;
+        }
+
+        .section-heading {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 10px;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px solid #e5e7eb;
+            margin: 28px 0;
+        }
+
+        .sign-off {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.7;
+        }
+
+        .sign-off .brand-name {
+            font-weight: 700;
+            color: #3b5bdb;
+        }
+
+        .email-footer img {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .footer-line {
+            background-color: #D9D9D9;
+            border: none;
+            height: 1px;
+        }
+
+        .copyright {
+            font-family: Inter;
+            font-weight: 400;
+            font-size: 12px;
+            text-align: center;
+            color: #6B7280;
+            margin-block: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="email-wrapper">
+        <div class="email-card">
+
+            <!-- Header -->
+            <div class="email-header">
+                <img src="{{ header_image_url }}" style="width:100%;" />
+            </div>
+
+            <!-- Body -->
+            <div class="email-body">
+                <p class="greeting">Hello Admin,</p>
+
+                <p class="welcome-line">
+                    A user has been <strong>flagged for suspicious activity</strong> on QavTix.
+                </p>
+
+                <p class="body-text">
+                    Please review the details below:
+                </p>
+
+                <p class="body-text">
+                    <strong>User ID:</strong> {{ user_id }}<br />
+                    <strong>Email:</strong> {{ user_email }}<br />
+                    <strong>Name:</strong> {{ user_name }}
+                </p>
+
+                <p class="body-text">
+                    <strong>Reason:</strong> {{ reason }}
+                </p>
+
+                <p class="body-text">
+                    <strong>Details:</strong> {{ notes }}
+                </p>
+
+                <p class="body-text">
+                    This user still has full access. Please review and take appropriate action if necessary.
+                </p>
+
+                <hr class="divider" />
+
+                <p class="sign-off">
+                    System Alert,<br />
+                    <span class="brand-name">QavTix Monitoring</span>
+                </p>
+            </div>
+
+            <!-- Footer -->
+            <hr class="footer-line" />
+            <p class="copyright">© 2026 Qavtix. All rights reserved.</p>
+            <div class="email-footer">
+                <img src="{{ footer_image_url }}" style="width:100%;" />
+            </div>
+
+        </div>
+    </div>
+</body>
+
+</html>

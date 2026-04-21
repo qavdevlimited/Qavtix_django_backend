@@ -6,6 +6,7 @@ from notification.email import send_templated_email
  
 logger = logging.getLogger(__name__)
 from django.utils.safestring import mark_safe
+from django.contrib.auth.models import User
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
 def send_otp_email(self, user_email, full_name, otp):
@@ -74,6 +75,11 @@ def flag_suspicious_users():
         if created:
             flagged_count += 1
             logger.info(f"Flagged user {user_id} for high transaction volume")
+            send_flagged_user_alert_email.delay(
+            user_id=user_id,
+            reason="high_transaction_volume",
+            notes=f"20+ completed orders in 24 hours as of {now.date()}",
+        )
  
     # ── 2. Multiple refund requests ────────────────────────────────────────────
     high_refund_users = (
@@ -97,6 +103,11 @@ def flag_suspicious_users():
         if created:
             flagged_count += 1
             logger.info(f"Flagged user {user_id} for multiple refunds")
+            send_flagged_user_alert_email.delay(
+            user_id=user_id,
+            reason="multiple_refunds",
+            notes=f"3+ refund requests in 30 days as of {now.date()}",
+        )
  
     logger.info(f"flag_suspicious_users complete — {flagged_count} new flags created")
 
@@ -183,6 +194,35 @@ def send_blue_badge_gift_email(self, host_id):
         logger.error(f"Failed to send blue badge email to host {host_id}: {exc}")
         raise self.retry(exc=exc)
  
+
+ 
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_flagged_user_alert_email(self, user_id, reason, notes):
+    try:
+        user = User.objects.filter(id=user_id).first()
+
+        if not user:
+            logger.error(f"User {user_id} not found for flagged alert")
+            return
+
+        send_templated_email(
+            subject=f"🚨 Suspicious User Flagged – {user.email}",
+            to_email="admin@qavtix.com",  # 🔥 replace with your admin email or settings
+            template_name="emails/flagged_user_alert.html",
+            context={
+                "user_email": user.email,
+                "user_name": user.first_name or "N/A",
+                "reason": reason,
+                "notes": notes,
+                "user_id": user.id,
+                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+            },
+        )
+
+    except Exception as exc:
+        raise self.retry(exc=exc)
+
 
 
 @shared_task(

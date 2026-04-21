@@ -13,7 +13,7 @@ from django.db.models import (
     Count, Sum, Avg, Q, Min, Max, F,
     OuterRef, Subquery, IntegerField,IntegerField, DecimalField 
 )
- 
+from django.db.models.functions import Coalesce
 logger = logging.getLogger(__name__)
 
 
@@ -489,13 +489,35 @@ class AdminHostEventsService:
         if search:
             qs = qs.filter(title__icontains=search)
 
-        # Performance sort
-        if performance == "high":
-            qs = qs.order_by(F("revenue").desc(nulls_last=True))
-        elif performance == "low":
-            qs = qs.order_by(F("revenue").asc(nulls_last=True))
-        else:
-            qs = qs.order_by("-created_at")
+
+        qs = qs.annotate(
+            tickets_sold=Coalesce(F("tickets_sold"), 0),
+            total_listed=Coalesce(F("total_listed"), 0),
+        )
+        
+        if performance == "fully_booked":
+            return qs.filter(tickets_sold__gte=F("total_listed"))
+
+        elif performance == "almost_full":
+            return qs.filter(
+                fill_rate__gte=0.8,
+                fill_rate__lt=1
+            )
+
+        elif performance == "moderate_sales":
+            return qs.filter(
+                fill_rate__gte=0.5,
+                fill_rate__lt=0.8
+            )
+
+        elif performance == "low_sales":
+            return qs.filter(
+                fill_rate__gt=0,
+                fill_rate__lt=0.3
+            )
+
+        elif performance == "no_sales":
+            return qs.filter(tickets_sold=0)
 
         return qs
 

@@ -948,7 +948,7 @@ class AdminHostDetailProfileView(APIView):
         OpenApiParameter("event_state", OpenApiTypes.STR,  description="live | cancelled | ended"),
         OpenApiParameter("date_from",   OpenApiTypes.DATE, description="YYYY-MM-DD"),
         OpenApiParameter("date_to",     OpenApiTypes.DATE, description="YYYY-MM-DD"),
-        OpenApiParameter("performance", OpenApiTypes.STR,  description="high | low"),
+        OpenApiParameter("performance", OpenApiTypes.STR,  description="fully_booked | almost_full | moderate_sales | low_sales | no_sales"),
         OpenApiParameter("search",      OpenApiTypes.STR,  description="Event title"),
     ],
     responses=AdminHostEventSerializer(many=True),

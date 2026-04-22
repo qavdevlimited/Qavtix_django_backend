@@ -3,6 +3,7 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers, status
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from administrator.mixins import SuperAdminRequiredMixin, SuperAdminWriteMixin
 from administrator.serializers import AdminAuditLogSerializer, AdminEventAttendeeSerializer, AdminEventCardSerializer, AdminEventListSerializer, AdminFeatureEventSerializer, AdminFeaturedPaymentSerializer, AdminFinancialCardSerializer, AdminFinancialResaleCardSerializer, AdminHostCardSerializer, AdminHostChartPointSerializer, AdminHostDetailCardSerializer, AdminHostDetailProfileSerializer, AdminHostEventSerializer, AdminHostListSerializer, AdminHostVerificationListSerializer, AdminLoginSerializer, AdminMarketplaceListingSerializer, AdminOTPVerifySerializer, AdminPayoutRequestSerializer, AdminSubscriptionPaymentSerializer, AdminTicketTypeSerializer, AutoPayoutSerializer, BulkPayoutActionSerializer, CombinedProfileSerializer, FeesConfigSerializer, FeesConfigUpdateSerializer, ForcePayoutSerializer, FraudConfigSerializer, FraudConfigUpdateSerializer, FraudConfigUpdateSerializer, GeneralConfigSerializer, GeneralConfigUpdateSerializer, GiftBadgeSerializer, HostActivitySerializer, LocalizationConfigSerializer, LocalizationConfigUpdateSerializer, NotificationsConfigSerializer, NotificationsConfigUpdateSerializer, PoliciesConfigSerializer, PoliciesConfigUpdateSerializer, RevenueAnalyticsResponseSerializer, TicketAnalyticsResponseSerializer, UserDetailCardSerializer, UserDetailChartPointSerializer, UserDetailOrderSerializer, UserDetailProfileSerializer
 from administrator.service.audit import AdminAuditLogService, AuditLogMixin
 from administrator.service.auth_service import AdminAuthService, AuthError
@@ -407,7 +408,7 @@ class AdminAffiliateCardsView(APIView):
 
     def get(self, request):
         date_range = request.query_params.get("date_range", "month")
-        cards      = AdminAffiliateCardService.get_cards(date_range=date_range)
+        cards      = AdminAffiliateCardService.get_cards(date_range=date_range,user=request.user)
 
         return api_response(
             message="Affiliate cards retrieved successfully.",
@@ -441,6 +442,7 @@ class AdminAffiliateListView(generics.ListAPIView):
 
     def get_queryset(self):
         return AdminAffiliateListService.get_affiliates(
+            user= self.request.user,
             last_activity_from = self.request.query_params.get("last_activity_from"),
             last_activity_to   = self.request.query_params.get("last_activity_to"),
             search             = self.request.query_params.get("search", "").strip() or None,
@@ -1657,7 +1659,7 @@ class AdminPayoutDeclineView(AuditLogMixin, APIView):
         "a Paystack transfer. Bypasses the normal pending → approved flow."
     ),
 )
-class AdminPayoutForceView(AuditLogMixin, APIView):
+class AdminPayoutForceView(SuperAdminRequiredMixin,AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
@@ -1847,7 +1849,7 @@ class AdminSubscriptionPaymentsView(generics.ListAPIView):
     responses=GeneralConfigSerializer,
     summary="Admin — Get General Settings",
 )
-class AdminConfigGeneralView(AuditLogMixin, APIView):
+class AdminConfigGeneralView(SuperAdminWriteMixin,AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
  
     def get(self, request):
@@ -1890,7 +1892,7 @@ class AdminConfigGeneralView(AuditLogMixin, APIView):
     responses=PoliciesConfigSerializer,
     summary="Admin — Get Policy Settings",
 )
-class AdminConfigPoliciesView(AuditLogMixin, APIView):
+class AdminConfigPoliciesView(SuperAdminWriteMixin,AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
  
     def get(self, request):
@@ -1933,7 +1935,7 @@ class AdminConfigPoliciesView(AuditLogMixin, APIView):
     responses=FeesConfigSerializer,
     summary="Admin — Get Fee Settings",
 )
-class AdminConfigFeesView(AuditLogMixin, APIView):
+class AdminConfigFeesView(SuperAdminWriteMixin,AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
  
     def get(self, request):
@@ -1976,7 +1978,7 @@ class AdminConfigFeesView(AuditLogMixin, APIView):
     responses=FraudConfigSerializer,
     summary="Admin — Get Fraud Detection Settings",
 )
-class AdminConfigFraudView(AuditLogMixin, APIView):
+class AdminConfigFraudView(SuperAdminWriteMixin,AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
  
     def get(self, request):
@@ -2019,7 +2021,7 @@ class AdminConfigFraudView(AuditLogMixin, APIView):
     responses=NotificationsConfigSerializer,
     summary="Admin — Get Notification Settings",
 )
-class AdminConfigNotificationsView(AuditLogMixin, APIView):
+class AdminConfigNotificationsView(SuperAdminWriteMixin,AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
  
     def get(self, request):
@@ -2062,7 +2064,7 @@ class AdminConfigNotificationsView(AuditLogMixin, APIView):
     responses=LocalizationConfigSerializer,
     summary="Admin — Get Localization Settings",
 )
-class AdminConfigLocalizationView(AuditLogMixin, APIView):
+class AdminConfigLocalizationView(SuperAdminWriteMixin,AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
  
     def get(self, request):
@@ -2107,7 +2109,7 @@ class AdminConfigLocalizationView(AuditLogMixin, APIView):
     summary="Admin — Reset ALL Settings to Factory Defaults",
     description="Resets every config key to its original factory default. Cannot be undone.",
 )
-class AdminConfigResetAllView(AuditLogMixin, APIView):
+class AdminConfigResetAllView(SuperAdminWriteMixin,AuditLogMixin, APIView):
     permission_classes = [permissions.IsAuthenticated]
  
     def post(self, request):
@@ -2158,7 +2160,7 @@ class AdminProfileView(APIView):
 
 
 
-class AutoPayoutConfigAPIView(APIView):
+class AutoPayoutConfigAPIView(SuperAdminWriteMixin,AuditLogMixin,APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
 

@@ -91,6 +91,7 @@ class RoleControlService:
             "attendeesubscription": "attendee__country",
             "hostsubscription": "host__country",
             "hostactivity":"host__host_profile__country",
+            "affiliatelink": "user__attendee_profile__country"
         }
         
         return field_map.get(model_name.lower(), None)

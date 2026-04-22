@@ -172,7 +172,7 @@ class AdminPayoutRequestService:
         if host:
             auto_payout = getattr(host, "auto_payout", None)
             return {
-                "id"  :            host.id,
+                "host_id"  :            host.id,
                 "name":            host.full_name,
                 "email":           user.email,
                 "profile_picture": host.profile_picture,
@@ -183,7 +183,7 @@ class AdminPayoutRequestService:
             }
         if attendee:
             return {
-                "id" :             attendee.id,
+                "attendee_id" :             attendee.id,
                 "name":            attendee.full_name or user.email,
                 "email":           user.email,
                 "profile_picture": attendee.profile_picture,

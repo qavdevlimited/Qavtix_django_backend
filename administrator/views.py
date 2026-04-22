@@ -1432,7 +1432,7 @@ class AdminFinancialCardsView(APIView):
         date_range = request.query_params.get("date_range", "month")
         event_id   = request.query_params.get("event_id")
         cards      = AdminFinancialCardService.get_cards(
-            date_range=date_range, event_id=event_id
+            date_range=date_range, event_id=event_id,user=request.user
         )
  
         return api_response(
@@ -1455,7 +1455,7 @@ class AdminFinancialResaleCardsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
  
     def get(self, request):
-        date_range = request.query_params.get("date_range", "month")
+        date_range = request.query_params.get("date_range", None)
         event_id   = request.query_params.get("event_id")
         cards      = AdminFinancialResaleCardService.get_cards(
             date_range=date_range, event_id=event_id
@@ -1491,6 +1491,7 @@ class AdminPayoutPendingView(generics.ListAPIView):
     def get_queryset(self):
         p = self.request.query_params
         return AdminPayoutRequestService.get_pending(
+            user= self.request.user,
             date_from  = p.get("date_from"),
             date_to    = p.get("date_to"),
             min_amount = p.get("min_amount"),
@@ -1537,6 +1538,7 @@ class AdminPayoutApprovedView(generics.ListAPIView):
     def get_queryset(self):
         p = self.request.query_params
         return AdminPayoutRequestService.get_approved(
+            user= self.request.user,
             date_from  = p.get("date_from"),
             date_to    = p.get("date_to"),
             min_amount = p.get("min_amount"),
@@ -1714,6 +1716,7 @@ class AdminMarketplaceListingsView(generics.ListAPIView):
     def get_queryset(self):
         p = self.request.query_params
         return AdminMarketplaceListingService.get_listings(
+            user=self.request.user,
             status     = p.get("status"),
             seller_id  = p.get("seller_id"),
             min_amount = p.get("min_amount"),
@@ -1761,6 +1764,7 @@ class AdminFeaturedPaymentsView(generics.ListAPIView):
     def get_queryset(self):
         p = self.request.query_params
         return AdminFeaturedPaymentService.get_featured_payments(
+            user=self.request.user,
             plan_slug  = p.get("plan_slug"),
             status     = p.get("status"),
             min_amount = p.get("min_amount"),
@@ -1809,6 +1813,7 @@ class AdminSubscriptionPaymentsView(generics.ListAPIView):
     def get_queryset(self):
         p = self.request.query_params
         return AdminSubscriptionPaymentService.get_subscriptions(
+            user=self.request.user,
             plan_slug     = p.get("plan_slug"),
             status        = p.get("status"),
             billing_cycle = p.get("billing_cycle"),

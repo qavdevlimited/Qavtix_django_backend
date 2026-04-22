@@ -81,6 +81,10 @@ class RoleControlService:
             "orderticket": "order__event__host__country",
             "featuredplanevent": "event__host__country",
             "hoststrictsubscription": "host__country",
+            "affliateearnings": "attendee__country",
+            "marketlisting": "seller__attendee_profile__country",
+            "featuredevent": "user__host_profile__country",
+            "hoststrictsubscription": "host__country",
         }
 
         return field_map.get(model_name.lower(), None)

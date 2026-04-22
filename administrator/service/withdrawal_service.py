@@ -30,6 +30,7 @@ class AdminWithdrawalListService:
                 "user",
                 "user__attendee_profile",
                 "payout_account",
+                "user__host_profile"
             )
             .order_by("-created_at")
         )

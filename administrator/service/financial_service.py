@@ -7,7 +7,7 @@ from django.utils import timezone
 from datetime import timedelta
 from administrator.models import AutoPayout
 from marketplace.models import MarketListing
-
+from administrator.rolecontrol import RoleControlService
 logger = logging.getLogger(__name__)
 
 
@@ -32,50 +32,64 @@ def _get_since(date_range):
 class AdminFinancialCardService:
 
     @staticmethod
-    def get_cards(date_range="month", event_id=None):
+    def get_cards(date_range="month", event_id=None, user=None):
         from transactions.models import Order, Withdrawal
         from attendee.models import AffliateEarnings
         from payments.models import Payment
+        
 
         since, until = _get_since(date_range)
 
+       
         order_qs = Order.objects.filter(
             status="completed",
             created_at__gte=since,
             created_at__lt=until,
         )
+
+        if user:
+            order_qs = RoleControlService.filter_by_admin(user, order_qs, "order")
+
         if event_id:
             order_qs = order_qs.filter(event_id=event_id)
 
-        # Total GMV — all completed order revenue
         total_gmv = order_qs.aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
-
-        # Platform fees — sum of fees field on completed orders
         platform_fees = order_qs.aggregate(t=Sum("fees"))["t"] or Decimal("0")
 
-        # Affiliate balance — earned but not yet paid out
+      
+        earnings_qs = AffliateEarnings.objects.all()
+
+        if user:
+            earnings_qs = RoleControlService.filter_by_admin(
+                user,
+                earnings_qs,
+                "affliateearnings"
+            )
+
         total_earned = (
-            AffliateEarnings.objects
+            earnings_qs
             .filter(earning_type="affiliate")
             .aggregate(t=Sum("earning"))["t"] or Decimal("0")
         )
+
         total_paid_affiliate = (
-            AffliateEarnings.objects
+            earnings_qs
             .filter(earning_type="affiliate", status="paid")
             .aggregate(t=Sum("earning"))["t"] or Decimal("0")
         )
-        affiliate_balance = total_earned
 
-        # Pending payouts — sum of pending withdrawals
-        pending_payouts = (
-            Withdrawal.objects
-            .filter(status="pending")
-            .aggregate(t=Sum("amount"))["t"] or Decimal("0")
-        )
+        affiliate_balance = total_earned - total_paid_affiliate
+
+        withdrawal_qs = Withdrawal.objects.filter(status="pending")
+
+        if user:
+            withdrawal_qs = RoleControlService.filter_by_admin(user, withdrawal_qs, "withdrawal")
+
+        pending_payouts = withdrawal_qs.aggregate(t=Sum("amount"))["t"] or Decimal("0")
 
         return {
-            "total_gmv":       total_gmv,
-            "platform_fees":   platform_fees,
+            "total_gmv": total_gmv,
+            "platform_fees": platform_fees,
             "affiliate_balance": affiliate_balance,
             "pending_payouts": pending_payouts,
         }
@@ -89,6 +103,7 @@ class AdminPayoutRequestService:
 
     @staticmethod
     def get_pending(
+        user=None,
         date_from=None,
         date_to=None,
         min_amount=None,
@@ -104,10 +119,15 @@ class AdminPayoutRequestService:
                 "user",
                 "user__attendee_profile",
                 "user__host_profile",
-                "payout_account","user__host_profile__auto_payout",
+                "user__host_profile__auto_payout",
+                "payout_account",
             )
             .filter(status="pending")
         )
+
+       
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "withdrawal")
 
         return AdminPayoutRequestService._apply_filters(
             qs, date_from, date_to, min_amount, max_amount, seller_id, search
@@ -115,6 +135,7 @@ class AdminPayoutRequestService:
 
     @staticmethod
     def get_approved(
+        user=None,
         date_from=None,
         date_to=None,
         min_amount=None,
@@ -135,6 +156,10 @@ class AdminPayoutRequestService:
             .filter(status__in=["approved", "paid"])
         )
 
+       
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "withdrawal")
+
         return AdminPayoutRequestService._apply_filters(
             qs, date_from, date_to, min_amount, max_amount, seller_id, search
         )
@@ -153,10 +178,11 @@ class AdminPayoutRequestService:
             qs = qs.filter(amount__lte=max_amount)
         if seller_id:
             qs = qs.filter(user_id=seller_id)
+
         if search:
             qs = qs.filter(
                 Q(user__attendee_profile__full_name__icontains=search) |
-                Q(user__host_profile__full_name__icontains=search)     |
+                Q(user__host_profile__full_name__icontains=search) |
                 Q(user__email__icontains=search)
             )
 
@@ -210,6 +236,7 @@ class AdminMarketplaceListingService:
 
     @staticmethod
     def get_listings(
+        user=None,
         status=None,
         seller_id=None,
         min_amount=None,
@@ -220,6 +247,7 @@ class AdminMarketplaceListingService:
     ):
         from marketplace.models import MarketListing
         from django.db.models import Q
+        from administrator.rolecontrol import RoleControlService
 
         qs = (
             MarketListing.objects
@@ -230,27 +258,35 @@ class AdminMarketplaceListingService:
                 "ticket",
                 "ticket__event",
                 "ticket__event__category",
-                "ticket__order_ticket__ticket",
             )
             .prefetch_related("ticket__event__media")
         )
 
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "marketlisting")
+
         if status:
             qs = qs.filter(status__iexact=status)
+
         if seller_id:
             qs = qs.filter(seller_id=seller_id)
+
         if min_amount is not None:
             qs = qs.filter(price__gte=min_amount)
+
         if max_amount is not None:
             qs = qs.filter(price__lte=max_amount)
+
         if date_from:
             qs = qs.filter(created_at__date__gte=date_from)
+
         if date_to:
             qs = qs.filter(created_at__date__lte=date_to)
+
         if search:
             qs = qs.filter(
                 Q(seller__attendee_profile__full_name__icontains=search) |
-                Q(seller__email__icontains=search)                       |
+                Q(seller__host_profile__full_name__icontains=search) |
                 Q(ticket__event__title__icontains=search)
             )
 
@@ -262,50 +298,48 @@ class AdminMarketplaceListingService:
 class AdminFinancialResaleCardService:
 
     @staticmethod
-    def get_cards(date_range="month", event_id=None):
+    def get_cards(user=None, date_range=None, event_id=None):
+        from marketplace.models import MarketListing
         from transactions.models import Order, Withdrawal
-        from attendee.models import AffliateEarnings
-        from payments.models import Payment
 
         since, until = _get_since(date_range)
+        print(since,until)
 
+        listing_qs = MarketListing.objects.all()
         order_qs = Order.objects.filter(
-            status="completed", marketplace_listing__isnull=False,
-            created_at__gte=since,
-            created_at__lt=until,
+            status="completed",
+            marketplace_listing__isnull=False,
         )
+
+        if since and until:
+            listing_qs = listing_qs.filter(created_at__gte=since, created_at__lt=until)
+            order_qs = order_qs.filter(created_at__gte=since, created_at__lt=until)
+
+
+        if user:
+            listing_qs = RoleControlService.filter_by_admin(user, listing_qs, "marketlisting")
+
+        
+
         if event_id:
             order_qs = order_qs.filter(event_id=event_id)
 
-        # Total GMV — all completed order revenue
         total_gmv = order_qs.aggregate(t=Sum("total_amount"))["t"] or Decimal("0")
-
-        # Platform fees — sum of fees field on completed orders
         platform_fees = order_qs.aggregate(t=Sum("fees"))["t"] or Decimal("0")
 
-        total_resale_revenue= total_gmv + platform_fees
+        total_resale_revenue = total_gmv + platform_fees
 
-        total_listings = MarketListing.objects.filter(
-            created_at__gte=since,
-            created_at__lt=until,
-        ).count()
+        total_listings = listing_qs.count()
 
-        active_listings = MarketListing.objects.filter(
-            status="active",
-            created_at__gte=since,
-            created_at__lt=until,
-        ).count()
+        active_listings = listing_qs.filter(status="active").count()
 
-        # Pending payouts — sum of pending withdrawals
-        pending_payouts = (
-            Withdrawal.objects
-            .filter(status="pending")
-            .aggregate(t=Sum("amount"))["t"] or Decimal("0")
-        )
+        pending_payouts = Withdrawal.objects.filter(
+            status="pending"
+        ).aggregate(t=Sum("amount"))["t"] or Decimal("0")
 
         return {
-            "total_resale_revenue":       total_resale_revenue,
-            "net_profit":   total_gmv,
+            "total_resale_revenue": total_resale_revenue,
+            "net_profit": total_gmv,
             "tickets_resold": total_listings,
             "active_listings": active_listings,
         }
@@ -317,6 +351,7 @@ class AdminFeaturedPaymentService:
 
     @staticmethod
     def get_featured_payments(
+        user=None,
         plan_slug=None,
         status=None,
         min_amount=None,
@@ -339,37 +374,45 @@ class AdminFeaturedPaymentService:
             .prefetch_related("event__media")
         )
 
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "featuredevent")
+
         if plan_slug:
             qs = qs.filter(metadata__plan_slug=plan_slug)
+
         if status:
             qs = qs.filter(status__iexact=status)
+
         if min_amount is not None:
             qs = qs.filter(payment_amount__gte=min_amount)
+
         if max_amount is not None:
             qs = qs.filter(payment_amount__lte=max_amount)
+
         if date_from:
             qs = qs.filter(start_date__date__gte=date_from)
+
         if date_to:
             qs = qs.filter(start_date__date__lte=date_to)
+
         if search:
             qs = qs.filter(
-                Q(user__host_profile__full_name__icontains=search)     |
+                Q(user__host_profile__full_name__icontains=search) |
                 Q(user__host_profile__business_name__icontains=search) |
-                Q(user__email__icontains=search)                       |
+                Q(user__email__icontains=search) |
                 Q(event__title__icontains=search)
             )
 
         return qs.order_by("-start_date")
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Subscription Plan Payments
 # ─────────────────────────────────────────────────────────────────────────────
-
 class AdminSubscriptionPaymentService:
 
     @staticmethod
     def get_subscriptions(
+        user=None,
         plan_slug=None,
         status=None,
         billing_cycle=None,
@@ -389,27 +432,38 @@ class AdminSubscriptionPaymentService:
                 "host__user",
                 "plan",
             )
-            .exclude(plan_slug="free")  # exclude free — no payment involved
+            .exclude(plan_slug="free")
         )
+
+        # RBAC FILTER
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "hoststrictsubscription")
 
         if plan_slug:
             qs = qs.filter(plan_slug=plan_slug)
+
         if status:
             qs = qs.filter(status__iexact=status)
+
         if billing_cycle:
             qs = qs.filter(billing_cycle=billing_cycle)
+
         if min_amount is not None:
             qs = qs.filter(amount_paid__gte=min_amount)
+
         if max_amount is not None:
             qs = qs.filter(amount_paid__lte=max_amount)
+
         if date_from:
             qs = qs.filter(started_at__date__gte=date_from)
+
         if date_to:
             qs = qs.filter(started_at__date__lte=date_to)
+
         if search:
             qs = qs.filter(
-                Q(host__full_name__icontains=search)         |
-                Q(host__business_name__icontains=search)     |
+                Q(host__full_name__icontains=search) |
+                Q(host__business_name__icontains=search) |
                 Q(host__user__email__icontains=search)
             )
 

@@ -138,6 +138,7 @@ class AdminWithdrawalFilter(django_filters.FilterSet):
         from django.db.models import Q
         return queryset.filter(
             Q(user__attendee_profile__full_name__icontains=value) |
+            Q(user__host_profile__full_name__icontains=value) | 
             Q(user__email__icontains=value) |
             Q(payout_account__account_number__icontains=value)
         )

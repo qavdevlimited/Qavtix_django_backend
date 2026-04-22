@@ -88,8 +88,11 @@ class RoleControlService:
             "marketlisting": "seller__attendee_profile__country",
             "featuredevent": "user__host_profile__country",
             "hoststrictsubscription": "host__country",
+            "attendeesubscription": "attendee__country",
+            "hostsubscription": "host__country",
+            "hostactivity":"host__host_profile__country",
         }
-
+        
         return field_map.get(model_name.lower(), None)
 
     MULTI_PATH_MODELS = {

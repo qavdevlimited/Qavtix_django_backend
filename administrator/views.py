@@ -280,7 +280,7 @@ class AdminActivityView(ListAPIView):
         period = self.request.query_params.get("period", "week")
 
         return ActivityService.get_activities(
-            period=period
+            period=period,user=self.request.user
         )
 
     def list(self, request, *args, **kwargs):

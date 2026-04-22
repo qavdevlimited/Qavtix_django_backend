@@ -1,7 +1,6 @@
-# administrator/service/withdrawal_service.py
-
 import logging
 from django.db.models import Q
+from administrator.rolecontrol import RoleControlService
 
 logger = logging.getLogger(__name__)
 
@@ -10,11 +9,12 @@ class AdminWithdrawalListService:
     """
     Paginated withdrawal history for admin.
     Filterable by status, date range, amount range.
-    No N+1 — single optimised query with select_related.
+    Role-based access control applied.
     """
 
     @staticmethod
     def get_withdrawals(
+        user=None,   
         status=None,
         date_from=None,
         date_to=None,
@@ -34,23 +34,27 @@ class AdminWithdrawalListService:
             .order_by("-created_at")
         )
 
-        # ── Status filter ──────────────────────────────────────────────────────
+        # ── RBAC FILTER (IMPORTANT) ────────────────────────────────
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "withdrawal")
+
+        # ── Status filter ───────────────────────────────────────────
         if status:
             qs = qs.filter(status=status)
 
-        # ── Date range ─────────────────────────────────────────────────────────
+        # ── Date range ──────────────────────────────────────────────
         if date_from:
             qs = qs.filter(created_at__date__gte=date_from)
         if date_to:
             qs = qs.filter(created_at__date__lte=date_to)
 
-        # ── Amount range ───────────────────────────────────────────────────────
+        # ── Amount range ────────────────────────────────────────────
         if min_amount is not None:
             qs = qs.filter(amount__gte=min_amount)
         if max_amount is not None:
             qs = qs.filter(amount__lte=max_amount)
 
-        # ── Search ────────────────────────────────────────────────────────────
+        # ── Search ──────────────────────────────────────────────────
         if search:
             qs = qs.filter(
                 Q(user__attendee_profile__full_name__icontains=search) |

@@ -1,34 +1,41 @@
-# administrator/service/customer_service.py
+"""
+administrator/service/customer_service.py
+
+Customer/Attendee management with role-based access control.
+"""
 
 import logging
 from decimal import Decimal
 from django.db.models import Count, Sum, Avg, Q, Min, Max
 from django.utils import timezone
 from django.contrib.auth import get_user_model
+from administrator.rolecontrol import RoleControlService
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
 class AdminCustomerCardService:
-    """
-    Cards for the admin customer dashboard.
-    Filterable by date range: day | week | month | year
-    """
+    """Cards for the admin customer dashboard with role-based filtering."""
 
     @staticmethod
-    def get_cards(date_range=None):
+    def get_cards(user=None, date_range=None):
+        """Get customer cards. Normal admins see their country only."""
         from attendee.models import Attendee
         from transactions.models import Order
 
         now         = timezone.now()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        # Base attendee queryset
         attendee_qs = Attendee.objects.all()
         order_qs    = Order.objects.filter(status="completed")
 
-        # Apply date range filter for new customers card
+        # Apply role control filtering
+        if user:
+            attendee_qs = RoleControlService.filter_by_admin(user, attendee_qs, "attendee")
+            order_qs = RoleControlService.filter_by_admin(user, order_qs, "order")
+
+        # Apply date range filter
         if date_range == "day":
             since = now - timezone.timedelta(days=1)
         elif date_range == "week":
@@ -38,17 +45,15 @@ class AdminCustomerCardService:
         elif date_range == "year":
             since = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
         else:
-            since = month_start  # default to month
+            since = month_start
 
-        # Total customers — all attendees
+        # Total customers
         total_customers = attendee_qs.count()
 
         # New this period
-        new_this_period = Attendee.objects.filter(
-            registration_date__gte=since
-        ).count()
+        new_this_period = attendee_qs.filter(registration_date__gte=since).count()
 
-        # Repeat buyers — users with more than 1 completed order
+        # Repeat buyers
         repeat_buyers = (
             order_qs
             .values("user")
@@ -57,7 +62,7 @@ class AdminCustomerCardService:
             .count()
         )
 
-        # Average spend per customer
+        # Average spend
         per_user = (
             order_qs
             .values("user")
@@ -78,14 +83,11 @@ class AdminCustomerCardService:
 
 
 class AdminCustomerListService:
-    """
-    Paginated attendee list for admin.
-    Filterable by status, location, spend range, date joined.
-    No N+1 — uses annotations and select_related.
-    """
+    """Paginated attendee list with role-based access control."""
 
     @staticmethod
     def get_customers(
+        user=None,
         status=None,
         country=None,
         state=None,
@@ -96,6 +98,7 @@ class AdminCustomerListService:
         date_joined_to=None,
         search=None,
     ):
+        """Get customer list. Normal admins see their country only."""
         from attendee.models import Attendee
         from transactions.models import Order
         from django.db.models import OuterRef, Subquery, DecimalField
@@ -133,9 +136,11 @@ class AdminCustomerListService:
             )
         )
 
-        # ── Status filter ──────────────────────────────────────────────────────
-        # Django's is_active: True=active, False=suspended/banned
-        # We track flagged via a separate field — see FlaggedUser model
+        # ── Apply role control filtering FIRST ──────────────────────────────
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "attendee")
+
+        # ── Status filter ──────────────────────────────────────────────────
         if status == "active":
             qs = qs.filter(user__is_active=True)
         elif status in ("suspended", "banned"):
@@ -144,7 +149,9 @@ class AdminCustomerListService:
             flagged_ids = AdminCustomerListService._get_flagged_user_ids()
             qs = qs.filter(user_id__in=flagged_ids)
 
-        # ── Location filters ───────────────────────────────────────────────────
+        # ── Location filters ───────────────────────────────────────────────
+        # For normal admins, country filter is already applied via role control
+        # But respect user-provided country filter if they ask
         if country:
             qs = qs.filter(country__iexact=country)
         if state:
@@ -152,19 +159,19 @@ class AdminCustomerListService:
         if city:
             qs = qs.filter(city__iexact=city)
 
-        # ── Spend range ────────────────────────────────────────────────────────
+        # ── Spend range ────────────────────────────────────────────────────
         if min_spend is not None:
             qs = qs.filter(total_spend__gte=min_spend)
         if max_spend is not None:
             qs = qs.filter(total_spend__lte=max_spend)
 
-        # ── Date joined range ─────────────────────────────────────────────────
+        # ── Date joined range ──────────────────────────────────────────────
         if date_joined_from:
             qs = qs.filter(registration_date__date__gte=date_joined_from)
         if date_joined_to:
             qs = qs.filter(registration_date__date__lte=date_joined_to)
 
-        # ── Search ────────────────────────────────────────────────────────────
+        # ── Search ─────────────────────────────────────────────────────────
         if search:
             qs = qs.filter(
                 Q(full_name__icontains=search) |

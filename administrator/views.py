@@ -313,7 +313,7 @@ class AdminCustomerCardsView(APIView):
 
     def get(self, request):
         date_range = request.query_params.get("date_range", "month")
-        cards      = AdminCustomerCardService.get_cards(date_range=date_range)
+        cards      = AdminCustomerCardService.get_cards(date_range=date_range,user=request.user)
 
         return api_response(
             message="Customer cards retrieved successfully.",
@@ -353,6 +353,7 @@ class AdminCustomerListView(generics.ListAPIView):
 
     def get_queryset(self):
         return AdminCustomerListService.get_customers(
+            user=self.request.user, 
             status           = self.request.query_params.get("status"),
             country          = self.request.query_params.get("country"),
             state            = self.request.query_params.get("state"),
@@ -491,6 +492,7 @@ class AdminWithdrawalListView(generics.ListAPIView):
 
     def get_queryset(self):
         return AdminWithdrawalListService.get_withdrawals(
+            user=self.request.user,
             status     = self.request.query_params.get("status"),
             date_from  = self.request.query_params.get("date_from"),
             date_to    = self.request.query_params.get("date_to"),

@@ -11,6 +11,12 @@ class Admin(models.Model):
     user=models.OneToOneField(User, on_delete=models.CASCADE,related_name='admin_profile')
     full_name = models.CharField(max_length=100)
     role = models.CharField(max_length=50,default='admin')
+    country_assignment = models.CharField(
+        max_length=30,
+        null=True,
+        blank=True,
+        help_text="Country this admin can view. Restricts all queries to this country."
+    )
     
 
     def __str__(self):

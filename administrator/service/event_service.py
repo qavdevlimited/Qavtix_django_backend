@@ -243,12 +243,12 @@ class AdminEventActionService:
         except Event.DoesNotExist:
             return False, "Event not found."
 
-        if event.status == "banned":
+        if event.status == "banned" or event.status=="suspended":
             event.status = "active"
             event.save(update_fields=["status"])
             return True, f'"{event.title}" has been unsuspended.'
         else:
-            event.status = "banned"
+            event.status = "suspended"
             event.save(update_fields=["status"])
             return True, f'"{event.title}" has been suspended.'
 

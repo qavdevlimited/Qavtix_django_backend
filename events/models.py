@@ -96,6 +96,7 @@ class Event(models.Model):
         ("ended", "Ended"),
         ("cancelled", "Cancelled"),
         ("banned", "Banned"),
+        ("suspended","Suspended")
     )
 
     status= models.CharField(max_length=20, choices=STATUS_CHOICES,default="active")

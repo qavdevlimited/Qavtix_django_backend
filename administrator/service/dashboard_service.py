@@ -11,10 +11,52 @@ from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 User = get_user_model()
 
 
+from administrator.rolecontrol import RoleControlService
+from transactions.models import Event, OrderTicket, Withdrawal, Order
 
 class AdminDashboardService:
 
-    
+    @staticmethod
+    def _payment_qs(user=None):
+        """Base succeeded payments queryset, filtered by admin country if needed."""
+        qs = Payment.objects.filter(status="succeeded")
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "payment")
+        return qs
+
+    @staticmethod
+    def _withdrawal_qs(user=None):
+        """Base withdrawal queryset, filtered by admin country if needed."""
+        qs = Withdrawal.objects.all()
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "withdrawal")
+        return qs
+
+    @staticmethod
+    def _user_qs(user=None):
+        """User queryset filtered by country (via attendee profile)."""
+        qs = User.objects.all()
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "user")
+        return qs
+
+    @staticmethod
+    def _host_qs(user=None):
+        """Host queryset filtered by country."""
+        qs = Host.objects.all()
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "host")
+        return qs
+
+    @staticmethod
+    def _event_qs(user=None):
+        """Event queryset filtered by country."""
+        qs = Event.objects.all()
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "event")
+        return qs
+
+    # ── helpers ──────────────────────────────────────────────
     @staticmethod
     def current_month():
         now = timezone.now()
@@ -23,186 +65,161 @@ class AdminDashboardService:
     @staticmethod
     def previous_month():
         now = timezone.now()
-        month = now.month - 1
-        year = now.year
-
-        if month == 0:
-            month = 12
-            year -= 1
-
+        month = now.month - 1 or 12
+        year = now.year if now.month > 1 else now.year - 1
         return year, month
 
     @staticmethod
     def start_of_week():
         return timezone.now() - timedelta(days=7)
 
-   
+    # ── section one ───────────────────────────────────────────
     @staticmethod
-    def platform_revenue():
-        return Payment.objects.filter(
-            status="succeeded"
-        ).aggregate(total=Sum("amount"))["total"] or 0
+    def platform_revenue(user=None):
+        return AdminDashboardService._payment_qs(user).aggregate(
+            total=Sum("amount")
+        )["total"] or 0
 
     @staticmethod
-    def revenue_growth():
+    def revenue_growth(user=None):
         y, m = AdminDashboardService.current_month()
         py, pm = AdminDashboardService.previous_month()
+        qs = AdminDashboardService._payment_qs(user)
 
-        current = Payment.objects.filter(
-            status="succeeded",
-            created_at__year=y,
-            created_at__month=m
+        current = qs.filter(
+            created_at__year=y, created_at__month=m
         ).aggregate(total=Sum("amount"))["total"] or 0
 
-        previous = Payment.objects.filter(
-            status="succeeded",
-            created_at__year=py,
-            created_at__month=pm
+        previous = qs.filter(
+            created_at__year=py, created_at__month=pm
         ).aggregate(total=Sum("amount"))["total"] or 0
 
         if previous == 0:
             return 100
-
-        return ((current - previous) / previous) * 100
-
-    @staticmethod
-    def total_users():
-        return User.objects.count()
+        return round(((current - previous) / previous) * 100, 2)
 
     @staticmethod
-    def user_growth():
+    def total_users(user=None):
+        return AdminDashboardService._user_qs(user).count()
+
+    @staticmethod
+    def user_growth(user=None):
         y, m = AdminDashboardService.current_month()
         py, pm = AdminDashboardService.previous_month()
+        qs = AdminDashboardService._user_qs(user)
 
-        current = User.objects.filter(
-            date_joined__year=y,
-            date_joined__month=m
-        ).count()
-
-        previous = User.objects.filter(
-            date_joined__year=py,
-            date_joined__month=pm
-        ).count()
+        current = qs.filter(date_joined__year=y, date_joined__month=m).count()
+        previous = qs.filter(date_joined__year=py, date_joined__month=pm).count()
 
         if previous == 0:
             return 100
-
-        return ((current - previous) / previous) * 100
+        return round(((current - previous) / previous) * 100, 2)
 
     @staticmethod
-    def transactions_today():
+    def transactions_today(user=None):
         today = timezone.now().date()
-
-        return Payment.objects.filter(
-            status="succeeded",
+        return AdminDashboardService._payment_qs(user).filter(
             created_at__date=today
         ).count()
 
     @staticmethod
-    def transactions_yesterday():
-        today = timezone.now().date()
-        yesterday = today - timedelta(days=1)
-
-        return Payment.objects.filter(
-            status="succeeded",
+    def transactions_yesterday(user=None):
+        yesterday = timezone.now().date() - timedelta(days=1)
+        return AdminDashboardService._payment_qs(user).filter(
             created_at__date=yesterday
         ).count()
 
     @staticmethod
-    def active_events():
+    def active_events(user=None):
         now = timezone.now()
-
-        return Event.objects.filter(
-            status="active",
-            end_datetime__gte=now
+        return AdminDashboardService._event_qs(user).filter(
+            status="active", end_datetime__gte=now
         ).count()
 
     @staticmethod
-    def pending_payouts():
-        return Withdrawal.objects.filter(
+    def pending_payouts(user=None):
+        return AdminDashboardService._withdrawal_qs(user).filter(
             status="pending"
         ).aggregate(total=Sum("amount"))["total"] or 0
 
-  
-
+    # ── section two ───────────────────────────────────────────
     @staticmethod
-    def active_users():
+    def active_users(user=None):
         y, m = AdminDashboardService.current_month()
-
-        return Payment.objects.filter(
-            status="succeeded",
-            created_at__year=y,
-            created_at__month=m
+        return AdminDashboardService._payment_qs(user).filter(
+            created_at__year=y, created_at__month=m
         ).values("user").distinct().count()
 
     @staticmethod
-    def active_hosts():
+    def active_hosts(user=None):
         y, m = AdminDashboardService.current_month()
-
-        return Host.objects.filter(
+        return AdminDashboardService._host_qs(user).filter(
             user__payments__status="succeeded",
             user__payments__created_at__year=y,
-            user__payments__created_at__month=m
+            user__payments__created_at__month=m,
         ).distinct().count()
 
     @staticmethod
-    def sales_this_month():
+    def sales_this_month(user=None):
         y, m = AdminDashboardService.current_month()
-
-        return Payment.objects.filter(
-            status="succeeded",
-            created_at__year=y,
-            created_at__month=m
+        return AdminDashboardService._payment_qs(user).filter(
+            created_at__year=y, created_at__month=m
         ).aggregate(total=Sum("amount"))["total"] or 0
 
-    
-   
-
+    # ── section three ─────────────────────────────────────────
     @staticmethod
-    def users_this_week():
+    def users_this_week(user=None):
         start = AdminDashboardService.start_of_week()
-        return User.objects.filter(date_joined__gte=start).count()
+        return AdminDashboardService._user_qs(user).filter(
+            date_joined__gte=start
+        ).count()
 
     @staticmethod
-    def hosts_this_week():
+    def hosts_this_week(user=None):
         start = AdminDashboardService.start_of_week()
-        return Host.objects.filter(registration_date__gte=start).count()
+        return AdminDashboardService._host_qs(user).filter(
+            registration_date__gte=start
+        ).count()
 
     @staticmethod
-    def events_this_week():
+    def events_this_week(user=None):
         start = AdminDashboardService.start_of_week()
-        return Event.objects.filter(created_at__gte=start).count()
+        return AdminDashboardService._event_qs(user).filter(
+            created_at__gte=start
+        ).count()
 
     @staticmethod
-    def payouts_this_week():
+    def payouts_this_week(user=None):
         start = AdminDashboardService.start_of_week()
-        return Withdrawal.objects.filter(created_at__gte=start).count()
+        return AdminDashboardService._withdrawal_qs(user).filter(
+            created_at__gte=start
+        ).count()
 
-
+    # ── main entry point ──────────────────────────────────────
     @staticmethod
-    def get_dashboard(uptime_value=100):
+    def get_dashboard(user=None, uptime_value=100):
         return {
             "section_one": {
-                "platform_revenue": AdminDashboardService.platform_revenue(),
-                "revenue_growth": AdminDashboardService.revenue_growth(),
-                "total_users": AdminDashboardService.total_users(),
-                "user_growth": AdminDashboardService.user_growth(),
-                "transactions_today": AdminDashboardService.transactions_today(),
-                "transactions_yesterday": AdminDashboardService.transactions_yesterday(),
-                "active_events": AdminDashboardService.active_events(),
-                "pending_payouts": AdminDashboardService.pending_payouts(),
+                "platform_revenue": AdminDashboardService.platform_revenue(user),
+                "revenue_growth": AdminDashboardService.revenue_growth(user),
+                "total_users": AdminDashboardService.total_users(user),
+                "user_growth": AdminDashboardService.user_growth(user),
+                "transactions_today": AdminDashboardService.transactions_today(user),
+                "transactions_yesterday": AdminDashboardService.transactions_yesterday(user),
+                "active_events": AdminDashboardService.active_events(user),
+                "pending_payouts": AdminDashboardService.pending_payouts(user),
                 "system_uptime": uptime_value,
             },
             "section_two": {
-                "active_users": AdminDashboardService.active_users(),
-                "active_sellers": AdminDashboardService.active_hosts(),
-                "sales_this_month": AdminDashboardService.sales_this_month(),
+                "active_users": AdminDashboardService.active_users(user),
+                "active_sellers": AdminDashboardService.active_hosts(user),
+                "sales_this_month": AdminDashboardService.sales_this_month(user),
             },
             "section_three": {
-                "users_this_week": AdminDashboardService.users_this_week(),
-                "hosts_this_week": AdminDashboardService.hosts_this_week(),
-                "events_this_week": AdminDashboardService.events_this_week(),
-                "payouts_this_week": AdminDashboardService.payouts_this_week(),
+                "users_this_week": AdminDashboardService.users_this_week(user),
+                "hosts_this_week": AdminDashboardService.hosts_this_week(user),
+                "events_this_week": AdminDashboardService.events_this_week(user),
+                "payouts_this_week": AdminDashboardService.payouts_this_week(user),
             }
         }
 
@@ -216,115 +233,150 @@ class ActivityService:
         return queryset
     
 
+from django.contrib.contenttypes.models import ContentType
+
 class RevenueService:
 
     @staticmethod
-    def get_revenue(period="week"):
+    def _get_platform_revenue_for_period(payments, orders_in_period, featured_payments):
+        """
+        Platform revenue = order fees + featured event payments.
+        NOT the full payment amount for orders (that belongs to the host).
+        """
+        order_fees = orders_in_period.aggregate(
+            total=Sum("fees")
+        )["total"] or 0
 
-        payments = Payment.objects.filter(
-            status="succeeded"
+        featured_revenue = featured_payments.aggregate(
+            total=Sum("amount")
+        )["total"] or 0
+
+        return float(order_fees + featured_revenue)
+
+    @staticmethod
+    def get_revenue(period="week", user=None):
+        from django.contrib.contenttypes.models import ContentType
+        from transactions.models import Order, FeaturedEvent
+
+        # Base order queryset — completed orders only
+        order_qs = Order.objects.filter(status="completed")
+        if user:
+            order_qs = RoleControlService.filter_by_admin(user, order_qs, "order")
+
+        # Base featured event payments
+        featured_ct = ContentType.objects.get_for_model(FeaturedEvent)
+        featured_payment_qs = Payment.objects.filter(
+            status="succeeded",
+            content_type=featured_ct,
         )
+        if user:
+            featured_payment_qs = RoleControlService.filter_by_admin(
+                user, featured_payment_qs, "payment"
+            )
 
-        #  WEEK 
+        # ── WEEK ────────────────────────────────────────────────
         if period == "week":
             days = TimeBucketFilter.get_week_days()
-
             result = []
 
             for day in days:
-                total = payments.filter(
-                    created_at__date=day
-                ).aggregate(total=Sum("amount"))["total"] or 0
+                day_orders = order_qs.filter(created_at__date=day)
+                day_featured = featured_payment_qs.filter(created_at__date=day)
 
                 result.append({
                     "label": day.strftime("%a"),
-                    "value": float(total)
+                    "value": RevenueService._get_platform_revenue_for_period(
+                        None, day_orders, day_featured
+                    )
                 })
 
-            return {
-                "period": "week",
-                "data": result
-            }
+            return {"period": "week", "data": result}
 
-        # MONTH 
+        # ── MONTH ────────────────────────────────────────────────
         if period == "month":
             weeks = TimeBucketFilter.get_month_weeks()
-
             result = []
 
             for i, (start, end) in enumerate(weeks, 1):
-                total = payments.filter(
+                week_orders = order_qs.filter(
                     created_at__date__gte=start,
-                    created_at__date__lt=end
-                ).aggregate(total=Sum("amount"))["total"] or 0
+                    created_at__date__lt=end,
+                )
+                week_featured = featured_payment_qs.filter(
+                    created_at__date__gte=start,
+                    created_at__date__lt=end,
+                )
 
                 result.append({
                     "label": f"Week {i}",
-                    "value": float(total)
+                    "value": RevenueService._get_platform_revenue_for_period(
+                        None, week_orders, week_featured
+                    )
                 })
 
-            return {
-                "period": "month",
-                "data": result
-            }
+            return {"period": "month", "data": result}
 
-        #  YEAR 
+        # ── YEAR ─────────────────────────────────────────────────
         if period == "year":
             months = TimeBucketFilter.get_year_months()
-
             result = []
 
             for i, (start, end) in enumerate(months, 1):
-                total = payments.filter(
+                month_orders = order_qs.filter(
                     created_at__date__gte=start,
-                    created_at__date__lt=end
-                ).aggregate(total=Sum("amount"))["total"] or 0
+                    created_at__date__lt=end,
+                )
+                month_featured = featured_payment_qs.filter(
+                    created_at__date__gte=start,
+                    created_at__date__lt=end,
+                )
 
                 result.append({
                     "label": start.strftime("%b"),
-                    "value": float(total)
+                    "value": RevenueService._get_platform_revenue_for_period(
+                        None, month_orders, month_featured
+                    )
                 })
 
-            return {
-                "period": "year",
-                "data": result
-            }
+            return {"period": "year", "data": result}
 
         return {"period": period, "data": []}
-
-
 
 
 class TicketAnalyticsService:
 
     @staticmethod
-    def get_sales_breakdown(period="week", event_id=None):
+    def get_sales_breakdown(period="week", event_id=None, user=None):
         base = OrderTicket.objects.filter(order__status="completed")
+
         if event_id:
             base = base.filter(order__event_id=event_id)
 
-        # 1. Define Truncation and Date Range
+        # Apply RBAC — filter by the order's event's host's country
+        if user:
+            base = RoleControlService.filter_by_admin(user, base, "orderticket")
+
+        # ── Date range + trunc function ──────────────────────────
         now = timezone.now()
         if period == "year":
             start_date = now - timedelta(days=365)
-            trunc_func = TruncMonth('order__created_at')
+            trunc_func = TruncMonth("order__created_at")
         elif period == "month":
             start_date = now - timedelta(days=30)
-            trunc_func = TruncWeek('order__created_at')
-        else:  # Default to week
+            trunc_func = TruncWeek("order__created_at")
+        else:
             start_date = now - timedelta(days=7)
-            trunc_func = TruncDay('order__created_at')
+            trunc_func = TruncDay("order__created_at")
 
-        # Filter base by range
         base = base.filter(order__created_at__gte=start_date)
 
-        # 2. Overall Breakdown (by Ticket Type)
+        # ── Overall breakdown by ticket type ─────────────────────
         by_type_query = (
             base.values("ticket__ticket_type")
             .annotate(count=Sum("quantity"))
             .order_by("-count")
         )
-        
+
         total_qty = sum(r["count"] or 0 for r in by_type_query)
         overall = [
             {
@@ -335,8 +387,7 @@ class TicketAnalyticsService:
             for r in by_type_query
         ]
 
-        # 3. Period Breakdown (Timeline for Bar Chart)
-        # Groups data by the truncated date (Day, Week, or Month)
+        # ── Timeline breakdown ────────────────────────────────────
         timeline_data = (
             base.annotate(time_label=trunc_func)
             .values("time_label", "ticket__ticket_type")
@@ -344,21 +395,18 @@ class TicketAnalyticsService:
             .order_by("time_label")
         )
 
-        # Reformatting timeline for frontend consumption
-        # Groups the flat DB rows into: { date: [ {type: count}, ... ] }
         formatted_periods = {}
         for entry in timeline_data:
-            label = entry["time_label"].strftime("%Y-%m-%d") # Format as string
+            label = entry["time_label"].strftime("%Y-%m-%d")
             if label not in formatted_periods:
                 formatted_periods[label] = {"date": label, "breakdown": []}
-            
             formatted_periods[label]["breakdown"].append({
                 "ticket_type": entry["ticket__ticket_type"],
-                "count": entry["count"]
+                "count": entry["count"],
             })
 
         return {
             "overall": overall,
             "total_sold": total_qty,
-            "timeline": list(formatted_periods.values())
+            "timeline": list(formatted_periods.values()),
         }

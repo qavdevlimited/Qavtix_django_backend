@@ -23,6 +23,8 @@ import logging
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 
+from transactions.models import Order
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,6 +74,8 @@ class RoleControlService:
             "host": "country",
             "attendee": "country",
 
+            "user": "attendee_profile__country",
+
             # Through relationships
             "event": "host__country",
             "order": "event__host__country",
@@ -90,6 +94,13 @@ class RoleControlService:
 
     MULTI_PATH_MODELS = {
         "withdrawal": Q(user__host_profile__country="{country}") | Q(user__attendee_profile__country="{country}"),
+        "payment": lambda country: (
+        Q(  # Payments linked to orders in admin's country
+            object_id__in=Order.objects.filter(
+                event__host__country=country
+            ).values_list("id", flat=True)
+        )
+    ),
     }
 
     @staticmethod

@@ -178,7 +178,7 @@ class AdminDashboardView(GenericAPIView):
         uptime = UptimeService.get_uptime()
 
         data = AdminDashboardService.get_dashboard(
-            uptime_value=uptime
+            uptime_value=uptime,user=request.user
         )
 
         return api_response(
@@ -208,7 +208,7 @@ class AdminRevenueView(APIView):
         period = request.query_params.get("period", "week")
 
         data = RevenueService.get_revenue(
-            period=period
+            period=period,user=request.user
         )
 
         return api_response(
@@ -249,7 +249,7 @@ class AdminTicketAnalyticsView(APIView):
 
         data = TicketAnalyticsService.get_sales_breakdown(
             period=period,
-            event_id=event_id
+            event_id=event_id,user=request.user
         )
 
         return api_response(

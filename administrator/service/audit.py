@@ -151,8 +151,10 @@ class AdminAuditLogService:
         qs = AdminAuditLog.objects.select_related("admin").all()
 
         if action:
-            qs = qs.filter(action=action)
-
+            if isinstance(action, str):
+                action = action.split(",")
+            qs = qs.filter(action__in=action)
+            
         if date_range:
             now = timezone.now()
             if date_range == "day":

@@ -7,6 +7,7 @@ from django.db.models.functions import TruncMonth, TruncDay
 from django.utils import timezone
 from datetime import timedelta
 
+from administrator.rolecontrol import RoleControlService
 from host.models import Host, VerifiedBadge
 from transactions.models import Withdrawal
 from django.db.models import (
@@ -42,79 +43,118 @@ def _get_since(date_range):
 class AdminHostCardService:
 
     @staticmethod
-    def get_cards(date_range="month"):
+    def get_cards(date_range="month", user=None):
         from host.models import Host
-        from transactions.models import Order, OrderTicket
-        from attendee.models import AffliateEarnings
+        from transactions.models import Order, OrderTicket, Withdrawal
+        from django.db.models import Sum
+        from django.utils import timezone
+        from decimal import Decimal
 
-        now          = timezone.now()
+        now = timezone.now()
         since, until = _get_since(date_range)
-        period_len   = until - since
-        prev_since   = since - period_len
+        period_len = until - since
+        prev_since = since - period_len
 
-        # Total hosts (sellers) — all time
-        total_hosts = Host.objects.count()
+        # ─────────────────────────────────────────────
+        # HOST BASE QUERY (RBAC APPLIED HERE)
+        # ─────────────────────────────────────────────
+        hosts_qs = Host.objects.all()
 
-        # New this period
-        new_this_period = Host.objects.filter(registration_date__gte=since).count()
-        prev_new        = Host.objects.filter(
-            registration_date__gte=prev_since, registration_date__lt=since
+        if user:
+            hosts_qs = RoleControlService.filter_by_admin(user, hosts_qs, "host")
+
+        total_hosts = hosts_qs.count()
+
+        new_this_period = hosts_qs.filter(
+            registration_date__gte=since
         ).count()
+
+        prev_new = hosts_qs.filter(
+            registration_date__gte=prev_since,
+            registration_date__lt=since
+        ).count()
+
         new_growth = _pct_change(new_this_period, prev_new)
 
-        # Tickets sold this period
-        tickets_sold = (
-            OrderTicket.objects
-            .filter(
-                order__status="completed",
-                order__created_at__gte=since,
-                order__created_at__lt=until,
-            )
-            .aggregate(t=Sum("quantity"))["t"] or 0
+        # ─────────────────────────────────────────────
+        # TICKETS SOLD (via ORDER → EVENT → HOST)
+        # ─────────────────────────────────────────────
+        ticket_qs = OrderTicket.objects.filter(
+            order__status="completed",
+            order__created_at__gte=since,
+            order__created_at__lt=until,
         )
-        prev_tickets = (
-            OrderTicket.objects
-            .filter(
-                order__status="completed",
-                order__created_at__gte=prev_since,
-                order__created_at__lt=since,
-            )
-            .aggregate(t=Sum("quantity"))["t"] or 0
+
+        if user:
+            ticket_qs = RoleControlService.filter_by_admin(user, ticket_qs, "orderticket")
+
+        tickets_sold = ticket_qs.aggregate(
+            t=Sum("quantity")
+        )["t"] or 0
+
+        prev_ticket_qs = OrderTicket.objects.filter(
+            order__status="completed",
+            order__created_at__gte=prev_since,
+            order__created_at__lt=since,
         )
+
+        if user:
+            prev_ticket_qs = RoleControlService.filter_by_admin(user, prev_ticket_qs, "orderticket")
+
+        prev_tickets = prev_ticket_qs.aggregate(
+            t=Sum("quantity")
+        )["t"] or 0
+
         tickets_growth = _pct_change(tickets_sold, prev_tickets)
 
-        # Commission paid out (affiliate earnings paid in period)
-        commission_paid = (
-            Withdrawal.objects
-            .filter(status="paid", created_at__gte=since.date())
-            .aggregate(t=Sum("amount"))["t"] or Decimal("0")
+        # ─────────────────────────────────────────────
+        # COMMISSION / WITHDRAWALS
+        # ─────────────────────────────────────────────
+        withdrawal_qs = Withdrawal.objects.filter(
+            status="paid",
+            created_at__gte=since,
+            created_at__lt=until,
         )
-        prev_commission = (
-            Withdrawal.objects
-            .filter(
-                status="paid",
-                created_at__gte=prev_since.date(),
-                created_at__lt=since.date(),
-            )
-            .aggregate(t=Sum("amount"))["t"] or Decimal("0")
+
+        if user:
+            withdrawal_qs = RoleControlService.filter_by_admin(user, withdrawal_qs, "withdrawal")
+
+        commission_paid = withdrawal_qs.aggregate(
+            t=Sum("amount")
+        )["t"] or Decimal("0")
+
+        prev_withdrawal_qs = Withdrawal.objects.filter(
+            status="paid",
+            created_at__gte=prev_since,
+            created_at__lt=since,
         )
-        commission_growth = _pct_change(float(commission_paid), float(prev_commission))
+
+        if user:
+            prev_withdrawal_qs = RoleControlService.filter_by_admin(user, prev_withdrawal_qs, "withdrawal")
+
+        prev_commission = prev_withdrawal_qs.aggregate(
+            t=Sum("amount")
+        )["t"] or Decimal("0")
+
+        commission_growth = _pct_change(
+            float(commission_paid),
+            float(prev_commission)
+        )
 
         return {
-            "total_hosts":        total_hosts,
-            "new_this_period":    new_this_period,
-            "new_growth":         new_growth,
-            "tickets_sold":       tickets_sold,
-            "tickets_growth":     tickets_growth,
-            "commission_paid":    int(commission_paid),
-            "commission_growth":  commission_growth,
+            "total_hosts":       total_hosts,
+            "new_this_period":   new_this_period,
+            "new_growth":        new_growth,
+            "tickets_sold":      tickets_sold,
+            "tickets_growth":    tickets_growth,
+            "commission_paid":   int(commission_paid),
+            "commission_growth": commission_growth,
         }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Host List
 # ─────────────────────────────────────────────────────────────────────────────
-
 class AdminHostListService:
 
     @staticmethod
@@ -126,9 +166,10 @@ class AdminHostListService:
         min_revenue=None,
         max_revenue=None,
         verified=None,
+        user=None,   # 👈 ADDED
     ):
         from host.models import Host
-        from transactions.models import Order
+        from django.db.models import Count, Sum, Q
 
         qs = (
             Host.objects
@@ -143,34 +184,38 @@ class AdminHostListService:
             )
         )
 
-        # Status — uses user.is_active
+     
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "host")
+
+       
         if status == "active":
             qs = qs.filter(user__is_active=True)
         elif status in ("suspended", "banned"):
             qs = qs.filter(user__is_active=False)
 
-        # Verified filter
+       
         if verified is not None:
             qs = qs.filter(verified=verified)
 
-        # Event count range
+    
         if min_events is not None:
             qs = qs.filter(event_count__gte=min_events)
         if max_events is not None:
             qs = qs.filter(event_count__lte=max_events)
 
-        # Revenue range
+
         if min_revenue is not None:
             qs = qs.filter(total_revenue__gte=min_revenue)
         if max_revenue is not None:
             qs = qs.filter(total_revenue__lte=max_revenue)
 
-        # Search
+
         if search:
             qs = qs.filter(
-                Q(full_name__icontains=search)         |
-                Q(business_name__icontains=search)     |
-                Q(user__email__icontains=search)       |
+                Q(full_name__icontains=search) |
+                Q(business_name__icontains=search) |
+                Q(user__email__icontains=search) |
                 Q(phone_number__icontains=search)
             )
 
@@ -193,6 +238,7 @@ class AdminHostVerificationService:
 
     @staticmethod
     def get_pending(
+        user=None,   # 👈 ADD THIS
         search=None,
         status=None,
         date_from=None,
@@ -200,21 +246,24 @@ class AdminHostVerificationService:
     ):
         """
         Returns hosts who have not yet been verified.
-        Hosts with all KYC fields filled are considered pending review.
+        Hosts with KYC submitted but not approved.
         """
-        from host.models import Host
 
         qs = (
             Host.objects
             .select_related("user")
-            .filter(verified=False)
             .filter(
-                # Only show hosts who have submitted KYC info
+                verified=False,
                 registration_number__isnull=False,
             )
             .exclude(registration_number="")
         )
 
+    
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "host")
+
+  
         if search:
             qs = qs.filter(
                 Q(full_name__icontains=search)     |
@@ -227,8 +276,10 @@ class AdminHostVerificationService:
         elif status in ("suspended", "banned"):
             qs = qs.filter(user__is_active=False)
 
+    
         if date_from:
             qs = qs.filter(registration_date__date__gte=date_from)
+
         if date_to:
             qs = qs.filter(registration_date__date__lte=date_to)
 

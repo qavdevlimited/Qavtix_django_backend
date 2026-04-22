@@ -738,7 +738,7 @@ class AdminHostCardsView(APIView):
  
     def get(self, request):
         date_range = request.query_params.get("date_range", "month")
-        cards      = AdminHostCardService.get_cards(date_range=date_range)
+        cards      = AdminHostCardService.get_cards(date_range=date_range,user=request.user)
  
         return api_response(
             message="Host cards retrieved successfully.",
@@ -774,6 +774,7 @@ class AdminHostListView(generics.ListAPIView):
  
     def get_queryset(self):
         return AdminHostListService.get_hosts(
+            user = self.request.user,
             status      = self.request.query_params.get("status"),
             search      = self.request.query_params.get("search", "").strip() or None,
             min_events  = self.request.query_params.get("min_events"),
@@ -822,6 +823,7 @@ class AdminHostVerificationListView(generics.ListAPIView):
  
     def get_queryset(self):
         return AdminHostVerificationService.get_pending(
+            user= self.request.user,
             search    = self.request.query_params.get("search", "").strip() or None,
             status    = self.request.query_params.get("status"),
             date_from = self.request.query_params.get("date_from"),

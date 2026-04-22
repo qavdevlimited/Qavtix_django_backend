@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.db.models import Sum, Count, Q, F, OuterRef, Subquery, DecimalField
 from django.utils import timezone
 from datetime import timedelta
-
+from administrator.models import AutoPayout
 from marketplace.models import MarketListing
 
 logger = logging.getLogger(__name__)
@@ -104,7 +104,7 @@ class AdminPayoutRequestService:
                 "user",
                 "user__attendee_profile",
                 "user__host_profile",
-                "payout_account",
+                "payout_account","user__host_profile__auto_payout",
             )
             .filter(status="pending")
         )
@@ -170,20 +170,27 @@ class AdminPayoutRequestService:
         attendee = getattr(user, "attendee_profile", None)
 
         if host:
+            auto_payout = getattr(host, "auto_payout", None)
             return {
+                "id"  :            host.id,
                 "name":            host.full_name,
                 "email":           user.email,
                 "profile_picture": host.profile_picture,
                 "type":            "host",
                 "business_name":   host.business_name,
+                "auto_payout": auto_payout.is_enabled if auto_payout else False,
+                "role"  :    "host"
             }
         if attendee:
             return {
+                "id" :             attendee.id,
                 "name":            attendee.full_name or user.email,
                 "email":           user.email,
                 "profile_picture": attendee.profile_picture,
                 "type":            "attendee",
                 "business_name":   None,
+                "auto_payout": True,
+                "role" :  "attendee"
             }
         return {
             "name":            user.email,
@@ -191,6 +198,7 @@ class AdminPayoutRequestService:
             "profile_picture": None,
             "type":            "unknown",
             "business_name":   None,
+            "auto_payout"  : False
         }
 
 

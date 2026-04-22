@@ -914,6 +914,7 @@ class CombinedProfileSerializer(serializers.Serializer):
     city = serializers.CharField(source="attendee_profile.city", allow_null=True)
     profile_picture = serializers.CharField(source="attendee_profile.profile_picture", allow_null=True)
     currency   =  serializers.SerializerMethodField()
+    id =  serializers.IntegerField(source="attendee_profile.user.id")
 
 
     # Role

@@ -142,6 +142,7 @@ class AdminAuditLogService:
         date_to=None,
         admin_id=None,
         search=None,
+        timestamp=None,
     ):
         from administrator.models import AdminAuditLog
         from django.db.models import Q
@@ -171,6 +172,8 @@ class AdminAuditLogService:
                 qs = qs.filter(created_at__gte=since)
 
         
+        if timestamp:
+            qs = qs.filter(created_at=timestamp)
 
         if date_from:
             parsed_from = parse_datetime(date_from)

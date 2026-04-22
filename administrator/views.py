@@ -1371,6 +1371,7 @@ class AdminEventFeatureView(AuditLogMixin, APIView):
         OpenApiParameter("date_range", OpenApiTypes.STR,  description="day | week | month | year"),
         OpenApiParameter("date_from",  OpenApiTypes.DATE, description="ISO 8601 datetime (e.g. 2026-04-22T10:30:00Z)"),
         OpenApiParameter("date_to",    OpenApiTypes.DATE, description="ISO 8601 datetime (e.g. 2026-04-22T10:30:00Z)"),
+        OpenApiParameter("timestamp",    OpenApiTypes.DATE, description="ISO 8601 datetime (e.g. 2026-04-22T10:30:00Z)"),
         OpenApiParameter("admin_id",   OpenApiTypes.INT,  description="Filter by admin user ID"),
         OpenApiParameter("search",     OpenApiTypes.STR,  description="Search email, target or details"),
     ],

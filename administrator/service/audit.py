@@ -3,7 +3,7 @@
 
 import logging
 from django.utils import timezone
-
+from django.utils.dateparse import parse_datetime
 logger = logging.getLogger(__name__)
 
 
@@ -168,10 +168,17 @@ class AdminAuditLogService:
             if since:
                 qs = qs.filter(created_at__gte=since)
 
+        
+
         if date_from:
-            qs = qs.filter(created_at__date__gte=date_from)
+            parsed_from = parse_datetime(date_from)
+            if parsed_from:
+                qs = qs.filter(created_at__gte=parsed_from)
+
         if date_to:
-            qs = qs.filter(created_at__date__lte=date_to)
+            parsed_to = parse_datetime(date_to)
+            if parsed_to:
+                qs = qs.filter(created_at__lte=parsed_to)
 
         if admin_id:
             qs = qs.filter(admin_id=admin_id)

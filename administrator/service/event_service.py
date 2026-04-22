@@ -10,6 +10,8 @@ from django.db.models.functions import TruncMonth, TruncDay
 from django.utils import timezone
 from datetime import timedelta
 
+from administrator.rolecontrol import RoleControlService
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,42 +34,45 @@ def _get_since(date_range):
 class AdminEventCardService:
 
     @staticmethod
-    def get_cards(date_range="month"):
+    def get_cards(date_range="month", user=None):
         from events.models import Event
         from django.utils import timezone
 
-        now          = timezone.now()
+        now = timezone.now()
         since, until = _get_since(date_range)
 
-        base = Event.objects.filter(created_at__gte=since, created_at__lt=until)
+        base_qs = Event.objects.filter(
+            created_at__gte=since,
+            created_at__lt=until
+        )
 
-        # Live — currently running
-        live = Event.objects.filter(
+        if user:
+            base_qs = RoleControlService.filter_by_admin(user, base_qs, "event")
+
+        live = base_qs.filter(
+            status="active",
+            start_datetime__lte=now,
+            end_datetime__gte=now
         ).count()
 
-        # Suspended — is_active=False or status=banned
-        suspended = Event.objects.filter(
+        suspended = base_qs.filter(
             Q(status="banned") | Q(status="cancelled")
-        ).filter(created_at__gte=since).count()
+        ).count()
 
-        # Ended
-        ended = Event.objects.filter(
-            Q(status="ended") | Q(end_datetime__lt=now, status="active")
-        ).filter(created_at__gte=since).count()
+        ended = base_qs.filter(
+            Q(status="ended") | Q(end_datetime__lt=now)
+        ).count()
 
-        # Sold out
-        sold_out = Event.objects.filter(
-            status="sold-out",
-            created_at__gte=since,
+        sold_out = base_qs.filter(
+            status="sold-out"
         ).count()
 
         return {
-            "live":      live,
+            "live": live,
             "suspended": suspended,
-            "ended":     ended,
-            "sold_out":  sold_out,
+            "ended": ended,
+            "sold_out": sold_out,
         }
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Event List
@@ -87,12 +92,12 @@ class AdminEventListService:
         date_to=None,
         performance=None,
         search=None,
-        event_state=None,   # live | ended | cancelled | suspended
+        event_state=None,
+        user=None,   # 👈 ADDED
     ):
         from events.models import Event
-        from transactions.models import OrderTicket,Order
+        from transactions.models import OrderTicket, Order
 
-        # Subquery for tickets sold — avoids cross-join inflation
         tickets_sold_sq = Subquery(
             OrderTicket.objects
             .filter(order__event=OuterRef("pk"), order__status="completed")
@@ -102,33 +107,33 @@ class AdminEventListService:
             output_field=IntegerField(),
         )
 
-        # Subquery for revenue — clean, no fan-out
         revenue_sq = Subquery(
-                    Order.objects
-                    .filter(
-                        event=OuterRef("pk"),
-                        status="completed"
-                    )
-                    .values("event")
-                    .annotate(total=Sum("total_amount"))
-                    .values("total"),
-                    output_field=DecimalField(max_digits=10, decimal_places=2)
-                )
+            Order.objects
+            .filter(event=OuterRef("pk"), status="completed")
+            .values("event")
+            .annotate(total=Sum("total_amount"))
+            .values("total"),
+            output_field=DecimalField(max_digits=10, decimal_places=2)
+        )
 
         qs = (
             Event.objects
             .select_related("category", "host", "host__user", "event_location")
             .prefetch_related("media", "tickets")
             .annotate(
-                tickets_sold  = tickets_sold_sq,
-                total_listed  = Sum("tickets__quantity"),
-                revenue       = revenue_sq,
+                tickets_sold=tickets_sold_sq,
+                total_listed=Sum("tickets__quantity"),
+                revenue=revenue_sq,
             )
         )
 
+        # 🔐 RBAC HERE (CRITICAL)
+        if user:
+            qs = RoleControlService.filter_by_admin(user, qs, "event")
+
         now = timezone.now()
 
-        # Event state filter
+        # filters remain unchanged
         if event_state == "live":
             qs = qs.filter(status="active", start_datetime__lte=now, end_datetime__gte=now)
         elif event_state == "ended":

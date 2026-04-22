@@ -87,7 +87,6 @@ class RoleControlService:
 
     @staticmethod
     def filter_by_admin(user, queryset, model_name):
-        print("RBAC CALLED FOR:", model_name)
         """
         Apply role-based filtering to a queryset.
 
@@ -107,18 +106,12 @@ class RoleControlService:
 
         # Superadmins see everything
         if RoleControlService.is_superadmin(user):
-            print("SUPERADMIN → NO FILTER")
             logger.debug(f"Superadmin {user.email} accessing {model_name} — no country filter applied")
             return queryset
 
         # Normal admin — filter by country
         admin_country = RoleControlService.get_admin_country(user)
         country_field = RoleControlService.get_country_field_for_model(model_name)
-        print("ADMIN COUNTRY:", admin_country)
-
-        print("QS MODEL:", country_field)
-
-        
 
         if not country_field:
             logger.warning(

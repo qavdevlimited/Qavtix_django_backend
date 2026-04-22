@@ -1116,7 +1116,7 @@ class AdminEventCardsView(APIView):
  
     def get(self, request):
         date_range = request.query_params.get("date_range", "month")
-        cards      = AdminEventCardService.get_cards(date_range=date_range)
+        cards      = AdminEventCardService.get_cards(date_range=date_range,user=request.user)
  
         return api_response(
             message="Event cards retrieved.",
@@ -1155,6 +1155,7 @@ class AdminEventListView(generics.ListAPIView):
     def get_queryset(self):
         p = self.request.query_params
         return AdminEventListService.get_events(
+            user= self.request.user,
             status      = p.get("status"),
             event_state = p.get("event_state"),
             category    = p.get("category"),

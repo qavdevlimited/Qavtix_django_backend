@@ -75,7 +75,6 @@ class RoleControlService:
             # Through relationships
             "event": "host__country",
             "order": "event__host__country",
-            "withdrawal": "user__host_profile__country",
             "flaggeduser": "user__host_profile__country",
             "issuedticket": "event__host__country",
             "orderticket": "order__event__host__country",
@@ -89,22 +88,13 @@ class RoleControlService:
 
         return field_map.get(model_name.lower(), None)
 
+    MULTI_PATH_MODELS = {
+        "withdrawal": Q(user__host_profile__country="{country}") | Q(user__attendee_profile__country="{country}"),
+    }
+
     @staticmethod
     def filter_by_admin(user, queryset, model_name):
-        """
-        Apply role-based filtering to a queryset.
-
-        Args:
-            user: The admin user making the request
-            queryset: The queryset to filter
-            model_name: The name of the model (e.g., "host", "event", "attendee")
-
-        Returns:
-            Filtered queryset (unchanged if superadmin, filtered by country if normal admin)
-
-        Raises:
-            PermissionDenied: If user is not authenticated or not an admin
-        """
+        
         if not user.is_authenticated:
             return queryset.none()
 
@@ -115,6 +105,17 @@ class RoleControlService:
 
         # Normal admin — filter by country
         admin_country = RoleControlService.get_admin_country(user)
+
+        if model_name.lower() in RoleControlService.MULTI_PATH_MODELS:
+            q_template = RoleControlService.MULTI_PATH_MODELS[model_name.lower()]
+            # Rebuild the Q with the actual country value
+            q_filter = (
+                Q(user__host_profile__country=admin_country) |
+                Q(user__attendee_profile__country=admin_country)
+            )
+            logger.debug(f"Multi-path filter applied for {model_name} — country: {admin_country}")
+            return queryset.filter(q_filter)
+    
         country_field = RoleControlService.get_country_field_for_model(model_name)
 
         if not country_field:

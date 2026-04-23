@@ -49,3 +49,10 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+
+
+# Celery
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat-schedule.bak

@@ -387,6 +387,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "events.tasks.activate_scheduled_events",  # adjust path
         "schedule": crontab(minute="*/1"),  # every minute
     },
+    "auto_payout_friday_job": {
+        "task": "administrator.tasks.run_friday_auto_payouts",
+        "schedule": crontab(hour=9, minute=0, day_of_week=5),  # Friday 9AM
+    }
+
 }
 
 FRONTEND_URL = config("FRONTEND_URL", default="https://qavtix.com")

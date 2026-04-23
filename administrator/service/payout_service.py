@@ -440,7 +440,7 @@ class PaystackPayoutService:
         })
 
         # Mark as "paid" optimistically — webhook can correct if it fails
-        withdrawal.status   = "paid"
+        withdrawal.status   = "processing"
         withdrawal.metadata = metadata
         withdrawal.save(update_fields=["status", "metadata"])
 
@@ -509,7 +509,7 @@ class PaystackPayoutService:
                     "paystack_ref":    f"qavtix_payout_{withdrawal.id}",
                     "bulk_transfer":   True,
                 })
-                withdrawal.status   = "paid"
+                withdrawal.status   = "processing"
                 withdrawal.metadata = metadata
                 withdrawal.save(update_fields=["status", "metadata"])
 
@@ -670,7 +670,7 @@ class PaystackTransferWebhookService:
     @staticmethod
     def handle_failed(data):
         reference = data.get("reference", "")
-        PaystackTransferWebhookService._update_withdrawal(reference, "approved", data)
+        PaystackTransferWebhookService._update_withdrawal(reference, "failed", data)
         logger.warning(f"Paystack transfer FAILED for reference {reference}")
         return {"handled": True, "flow": "transfer_failed", "reference": reference}
 
@@ -684,6 +684,10 @@ class PaystackTransferWebhookService:
             )
         except Withdrawal.DoesNotExist:
             logger.warning(f"Transfer webhook: no withdrawal found for ref {reference}")
+            return
+
+        if withdrawal.status in ["paid", "failed"]:
+            logger.info(f"Already finalized: {withdrawal.id}")
             return
 
         metadata = withdrawal.metadata or {}

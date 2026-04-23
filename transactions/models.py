@@ -248,6 +248,8 @@ class Withdrawal(models.Model):
         ("approved", "Approved"),
         ("rejected", "Rejected"),
         ("paid", "Paid"),
+        ('failed','Failed'),
+        ('processing','Processing')
     )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

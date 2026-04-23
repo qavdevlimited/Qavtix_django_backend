@@ -34,6 +34,13 @@ class PaystackWebhookService:
 
         if event_type == "charge.success":
             return self._handle_charge_success(data)
+        if event_type == "transfer.success":
+            from administrator.service.payout_service import PaystackTransferWebhookService
+            return PaystackTransferWebhookService.handle_success(data)
+
+        elif event_type == "transfer.failed":
+            from administrator.service.payout_service import PaystackTransferWebhookService
+            return PaystackTransferWebhookService.handle_failed(data)
 
         logger.info(f"Unhandled webhook event type: {event_type}")
         return {"handled": False, "event": event_type}

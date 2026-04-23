@@ -3,7 +3,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 import logging
 from notification.email import send_templated_email
- 
+from django.utils import timezone
 logger = logging.getLogger(__name__)
 from django.utils.safestring import mark_safe
 from django.contrib.auth.models import User
@@ -228,8 +228,9 @@ def send_flagged_user_alert_email(self, user_id, reason, notes):
 @shared_task(
     bind=True,
     max_retries=3,
-    default_retry_delay=60,  # retry after 60 seconds
+    default_retry_delay=60,  
     autoretry_for=(Exception,),
+    acks_late=True,
 )
 def process_single_payout(self, withdrawal_id, initiated_by_email=""):
     """
@@ -253,3 +254,56 @@ def process_single_payout(self, withdrawal_id, initiated_by_email=""):
             f"(attempt {self.request.retries + 1}): {exc}"
         )
         raise  # autoretry_for will catch this and retry
+
+
+
+@shared_task
+def run_friday_auto_payouts():
+    """
+    Runs every Friday.
+    Finds all eligible withdrawals and processes them.
+    """
+
+    from transactions.models import Withdrawal
+    from administrator.models import AutoPayout
+    from administrator.service.payout_service import PaystackPayoutService
+
+    logger.info("Starting Friday auto payout job")
+
+    # Get all enabled hosts
+    enabled_hosts = AutoPayout.objects.filter(is_enabled=True).values_list("host_id", flat=True)
+
+    if not enabled_hosts:
+        logger.info("No hosts with auto payout enabled")
+        return
+
+    # Get all pending withdrawals for those hosts
+    withdrawals = Withdrawal.objects.filter(
+        user__host_profile__in=enabled_hosts,
+        status="pending"
+    ).select_related("user", "payout_account")
+
+    logger.info(f"Found {withdrawals.count()} withdrawals for auto payout")
+
+    processed = 0
+    failed = 0
+
+    for withdrawal in withdrawals:
+        try:
+            # mark approved first
+            withdrawal.status = "approved"
+            withdrawal.metadata = withdrawal.metadata or {}
+            withdrawal.metadata["auto_batch"] = True
+            withdrawal.metadata["auto_batch_at"] = timezone.now().isoformat()
+            withdrawal.save(update_fields=["status", "metadata"])
+
+            # trigger Paystack transfer
+            PaystackPayoutService.process_withdrawal(str(withdrawal.id))
+
+            processed += 1
+
+        except Exception as e:
+            logger.error(f"Auto payout failed for {withdrawal.id}: {e}")
+            failed += 1
+
+    logger.info(f"Friday payout done → processed={processed}, failed={failed}")

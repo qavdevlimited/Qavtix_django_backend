@@ -227,18 +227,6 @@ class WithdrawalRequestSerializer(serializers.Serializer):
     payout_account_id = serializers.UUIDField()
 
 
-class PayoutInformationSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PayoutInformation
-        fields = [
-            "id",
-            "bank_name",
-            "account_name",
-            "account_number",
-            "is_default",
-        ]
-
-
 
 class AttendeeProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
@@ -425,7 +413,7 @@ class AccountDeletionRequestSerializer(serializers.ModelSerializer):
 class PayoutInformationSerializer(serializers.ModelSerializer):
     class Meta:
         model = PayoutInformation
-        fields = ["id", "bank_name", "account_name", "account_number", "is_default", "created_at"]
+        fields = ["id", "bank_name", "account_name", "account_number", "is_default", "created_at","bank_code"]
         read_only_fields = ["id", "created_at"]
 
 

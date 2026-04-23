@@ -147,7 +147,7 @@ class HostService:
         # Total amount successfully withdrawn (approved or paid)
         total_withdrawn = Withdrawal.objects.filter(
             user=user,
-            status__in=["approved", "paid"]
+            status__in=["approved", "paid","processing"]
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
         available_balance = normal_earnings - total_withdrawn

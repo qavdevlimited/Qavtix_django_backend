@@ -958,7 +958,7 @@ class HostWithdrawalRequestView(APIView):
                 Withdrawal.objects
                 .select_for_update()          # row-level lock
                 .filter(user=request.user)
-                .exclude(status="rejected")
+                .exclude(status__in=["rejected", "failed"])
                 .aggregate(total=Sum("amount"))["total"]
                 or Decimal("0.00")
             )

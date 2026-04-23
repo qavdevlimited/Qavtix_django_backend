@@ -484,7 +484,7 @@ class AffiliateDashboardView(APIView):
                 Withdrawal.objects
                 .select_for_update()
                 .filter(user=request.user)
-                .exclude(status="rejected")
+                .exclude(status__in=["rejected", "failed"])
                 .aggregate(total=Sum("amount"))["total"]
                 or Decimal("0.00")
             )
@@ -829,7 +829,7 @@ class RequestWithdrawalView(APIView):
                 Withdrawal.objects
                 .select_for_update()
                 .filter(user=request.user)
-                .exclude(status="rejected")
+                .exclude(status__in=["rejected", "failed"])
                 .aggregate(total=Sum("amount"))["total"]
                 or Decimal("0.00")
             )

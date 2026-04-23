@@ -102,6 +102,9 @@ class FeaturedInitiateService:
                         end_date=now + timezone.timedelta(days=FREE_DAYS),
                         payment_amount=Decimal("0.00"),
                         payment_method="free_quota",
+                        currency="NGN",
+                        amount_base=plan_price_ngn,
+                        
                         status="active",
                         metadata={
                             "reference": f"free_feat_{uuid.uuid4().hex[:12]}",
@@ -162,8 +165,10 @@ class FeaturedInitiateService:
             event=event,
             user=self.user,
             end_date=end_date,
-            payment_amount=plan_price_ngn,  # Store in NGN (base currency)
+            payment_amount=display_amount,  # Store in NGN (base currency)
             payment_method=None,
+            currency=self.currency,
+            amount_base=plan_price_ngn,
             status="pending",
             metadata={
                 "reference":          reference,

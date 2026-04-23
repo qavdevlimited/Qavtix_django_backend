@@ -12,6 +12,7 @@ All querysets respect RBAC:
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
 from datetime import timedelta
+from administrator.utils import get_admin_currency
 from payments.models import Payment
 from transactions.models import Event, OrderTicket, Withdrawal, Order
 from host.models import Host, HostActivity
@@ -130,17 +131,13 @@ class AdminDashboardService:
     # ── Core Revenue Calculator ───────────────────────────────
 
     @staticmethod
-    def _sum_revenue(order_qs, featured_qs, host_sub_qs, attendee_sub_qs):
-        """
-        Adds all 4 revenue sources together.
-        Returns a single float.
+    def _sum_revenue(order_qs, featured_qs, host_sub_qs, attendee_sub_qs,user):
 
-        Revenue breakdown:
-          - order_fees        : Qavtix fee per ticket order
-          - featured_payments : Hosts pay to feature their events
-          - host_sub_payments : Hosts pay for Pro/Enterprise plans
-          - attendee_sub_payments: Attendees pay for Pro/Enterprise plans
-        """
+        admin_currency=get_admin_currency(user)
+
+        host_sub_qs = host_sub_qs.filter(currency=admin_currency)
+        attendee_sub_qs = attendee_sub_qs.filter(currency=admin_currency)
+        featured_qs  = featured_qs.filter(currency=admin_currency)
         order_fees = order_qs.aggregate(
             t=Sum("fees")
         )["t"] or 0
@@ -169,6 +166,7 @@ class AdminDashboardService:
             featured_qs    = AdminDashboardService._featured_qs(user),
             host_sub_qs    = AdminDashboardService._host_sub_qs(user),
             attendee_sub_qs = AdminDashboardService._attendee_sub_qs(user),
+            user=user
         )
 
     @staticmethod
@@ -190,7 +188,7 @@ class AdminDashboardService:
                 ),
                 attendee_sub_qs = AdminDashboardService._attendee_sub_qs(user).filter(
                     started_at__year=yr, started_at__month=mo
-                ),
+                ),user=user
             )
 
         current  = _revenue_for_month(y, m)
@@ -281,7 +279,7 @@ class AdminDashboardService:
             ),
             attendee_sub_qs = AdminDashboardService._attendee_sub_qs(user).filter(
                 started_at__year=y, started_at__month=m
-            ),
+            ),user=user
         )
 
     # ── Section Three ─────────────────────────────────────────

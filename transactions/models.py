@@ -13,6 +13,14 @@ class FeaturedEvent(models.Model):
     end_date = models.DateTimeField()
     payment_amount = models.DecimalField(max_digits=10, decimal_places=2)
     payment_method = models.CharField(max_length=50, blank=True, null=True)
+    currency = models.CharField(max_length=10, default="NGN")
+
+    amount_base = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        help_text="Always NGN equivalent for reporting"
+    )
     status = models.CharField(
         max_length=20,
         choices=[

@@ -22,6 +22,7 @@ class HostProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source='user.email', read_only=True)
     username = serializers.CharField(source='user.username', read_only=True)
     currency = serializers.SerializerMethodField()
+    plan_type =serializers.SerializerMethodField()
 
     class Meta:
         model = Host
@@ -51,11 +52,22 @@ class HostProfileSerializer(serializers.ModelSerializer):
             'show_past_events',
             'verified',
             'currency',
+            'plan_type',
         ]
         read_only_fields = ['registration_date', 'role', 'followers', 'verified']
 
     def get_currency(self, obj):
         return HostService.get_host_currency(obj)
+    
+    def get_plan_type(self, obj):
+        subscription = (
+            obj.subscriptions
+            .filter(status="active")
+            .order_by("-started_at")
+            .first()
+        )
+
+        return subscription.plan_slug if subscription else "free"
 
 # Ticket promo codes
 class PromoCodeNestedSerializer(serializers.ModelSerializer):

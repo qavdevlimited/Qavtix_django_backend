@@ -121,6 +121,21 @@
       color: #6B7280;
       margin-block: 20px;
     }
+
+    .cta-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #3b5bdb 0%, #1e40af 100%);
+      color: #ffffff !important;
+      text-decoration: none;
+      font-family: 'Space Grotesk', Arial, sans-serif;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 14px 48px;
+      border-radius: 50px;
+      letter-spacing: 0.01em;
+      box-shadow: 0 4px 14px rgba(59, 91, 219, 0.35);
+      margin-bottom: 32px;
+    }
   </style>
 </head>
 
@@ -135,36 +150,45 @@
 
       <!-- Body -->
       <div class="email-body">
-        <p class="greeting">Hi {{ first_name }},</p>
+        <p class="greeting">Dear {{ first_name }},</p>
 
-        <p class="welcome-line">Welcome to <strong>Qavtix!</strong> We're glad to have you with us!</p>
+        <p class="welcome-line">We are delighted to have you join the QavTix community.</p>
 
         <p class="body-text">
-          You can now discover events, book tickets, and manage everything in one place — from concerts and sports to
-          conferences and travel experiences.
+          Whether you are looking for concerts, sports, professional conferences, or unique travel experiences, you can
+          now discover, book, and manage your tickets all in one place.
         </p>
 
         <p class="body-text">
-          Your account is ready, so feel free to start exploring right away.
+          Your account is fully set up and ready for you to start exploring. Why not take a look at what’s happening
+          near you today?
         </p>
 
-        <p class="section-heading">If you need any help, our team is always here for you at support@qavtix.com.</p>
 
+        <a href="attendee.qavtix.com/dashboard" class="cta-btn">Dashboard</a>
+
+        <p class="section-heading">If you have any questions or need a hand getting started, please reach out to our
+          support team at support@qavtix.com.
+        </p>
         <p class="body-text">
-          Enjoy the experience!
+          We hope you enjoy the experience.
+
         </p>
 
         <hr class="divider" />
 
         <p class="sign-off">
-          Best regards,<br />
+          Warm regards,
+          ,<br />
           <span class="brand-name">The Qavtix Team</span>
         </p>
       </div>
 
       <!-- Footer -->
       <hr class="footer-line" />
-      <p class="copyright">© 2026 Qavtix. All rights reserved.</p>
+      <p class="copyright">This message was sent automatically. Do not reply.
+        <br /> © 2026 Qavtix. All rights reserved.
+      </p>
       <div class="email-footer">
         <img src="{{ footer_image_url }}" style="width:100%;" />
       </div>

@@ -140,43 +140,59 @@
                 <p>🎉 Your booking is confirmed!
                 </p>
 
-                <p class="welcome-line">Thank you for choosing QavTix. Your ticket purchase has been successfully
-                    completed, and you’re all set for an amazing experience.
-                </p>
-
-                <p class="section-heading">
-                <h1>🧾 Booking Details</h1>
-                <h1>Order ID: {{ order_id }}</h1>
-                <h1>Event: {{ event_name }}</h1>
-                <h1>Date: {{ start_date }} to {{ end_date }}</h1>
-                <h1>Venue: {{ location }}</h1>
-                <h1>Ticket Type: {{ ticket_type }}</h1>
-                <h1>Quantity: {{ quantity }}</h1>
+                <p class="welcome-line">Thank you for choosing QavTix. Your purchase has been processed successfully,
+                    and we are delighted to confirm your attendance at {{event_name}}
                 </p>
 
                 <p class="body-text">
-                    Your ticket(s) are attached to this email and are also available in your QavTix account. Please
-                    present your QR code at the venue for seamless check-in.
+                <h4><strong>
+                        Booking Summary</strong>
+                </h4>
+                <ul style="margin: 0 0 20px 18px; padding: 0; color: #4b5563; font-size: 14px; line-height: 1.7;">
+                    <li><strong>Order ID:</strong> {{ order_id }}
+                    </li>
+                    <li><strong>Event:</strong> {{ event_name }}
+                    </li>
+                    <li><strong>Date: </strong>{{ start_date }} to {{ end_date }}
+                    </li>
+                    <li><strong>Venue:</strong> {{ location }}
+                    </li>
+                    <li><strong>Ticket Type:</strong> {{ ticket_type }}
+                    </li>
+                    <li><strong>Quantity:</strong> {{ quantity }}
+                    </li>
+                </ul>
+                </p>
+
+                <p class="body-text">
+                    Your tickets are attached to this email and can also be accessed through your QavTix account. To
+                    ensure a smooth entry, please have your QR code ready to be scanned upon arrival.
 
                 </p>
 
-                <p class="section-heading">📌 What to Do Next
+                <p class="section-heading"> Helpful Tips
+
 
                 </p>
 
                 <p class="body-text">
                 <ul style="margin: 0 0 20px 18px; padding: 0; color: #4b5563; font-size: 14px; line-height: 1.7;">
-                    <li>Save your ticket or download it for easy access
+                    <li><strong>Save Your Ticket:</strong> Download your ticket to your phone for offline access.
+
                     </li>
-                    <li> Arrive early to avoid delays
+                    <li> <strong>Arrival: </strong>We recommend arriving early to ensure a seamless check-in experience.
+
                     </li>
-                    <li>Stay updated for any event notifications
+                    <li><strong>Contact:</strong> If you have any queries, please contact the organiser, {{host_name}},
+                        at
+                        {{host_email}}.
+
                     </li>
                 </ul>
                 </p>
 
-                <p>If you have any questions, feel free to contact the event host at {{ host_name }} via {{ host_email}}
-                    Enjoy the event! 🎉
+                <p>We hope you have a fantastic time.
+
                 </p>
 
                 <hr class="divider" />
@@ -189,7 +205,11 @@
 
             <!-- Footer -->
             <hr class="footer-line" />
-            <p class="copyright">© 2026 Qavtix. All rights reserved.</p>
+            <p class="copyright">This email was sent to {{email}}. This order is subject to QavTix Terms of Use
+                and Privacy Policy.
+                Create your own event on Qavtix.com and start selling in minutes. Try it today!
+                <br />© 2026 Qavtix. All rights reserved.
+            </p>
             <div class="email-footer">
                 <img src="{{ footer_image_url }}" style="width:100%;" />
             </div>

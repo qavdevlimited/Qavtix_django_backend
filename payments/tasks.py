@@ -286,6 +286,7 @@ def send_booking_confirmation_email(self, order_id):
             to_email=order.email,
             template_name="emails/succesfulorder.html",
             context={
+                "email": order.email,
                 "first_name":       order.full_name or "Guest",
                 "order_id":         order.id,
                 "event_name":       order.event.title,

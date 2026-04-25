@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <title>Successful Sign Up – QavTix</title>
+    <title>Order Reminder</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -121,6 +121,21 @@
             color: #6B7280;
             margin-block: 20px;
         }
+
+        .cta-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #3b5bdb 0%, #1e40af 100%);
+            color: #ffffff !important;
+            text-decoration: none;
+            font-family: 'Space Grotesk', Arial, sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            padding: 14px 48px;
+            border-radius: 50px;
+            letter-spacing: 0.01em;
+            box-shadow: 0 4px 14px rgba(59, 91, 219, 0.35);
+            margin-bottom: 32px;
+        }
     </style>
 </head>
 
@@ -135,43 +150,43 @@
 
             <!-- Body -->
             <div class="email-body">
-                <p class="greeting">Hello {{ first_name }},</p>
+                <p class="greeting">Hi {{ first_name }},</p>
 
-                <p class="welcome-line">We noticed that you started booking a ticket on [Booking Date] but didn’t
-                    complete the process.
-                    <strong>{{ order_id }}</strong>
+                <p class="welcome-line">It looks like you didn't quite finish your booking on {{booking_date}}.
                 </p>
 
                 <p class="body-text">
-                    Your selected ticket(s) may still be available, and you can easily pick up where you left off.
-                    Simply return to the platform to finish your booking and secure your spot.
-
-
+                    We have saved your progress for <strong>((order_id))</strong> so you can pick up exactly where you
+                    left off. Simply click the link below to finalise your purchase and secure your place.
                 </p>
 
-                <p class="body-text">
-                    Experiencing any issues? reach out to our support team at
-                    <strong>support@qavtix.com</strong> for assistance Don’t miss out on the event!
+                <a href="{{payment_link}}" class="cta-btn">Finish My Booking</a>
 
+                <p class="body-text">
+                    If you encountered any technical difficulties or have questions about the event, please reply to
+                    this email or contact us at support@qavtix.com
                 </p>
 
                 </p>
 
                 <p class="body-text">
-                    Enjoy the experience!
+                    We hope to see you there!
+
                 </p>
 
                 <hr class="divider" />
 
                 <p class="sign-off">
-                    Best regards,<br />
+                    Kind regards,<br />
                     <span class="brand-name">The Qavtix Team</span>
                 </p>
             </div>
 
             <!-- Footer -->
             <hr class="footer-line" />
-            <p class="copyright">© 2026 Qavtix. All rights reserved.</p>
+            <p class="copyright">This message was sent automatically. Do not reply.
+                <br /> © 2026 Qavtix. All rights reserved.
+            </p>
             <div class="email-footer">
                 <img src="{{ footer_image_url }}" style="width:100%;" />
             </div>

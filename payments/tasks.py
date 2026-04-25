@@ -226,7 +226,7 @@ def send_attendee_plan_expiry_reminders():
 # ─────────────────────────────────────────────────────────────────────────────
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
-def send_pending_order_reminder_email(self, order_id: int):
+def send_pending_order_reminder_email(self, order_id):
     """
     Abandoned booking reminder.
     Gated by: email_order_confirmations
@@ -246,9 +246,8 @@ def send_pending_order_reminder_email(self, order_id: int):
 
         event        = order.event
         payment_link = order.metadata.get("checkout_url")
-
         send_templated_email(
-            subject=f"Complete your booking for {event.title}",
+            subject=f"Don't Miss Out! Complete Your Booking for {event.title}",
             to_email=order.email,
             template_name="emails/abandoned.html",
             context={
@@ -257,8 +256,8 @@ def send_pending_order_reminder_email(self, order_id: int):
                 "booking_date":     event.start_datetime.strftime("%A, %d %B %Y %H:%M"),
                 "event_title":      event.title,
                 "payment_link":     payment_link,
-                "header_image_url": HEADER_IMAGE,
-                "footer_image_url": FOOTER_IMAGE,
+                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777134307/Banner_gkaod9.png",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_5_itsjwc.png",
             },
         )
 

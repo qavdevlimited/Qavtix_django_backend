@@ -6,7 +6,7 @@ from rest_framework import serializers,validators
 from host.models import Host, HostSubscription
 from host.services.service import HostService
 from payments.models import HostPlan, PayoutInformation
-from  events.models import Event, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
+from  events.models import Event, EventOccurrence, Ticket, PromoCode, EventMedia, EventLocation, OrganizerSocialLink, Tag,EventPermission
 from public.models import Follow
 from transactions.models import Withdrawal
 from django.db.models import Sum
@@ -112,6 +112,12 @@ class OrganizerSocialLinkNestedSerializer(serializers.ModelSerializer):
         model = OrganizerSocialLink
         fields = ['url']
 
+class EventOccurrenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EventOccurrence
+        fields = ["start_datetime", "end_datetime"]
+
+
 # Event serializer with all nested fields
 class EventSerializer(serializers.ModelSerializer):
     tickets = TicketNestedSerializer(many=True)
@@ -132,6 +138,7 @@ class EventSerializer(serializers.ModelSerializer):
     media = EventMediaNestedSerializer(many=True, required=False)
     event_name=serializers.CharField(source="title")
     event_status=serializers.CharField(source="status")
+    recurring_dates = EventOccurrenceSerializer(many=True, required=False)
 
     class Meta:
         model = Event
@@ -143,7 +150,7 @@ class EventSerializer(serializers.ModelSerializer):
             'order_confirmation', 'ticket_delivery', 'reminders', 'post_event_emails',
             'customize_sender_name', 'affiliate_enabled', 'commission_percentage',
             'affiliate_start', 'affiliate_end',
-            'event_location', 'social_links', 'tickets','permissions','event_status','media',"currency","is_scheduled","schedule_time","minimum_age"
+            'event_location', 'social_links', 'tickets','permissions','event_status','media',"currency","is_scheduled","schedule_time","minimum_age","recurring_dates"
         ]
     
     def validate(self, attrs):
@@ -177,6 +184,7 @@ class EventSerializer(serializers.ModelSerializer):
         social_links_data = validated_data.pop('social_links', [])
         tags_data = validated_data.pop('tags_input', [])
         media_data = validated_data.pop('media', [])
+        occurrences_data = validated_data.pop("recurring_dates", [])
 
         from payments.services.currency_utils import get_currency_for_host
         validated_data["currency"] = get_currency_for_host(host)
@@ -197,6 +205,9 @@ class EventSerializer(serializers.ModelSerializer):
             ]
 
             event.tags.set(tag_instances)
+            if event.event_type == "recurring":
+                for occ in occurrences_data:
+                    EventOccurrence.objects.create(event=event, **occ)
 
             # create location
             EventLocation.objects.create(event=event, **location_data)

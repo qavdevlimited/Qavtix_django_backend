@@ -3,7 +3,7 @@ from public.models import Category
 import uuid
 from django.contrib.auth.models import User
 from host.models import Host
-
+from django.utils import timezone
 
 class Tag(models.Model):
     name = models.CharField(max_length=50, unique=True)
@@ -108,6 +108,54 @@ class Event(models.Model):
 
     def __str__(self):
         return self.title
+
+    def get_current_or_next_occurrence(self):
+        from django.utils import timezone
+
+        now = timezone.now()
+
+        return self.occurrences.filter(
+            start_datetime__gte=now
+        ).order_by("start_datetime").first()
+
+    def get_effective_start_datetime(self):
+        if self.event_type == "recurring":
+            occ = self.get_current_or_next_occurrence()
+            if occ:
+                return occ.start_datetime
+        return self.start_datetime
+
+    def get_effective_end_datetime(self):
+        if self.event_type == "recurring":
+            occ = self.get_current_or_next_occurrence()
+            if occ:
+                return occ.end_datetime
+        return self.end_datetime
+
+    # optional convenience
+    @property
+    def effective_start_datetime(self):
+        return self.get_effective_start_datetime()
+
+    @property
+    def effective_end_datetime(self):
+        return self.get_effective_end_datetime()
+
+class EventOccurrence(models.Model):
+    event = models.ForeignKey(
+        Event,
+        on_delete=models.CASCADE,
+        related_name="recurring_dates"
+    )
+
+    start_datetime = models.DateTimeField()
+    end_datetime = models.DateTimeField()
+
+    class Meta:
+        ordering = ["start_datetime"]
+
+    def __str__(self):
+        return f"{self.event.title} ({self.start_datetime} - {self.end_datetime})"
 
 
 

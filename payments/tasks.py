@@ -561,36 +561,31 @@ def send_plan_activated_email(self, subscription_id):
     plan    = sub.plan
     cycle   = sub.billing_cycle.capitalize()
     expires = sub.expires_at.strftime("%A, %d %B %Y") if sub.expires_at else "Never"
+    from decimal import Decimal
 
-    email_body_html = f"""
-<p class="body-text">
-    Your <strong>{plan.name}</strong> plan is now active.
-</p>
+    vat_rate = Decimal("0.075")
 
-<div class="payment-box">
-    <p class="payment-box-title">Plan Details</p>
-    <p class="payment-box-text">
-        <strong>Plan:</strong> {plan.name}<br />
-        <strong>Billing Cycle:</strong> {cycle}<br />
-        <strong>Amount Paid:</strong> ₦{sub.amount_paid:,.2f}<br />
-        <strong>Expires:</strong> {expires}
-    </p>
-</div>
+    vat = vat_rate * sub.amount_paid
+    charged = sub.amount_paid + vat
 
-<p class="body-text">
-    You now have access to all <strong>{plan.name}</strong> features.
-    <a href="https://qavtix.com/dashboard">Log in to your dashboard</a> to get started.
-</p>
-    """
-
-    # Account security — always sent regardless of preferences
     try:
         send_templated_email(
+            subject=f"Confirmation: Your QavTix {plan.name} Subscription is Active",
             to_email=user.email,
-            subject=f"🎉 Welcome to QavTix {plan.name}!",
-            template_name="emails/generic_template.html",
-            context=_base_context(f"Welcome to QavTix {plan.name}!", email_body_html),
+            template_name="emails/hostsubscription.html",
+            context={
+                "plan_name": plan.name,
+                "plan_rate":sub.amount_paid,
+                "plan_cycle":cycle,
+                "expires":expires,
+                "total":sub.amount_paid,
+                "vat":vat,
+                "charged":charged,
+                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777145413/Banner_3_vfz0q5.png",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_2_3_t8akti.png",
+            },
         )
+
     except Exception as exc:
         raise self.retry(exc=exc)
 

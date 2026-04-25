@@ -129,69 +129,21 @@ def send_blue_badge_gift_email(self, host_id):
  
     user = host.user
     host_name = user.first_name or user.get_full_name() or "Host"
- 
-    email_body_html = f"""
-<p class="body-text">
-    Congratulations, <strong>{host_name}</strong>! Your QavTix account has been awarded a <strong>permanent Blue Verification Badge</strong>.
-</p>
- 
-<p class="body-text">
-    This recognition is given to organizers who consistently meet our platform guidelines through their activity, reliability, and engagement. Your commitment to creating quality events and maintaining trust within the QavTix community has not gone unnoticed.
-</p>
- 
-<div class="payment-box">
-    <p class="payment-box-title">What This Means for You</p>
-    <p class="payment-box-text">
-        <strong>✓</strong> A permanent Blue badge displayed on your profile<br />
-        <strong>✓</strong> Increased trust and credibility with attendees<br />
-        <strong>✓</strong> Stronger visibility across the QavTix platform
-    </p>
-</div>
- 
-<div class="payment-box">
-    <p class="payment-box-title">Why You Received This Badge</p>
-    <p class="payment-box-text">
-        You've demonstrated:<br />
-        <strong>•</strong> Consistent event activity<br />
-        <strong>•</strong> Positive engagement with attendees<br />
-        <strong>•</strong> Adherence to QavTix policies and standards
-    </p>
-</div>
- 
-<p class="body-text">
-    This badge is yours to keep as a mark of trust and excellence on QavTix. Keep hosting, growing, and delivering great experiences — we're proud to have you on the platform.
-</p>
- 
-<p class="body-text">
-    If you have any questions, feel free to reach out to our support team at <a href="mailto:support@qavtix.com">support@qavtix.com</a>.
-</p>
-    """
- 
-    context = {
-        "show_order_box": False,
-        "company_label": "QavTix",
-        "email_title": "You've Earned Your Permanent QavTix Verification Badge 🎉",
-        "show_divider_after_title": True,
-        "email_body_html": mark_safe(email_body_html),
-        "show_items_table": False,
-        "payment_boxes": False,
-        "show_sign_off": True,
-        "sign_off_greeting": "Congratulations once again,",
-        "sign_off_name": "The QavTix Team",
-        "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
-        "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
-    }
- 
+
     try:
         send_templated_email(
-            to_email=user.email,
-            subject="You've Earned Your Permanent QavTix Verification Badge 🎉",
-            template_name="emails/generic_template.html",
-            context=context
+            subject="Congratulations: Your QavTix Account is Now Verified! 🎉",
+             to_email=user.email,
+            template_name="emails/bluebadgeemail.html",
+            context={
+                "first_name": host_name,
+                "email":user.email,
+                "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777146541/Banner_4_zwtuim.png",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_5_itsjwc.png",
+            },
         )
-        logger.info(f"Blue badge email sent to host {host_id} ({user.email})")
+
     except Exception as exc:
-        logger.error(f"Failed to send blue badge email to host {host_id}: {exc}")
         raise self.retry(exc=exc)
  
 

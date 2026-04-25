@@ -28,7 +28,7 @@
         .email-wrapper {
             width: 100%;
             background-color: #f0f2f5;
-            padding: 40px 16px;
+            padding: 0px 0px;
         }
 
         .email-card {
@@ -135,66 +135,51 @@
 
             <!-- Body -->
             <div class="email-body">
-                <p class="greeting">Dear {{ first_name }},</p>
-
-                <p class="welcome-line">
-                    We are excited to welcome you as a QavTix Host!
-
+                <p class="greeting">Dear {{first_name}}
                 </p>
-
-                <p class="body-text">
-                    Whether you are organising concerts, sports events, conferences, or unique experiences, QavTix gives
-                    you everything you need to create, manage, and sell tickets seamlessly in one place.
-
-                </p>
-
-                <p class="body-text">
-                    Your host account is fully set up and ready for you to start publishing your first event. Why not
-                    create your event and share it with your audience today?
+                <p>This email confirms that we have successfully received your request to withdraw funds from your
+                    QavTix account.
 
                 </p>
                 <p class="body-text">
-                <h4><strong>
-                        What you can do now:
-                    </strong>
-                </h4>
                 <ul style="margin: 0 0 20px 18px; padding: 0; color: #4b5563; font-size: 14px; line-height: 1.7;">
-                    <li>Create and publish events.
-
+                    <li><strong>Withdrawal Amount:</strong> {{amount}}
                     </li>
-                    <li>Manage ticket sales and attendees.
-
+                    <li><strong>Request Date:</strong> {{ request_date}}
                     </li>
-                    <li>Track event performance in your dashboard.
-
+                    <li><strong>Status:</strong> {{ status}}
                     </li>
                 </ul>
                 </p>
 
                 <p class="body-text">
-                    If you have any questions or need help getting started, feel free to contact our support team at
-                    support@qavtix.com.
+                    Our finance team is currently reviewing your request. Payouts are typically processed within our
+                    standard timeline, and you will receive a secondary notification once the funds have been dispatched
+                    to your chosen payment method.
+
 
                 </p>
-
-                <p class="section-heading">
-                    We look forward to helping you host successful events.
+                <p>Please note that depending on your bank or payment provider, it may take a few additional business
+                    days for the balance to reflect in your account.
 
                 </p>
+                <p>If you did not initiate this request, or if you have any further queries, please contact our support
+                    team at support@qavtix.com.
 
-
+                </p>
                 <hr class="divider" />
 
                 <p class="sign-off">
-                    Warm regards,
-                    ,<br />
+                    Best regards,<br />
                     <span class="brand-name">The Qavtix Team</span>
                 </p>
             </div>
 
             <!-- Footer -->
             <hr class="footer-line" />
-            <p class="copyright">This message was sent automatically. Do not reply.
+            <p class="copyright">This email was sent to {{email}}. This order is subject to QavTix Terms of Use
+                and Privacy Policy.
+                Create your own event on Qavtix.com and start selling in minutes. Try it today!
                 <br />© 2026 Qavtix. All rights reserved.
             </p>
             <div class="email-footer">

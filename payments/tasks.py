@@ -806,3 +806,35 @@ def send_plan_expired_email_attendee(self, subscription_id):
         logger.error(f"Failed to send attendee plan expired email: {exc}")
 
 
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_payment_method_updated_email(self, email, profile_name, profile_id):
+    send_templated_email(
+        subject="Payment Method Updated",
+        to_email=email,
+        template_name="emails/payoutaccountupdate.html",
+        context={
+            "profile_name": profile_name,
+            "profile_id": profile_id,
+            "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777153375/Banner_9_ny7o8j.png",
+            "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_5_itsjwc.png",
+        },
+    )
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_withdrawal_in_progress_email(self, email, first_name, amount, request_date):
+    send_templated_email(
+        subject="Notification: Your Withdrawal Request is Being Processed",
+        to_email=email,
+        template_name="emails/withdrawal.html",
+        context={
+            "first_name": first_name,
+            "amount": amount,
+            "request_date": request_date,
+            "status": "Under Review",
+            "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777153375/Banner_10_xa8gxg.png",
+            "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_5_itsjwc.png",
+        },
+    )

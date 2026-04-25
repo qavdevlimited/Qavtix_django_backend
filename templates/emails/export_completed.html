@@ -134,61 +134,38 @@
             </div>
 
             <!-- Body -->
+            <!-- Body -->
             <div class="email-body">
-                <p class="greeting">Dear {{ first_name }},</p>
+                <p class="greeting">Hello,</p>
 
                 <p class="welcome-line">
-                    We are excited to welcome you as a QavTix Host!
-
+                    This is to confirm that your request to export your QavTix account data has been fulfilled.
                 </p>
 
                 <p class="body-text">
-                    Whether you are organising concerts, sports events, conferences, or unique experiences, QavTix gives
-                    you everything you need to create, manage, and sell tickets seamlessly in one place.
-
+                    <strong>Details</strong>
                 </p>
 
-                <p class="body-text">
-                    Your host account is fully set up and ready for you to start publishing your first event. Why not
-                    create your event and share it with your audience today?
-
-                </p>
-                <p class="body-text">
-                <h4><strong>
-                        What you can do now:
-                    </strong>
-                </h4>
                 <ul style="margin: 0 0 20px 18px; padding: 0; color: #4b5563; font-size: 14px; line-height: 1.7;">
-                    <li>Create and publish events.
-
-                    </li>
-                    <li>Manage ticket sales and attendees.
-
-                    </li>
-                    <li>Track event performance in your dashboard.
-
-                    </li>
+                    <li><strong>Request Date:</strong> {{ request_date }}</li>
+                    <li><strong>Export Type:</strong> {{ export_type }}</li>
                 </ul>
+
+                <p class="body-text">
+                    Your account data has been successfully exported and is attached to this email.
                 </p>
 
                 <p class="body-text">
-                    If you have any questions or need help getting started, feel free to contact our support team at
-                    support@qavtix.com.
-
+                    If you did not authorise this export or did not download this file yourself, please contact our
+                    support team immediately at
+                    <strong>support@qavtix.com</strong>.
                 </p>
-
-                <p class="section-heading">
-                    We look forward to helping you host successful events.
-
-                </p>
-
 
                 <hr class="divider" />
 
                 <p class="sign-off">
-                    Warm regards,
-                    ,<br />
-                    <span class="brand-name">The Qavtix Team</span>
+                    Best regards,<br />
+                    <span class="brand-name">The QavTix Team</span>
                 </p>
             </div>
 

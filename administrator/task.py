@@ -167,8 +167,8 @@ def send_flagged_user_alert_email(self, user_id, reason, notes):
                 "reason": reason,
                 "notes": notes,
                 "user_id": user.id,
-                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
-                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+                "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777157346/Banner_12_djyeyd.png",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_5_itsjwc.png",
             },
         )
 
@@ -259,3 +259,21 @@ def run_friday_auto_payouts():
             failed += 1
 
     logger.info(f"Friday payout done → processed={processed}, failed={failed}")
+
+
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_account_suspended_email(self, email, reason="",first_name=""):
+    send_templated_email(
+        subject="Account Suspension Notice",
+        to_email=email,
+        template_name="emails/suspend.html",
+        context={
+            "reason": reason,
+            "first_name":first_name,
+            "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1/banner.png",
+            "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1/footer.png",
+        },
+    )
+

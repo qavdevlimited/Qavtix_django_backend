@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from attendee.models import AccountDeletionRequest, Attendee
+from authentication.utils import get_user_display_name
 from events.models import Event
 from host.models import Host, HostSubscription
 from host.services.RenewSubscriptionService import RenewSubscriptionService, SubscriptionError
@@ -13,6 +14,7 @@ from host.services.brevoservice import CampaignError, CampaignService
 from host.helpers import _apply_date_range, _available_balance, _base_orders, _get_host, _host_fees, _host_orders, _host_payouts, _host_revenue, _next_friday, _pct_change, _period_delta, _quota_data
 from host.services.service import AffiliateService, CheckInService, DashboardService, DownloadEventAttendeeService, HostService, PromoCodeError, PromoCodeService, SalesCardService, SalesGraphService, TransactionService
 from payments.models import PayoutInformation
+from payments.tasks import send_payment_method_updated_email, send_withdrawal_in_progress_email
 from transactions.models import Order, OrderTicket, Withdrawal
 from .serializers import (AffiliateCardSerializer, AffiliateListSerializer, AttendeeProfileSerializer, ChangePasswordSerializer, 
 CheckInAttendeeSerializer, CheckInCardSerializer, CustomerDetailCardSerializer, CustomerListSerializer, 
@@ -705,6 +707,11 @@ class AddPayoutAccountView(APIView):
             PayoutInformation.objects.filter(user=request.user).update(is_default=False)
 
         account = serializer.save(user=request.user)
+        send_payment_method_updated_email.delay(
+            email=request.user.email,
+            profile_name=get_user_display_name(request.user),
+            profile_id=str(account.id)
+        )
 
         return api_response(
             message="Payout account added successfully",
@@ -978,6 +985,14 @@ class HostWithdrawalRequestView(APIView):
                 amount=amount,
                 idempotency_key=idempotency_uuid,
             )
+           
+
+        send_withdrawal_in_progress_email.delay(
+            email=request.user.email,
+            first_name=get_user_display_name(request.user),
+            amount=amount,
+            request_date=timezone.now().date().isoformat()
+        )
 
         return api_response(
             message="Withdrawal request submitted successfully.",

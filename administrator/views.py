@@ -15,7 +15,7 @@ from administrator.service.host_service import AdminBadgeService, AdminHostCardS
 from administrator.service.payout_service import AdminPayoutActionService, AutoPayoutService
 from administrator.service.system_config_service import SystemConfigService
 from administrator.service.uptime_service import UptimeService
-from administrator.task import send_blue_badge_gift_email
+from administrator.task import send_account_suspended_email, send_blue_badge_gift_email
 from authentication.serializers import CustomLoginSerializer
 from host.models import Host
 from public.pagination import CustomPagination
@@ -1046,6 +1046,7 @@ class AdminHostSuspendView(APIView):
         from host.models import Host
         from django.contrib.auth import get_user_model
         User = get_user_model()
+        
  
         try:
             host = Host.objects.select_related("user").get(id=host_id)
@@ -1064,6 +1065,11 @@ class AdminHostSuspendView(APIView):
             user.is_active = False
             user.save(update_fields=["is_active"])
             logger.info(f"Admin {request.user.email} suspended host {host_id}")
+            send_account_suspended_email.delay(
+                email=user.email,
+                first_name=host.business_name,
+                reason="policy violation / unresolved payment",
+            )
             return api_response(
                 message=f"{host.business_name} has been suspended.",
                 status_code=200,

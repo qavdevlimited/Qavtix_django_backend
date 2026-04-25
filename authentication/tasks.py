@@ -82,13 +82,13 @@ def send_welcome_email_task(self, email: str, first_name: str):
 def send_host_welcome_email_task(self, email: str, first_name: str):
     try:
         send_templated_email(
-            subject="Welcome to QavTix 🎉",
+            subject="Welcome to the QavTix Host Platform 🎉",
              to_email=email,
             template_name="emails/hostwelcome.html",
             context={
                 "first_name": first_name,
                 "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636184/iuui1_xtvob1.svg",
-                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777139253/Host_Banner_1_yjlqjx.png",
             },
         )
 

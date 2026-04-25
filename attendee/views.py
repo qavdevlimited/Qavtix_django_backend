@@ -7,7 +7,9 @@ from django.db.models import OuterRef, Subquery, Sum, Count,Prefetch
 from django.http import Http404
 from attendee.service import get_affiliate_dashboard
 from attendee.tasks import send_attendee_data_export
+from authentication.utils import get_user_display_name
 from payments.services.currency_utils import get_currency_for_country, get_currency_for_event
+from payments.tasks import send_payment_method_updated_email, send_withdrawal_in_progress_email
 from transactions.models import Order,IssuedTicket
 from .filters import TicketDashboardFilter,FavoriteEventFilter
 from .serializers import (ListTicketGroupSerializer, PrivacySettingsSerializer, TicketDashboardSerializer,FavoriteEventSerializer, TicketReceiptSerializer,TicketTransferSerializer,AffiliateEarningHistorySerializer,
@@ -852,6 +854,12 @@ class RequestWithdrawalView(APIView):
                 amount=amount,
                 idempotency_key=uuid.UUID(idempotency_key)
             )
+            send_withdrawal_in_progress_email.delay(
+                email=request.user.email,
+                first_name=get_user_display_name(request.user),
+                amount=amount,
+                request_date=timezone.now().date().isoformat()
+            )
 
         return api_response(
             message="Withdrawal request submitted successfully",
@@ -1517,6 +1525,12 @@ class AddPayoutAccountView(APIView):
             PayoutInformation.objects.filter(user=request.user).update(is_default=False)
 
         account = serializer.save(user=request.user)
+
+        send_payment_method_updated_email.delay(
+            email=request.user.email,
+            profile_name=get_user_display_name(request.user),
+            profile_id=str(account.id)
+        )
 
         return api_response(
             message="Payout account added successfully",

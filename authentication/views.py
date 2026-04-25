@@ -267,7 +267,7 @@ class PasswordResetOTPRequestView(APIView):
                 + timedelta(minutes=settings.PASSWORD_RESET_OTP_TTL_MINUTES)
             )
 
-            send_password_reset_otp_task.delay(user.email, otp)
+            send_password_reset_otp_task.delay(user.email, otp,get_user_display_name(user))
 
         except User.DoesNotExist:
             pass

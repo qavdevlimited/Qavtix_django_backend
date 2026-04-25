@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
-def send_password_reset_otp_task(self, user_email: str,  otp :str):
+def send_password_reset_otp_task(self, user_email: str,  otp :str,first_name):
     try:
         send_templated_email(
             subject="Your One-Time Password (OTP)",
@@ -29,6 +29,7 @@ def send_password_reset_otp_task(self, user_email: str,  otp :str):
             template_name="emails/otp.html",
             context={
                 "otp_digits": list(otp),
+                "first_name":first_name,
                 "expires_minutes": 5,
                 "header_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777139840/iuew_1_x760pc.png",
                 "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_5_itsjwc.png",
@@ -50,8 +51,8 @@ def send_password_change_info_task(self, email: str, first_name: str):
             context={
                 "first_name": first_name,
                 "email":email,
-                "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777139840/iuew_1_x760pc.png",
-                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1776636195/iuui2_epngft.svg",
+                "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777141481/Banner_2_bcn4as.png",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_5_itsjwc.png",
             },
         )
 

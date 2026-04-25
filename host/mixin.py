@@ -7,7 +7,7 @@ from host.plan_limits import (
     which_plan_unlocks,
 )
 from rest_framework.exceptions import PermissionDenied
-
+from rest_framework.permissions import BasePermission
 
 class PlanFeatureMixin:
     """
@@ -292,3 +292,18 @@ class PlanFeatureMixin:
             self.check_count_limit("max_active_events", active)
         """
         self._raise_if_limited(feature, current_count, self.get_host_plan())
+
+
+
+
+
+class IsVerifiedHost(BasePermission):
+    message = "You must be a verified host to perform this action."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return (
+            user.is_authenticated and
+            hasattr(user, "host_profile") and
+            user.host_profile.verified
+        )

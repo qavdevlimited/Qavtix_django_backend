@@ -43,7 +43,7 @@ from datetime import date, timedelta
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiParameter, inline_serializer
 from drf_spectacular.types import OpenApiTypes
-from .mixin import PlanFeatureMixin
+from .mixin import IsVerifiedHost, PlanFeatureMixin
 
 
 class HostProfileView(APIView):
@@ -61,7 +61,7 @@ class HostProfileView(APIView):
 class EventCreateView(PlanFeatureMixin,generics.CreateAPIView):
     queryset = Event.objects.all()
     serializer_class = EventSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated,IsVerifiedHost]
 
     check_active_events    = True
     check_ticket_types     = True
@@ -93,7 +93,7 @@ class EventCreateView(PlanFeatureMixin,generics.CreateAPIView):
 
 class EventUpdateView(generics.UpdateAPIView):
     serializer_class = EventSerializer
-    permission_classes = [permissions.IsAuthenticated,IsEventOwner]
+    permission_classes = [permissions.IsAuthenticated,IsEventOwner,IsVerifiedHost]
     lookup_field = "id"   
 
     def get_queryset(self):

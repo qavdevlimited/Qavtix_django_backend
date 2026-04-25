@@ -149,7 +149,7 @@ class AdminPayoutActionService:
         with transaction.atomic():
             total_revenue = (
                 Order.objects
-                .filter(event__host=host, status="completed")
+                .filter(event__host=host, status="completed",marketplace_listing__isnull=True)
                 .aggregate(total=Sum("total_amount"))["total"]
                 or Decimal("0.00")
             )
@@ -158,7 +158,7 @@ class AdminPayoutActionService:
                 Withdrawal.objects
                 .select_for_update()
                 .filter(user=user)
-                .exclude(status="rejected")
+                .exclude(status__in=["rejected", "failed"])
                 .aggregate(total=Sum("amount"))["total"]
                 or Decimal("0.00")
             )
@@ -632,12 +632,12 @@ class PaystackPayoutService:
 
     @staticmethod
     def _mark_failed(withdrawal, reason):
-        """Saves failure reason to metadata. Does not change status from 'approved'."""
         metadata = withdrawal.metadata or {}
         metadata["transfer_failure"] = reason
+        withdrawal.status   = "failed"
         metadata["transfer_failed_at"] = timezone.now().isoformat()
         withdrawal.metadata = metadata
-        withdrawal.save(update_fields=["metadata"])
+        withdrawal.save(update_fields=["status","metadata"])
         logger.error(f"Withdrawal {withdrawal.id} transfer failed: {reason}")
 
 

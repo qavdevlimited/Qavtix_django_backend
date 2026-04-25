@@ -229,7 +229,7 @@ def send_flagged_user_alert_email(self, user_id, reason, notes):
     bind=True,
     max_retries=3,
     default_retry_delay=60,  
-    autoretry_for=(Exception,),
+    autoretry_for=(ConnectionError, TimeoutError),
     acks_late=True,
 )
 def process_single_payout(self, withdrawal_id, initiated_by_email=""):
@@ -239,7 +239,6 @@ def process_single_payout(self, withdrawal_id, initiated_by_email=""):
     Using the same reference on retry prevents double-crediting.
     """
     from administrator.service.payout_service import PaystackPayoutService
-
     logger.info(
         f"process_single_payout: withdrawal={withdrawal_id}, "
         f"initiated_by={initiated_by_email}, "
@@ -253,6 +252,7 @@ def process_single_payout(self, withdrawal_id, initiated_by_email=""):
             f"process_single_payout failed for {withdrawal_id} "
             f"(attempt {self.request.retries + 1}): {exc}"
         )
+
         raise  # autoretry_for will catch this and retry
 
 

@@ -611,27 +611,21 @@ def send_plan_expiry_reminder_email(self, subscription_id, days_remaining):
     expires = sub.expires_at.strftime("%A, %d %B %Y")
     day_str = f"{days_remaining} day{'s' if days_remaining > 1 else ''}"
 
-    email_body_html = f"""
-<p class="body-text">
-    Your <strong>{plan.name}</strong> plan expires in <strong>{day_str}</strong> on <strong>{expires}</strong>.
-</p>
-
-<p class="body-text">
-    <a href="https://www.qavtix.com/pricing">Renew your plan</a> to keep access to all {plan.name} features.
-    After expiry, your account will be moved to the Free plan.
-</p>
-    """
-
-    # Account security — always sent regardless of preferences
     try:
         send_templated_email(
-            to_email=user.email,
-            subject=f"⏰ Your {plan.name} plan expires in {day_str}",
-            template_name="emails/generic_template.html",
-            context=_base_context(f"Your {plan.name} Plan Expires Soon", email_body_html),
+            subject="Your One-Time Password (OTP)",
+             to_email=user.email,
+            template_name="emails/expiryreminder.html",
+            context={
+                "plan_name":sub.plan.name,
+                "expiry":expires,
+                "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777150158/Banner_6_sz8kfd.png",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_2_3_t8akti.png",
+            },
         )
+
     except Exception as exc:
-        logger.error(f"Failed to send plan expiry reminder: {exc}")
+        raise self.retry(exc=exc)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
@@ -650,31 +644,20 @@ def send_plan_expired_email(self, subscription_id):
     user = sub.host.user
     plan = sub.plan
 
-    email_body_html = f"""
-<p class="body-text">
-    Your <strong>{plan.name}</strong> plan has expired. Your account has been moved to the Free plan.
-</p>
-
-<p class="body-text">
-    You still have access to all your events and data, but some features are
-    now limited under the Free plan.
-</p>
-
-<p class="body-text">
-    <a href="https://www.qavtix.com/pricing">Upgrade anytime</a> to restore full access.
-</p>
-    """
-
-    # Account security — always sent regardless of preferences
     try:
         send_templated_email(
-            to_email=user.email,
-            subject=f"Your {plan.name} plan has expired",
-            template_name="emails/generic_template.html",
-            context=_base_context(f"Your {plan.name} Plan Has Expired", email_body_html),
+            subject="Your Plan Has Expired",
+             to_email=user.email,
+            template_name="emails/planexpired.html",
+            context={
+                "plan_name":sub.plan.name,
+                "header_image_url":  "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777150159/Banner_7_oq25u2.png",
+                "footer_image_url": "https://res.cloudinary.com/dpuvtcctg/image/upload/v1777138564/Footer_2_3_t8akti.png",
+            },
         )
+
     except Exception as exc:
-        logger.error(f"Failed to send plan expired email: {exc}")
+        raise self.retry(exc=exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -823,82 +806,3 @@ def send_plan_expired_email_attendee(self, subscription_id):
         logger.error(f"Failed to send attendee plan expired email: {exc}")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BLUE BADGE GIFTING EMAIL TASK
-# ─────────────────────────────────────────────────────────────────────────────
-
-@shared_task(bind=True, max_retries=3, default_retry_delay=10)
-def send_blue_badge_gift_email(self, host_id):
-    """
-    Sent when a host is awarded a permanent Blue Verification Badge.
-    Gated by: email_account_security (mandatory — always sent)
-    """
-    from host.models import Host
-
-    try:
-        host = Host.objects.select_related("user").get(id=host_id)
-    except Host.DoesNotExist:
-        logger.error(f"Host {host_id} not found for blue badge email")
-        return
-
-    user      = host.user
-    host_name = user.first_name or user.get_full_name() or "Host"
-
-    email_body_html = f"""
-<p class="body-text">
-    Congratulations, <strong>{host_name}</strong>! Your QavTix account has been awarded a
-    <strong>permanent Blue Verification Badge</strong>.
-</p>
-
-<p class="body-text">
-    This recognition is given to organizers who consistently meet our platform guidelines
-    through their activity, reliability, and engagement. Your commitment to creating quality
-    events and maintaining trust within the QavTix community has not gone unnoticed.
-</p>
-
-<div class="payment-box">
-    <p class="payment-box-title">What This Means for You</p>
-    <p class="payment-box-text">
-        <strong>✓</strong> A permanent Blue badge displayed on your profile<br />
-        <strong>✓</strong> Increased trust and credibility with attendees<br />
-        <strong>✓</strong> Stronger visibility across the QavTix platform
-    </p>
-</div>
-
-<div class="payment-box">
-    <p class="payment-box-title">Why You Received This Badge</p>
-    <p class="payment-box-text">
-        You've demonstrated:<br />
-        <strong>•</strong> Consistent event activity<br />
-        <strong>•</strong> Positive engagement with attendees<br />
-        <strong>•</strong> Adherence to QavTix policies and standards
-    </p>
-</div>
-
-<p class="body-text">
-    This badge is yours to keep as a mark of trust and excellence on QavTix.
-    Keep hosting, growing, and delivering great experiences — we're proud to have you on the platform.
-</p>
-
-<p class="body-text">
-    If you have any questions, feel free to reach out to our support team at
-    <a href="mailto:support@qavtix.com">support@qavtix.com</a>.
-</p>
-    """
-
-    # Account security — always sent regardless of preferences
-    try:
-        send_templated_email(
-            to_email=user.email,
-            subject="You've Earned Your Permanent QavTix Verification Badge 🎉",
-            template_name="emails/generic_template.html",
-            context=_base_context(
-                "You've Earned Your Permanent QavTix Verification Badge 🎉",
-                email_body_html,
-                sign_off_greeting="Congratulations once again,",
-            ),
-        )
-        logger.info(f"Blue badge email sent to host {host_id} ({user.email})")
-    except Exception as exc:
-        logger.error(f"Failed to send blue badge email to host {host_id}: {exc}")
-        raise self.retry(exc=exc)

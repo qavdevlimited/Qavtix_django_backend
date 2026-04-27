@@ -6,7 +6,7 @@ from allauth.socialaccount.providers.oauth2.client import OAuth2Client
 from django.http import HttpResponse
 from rest_framework import status
 
-from authentication.mixins import SocialLoginRestrictionMixin
+
 from authentication.tasks import send_host_welcome_email_task, send_password_change_info_task, send_password_reset_otp_task, send_welcome_email_task
 from .utils import api_response,generate_otp, get_user_display_name
 from rest_framework.exceptions import ValidationError

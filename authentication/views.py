@@ -78,7 +78,7 @@ class CustomLoginView(APIView):
         )
 
     
-class FacebookLogin(SocialLoginRestrictionMixin,SocialLoginView):
+class FacebookLogin(SocialLoginView):
     adapter_class = FacebookOAuth2Adapter
     client_class = OAuth2Client
     callback_url = settings.FACEBOOK_CALLBACK_URL
@@ -88,7 +88,6 @@ class FacebookLogin(SocialLoginRestrictionMixin,SocialLoginView):
         try:
             response = super().post(request, *args, **kwargs)
             user = self.user
-            self.enforce_2fa_restriction(user)
             return api_response("Login successful", status.HTTP_200_OK, response.data)
         except ValidationError as e:
             # Flatten DRF validation errors
@@ -96,7 +95,7 @@ class FacebookLogin(SocialLoginRestrictionMixin,SocialLoginView):
         except Exception as e:
             return api_response(str(e), status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class GoogleLogin(SocialLoginRestrictionMixin,SocialLoginView):
+class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
     client_class = OAuth2Client
     callback_url = settings.CALLBACK_URL
@@ -107,7 +106,6 @@ class GoogleLogin(SocialLoginRestrictionMixin,SocialLoginView):
         try:
             response = super().post(request, *args, **kwargs)
             user = self.user  # set by allauth
-            self.enforce_2fa_restriction(user)
             return api_response("Login successful", status.HTTP_200_OK, response.data)
         except ValidationError as e:
             # Flatten DRF validation errors

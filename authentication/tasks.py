@@ -45,7 +45,7 @@ def send_password_reset_otp_task(self, user_email: str,  otp :str,first_name):
 def send_password_change_info_task(self, email: str, first_name: str):
     try:
         send_templated_email(
-            subject="Your One-Time Password (OTP)",
+            subject="Your QavTix Password Has Been Changed",
              to_email=email,
             template_name="emails/passwordchange.html",
             context={

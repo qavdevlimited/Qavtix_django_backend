@@ -2,6 +2,7 @@ from django.shortcuts import render
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
 from attendee.mixins import require_attendee_feature
+from authentication.auth_backends import OptionalJWTAuthentication
 from events.models import Event,EventLocation
 from rest_framework import generics, permissions,status,filters
 from django.utils import timezone
@@ -41,6 +42,7 @@ class NearbyEventsView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     filter_backends    = [DjangoFilterBackend]
     filterset_class    = EventFilter  
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_queryset(self):
         user = self.request.user
@@ -98,6 +100,7 @@ class FeaturedEventsView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     filter_backends    = [DjangoFilterBackend]
     filterset_class    = EventFilter  
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_queryset(self):
         now  = timezone.now()
@@ -138,6 +141,7 @@ class FeaturedEventsView(generics.ListAPIView):
 
 class TopEventLocationsView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get(self, request, *args, **kwargs):
         top_locations = (
@@ -170,6 +174,7 @@ class TrendingEventsView(generics.ListAPIView):
     ]
     filterset_class = EventDashboardFilter
     search_fields   = ["title"]
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_queryset(self):
         now  = timezone.now()
@@ -251,6 +256,7 @@ class TrendingEventsView(generics.ListAPIView):
 class TrendingHostsView(generics.ListAPIView):
     serializer_class = TrendingHostSerializer
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_queryset(self):
         now = timezone.now()
@@ -314,6 +320,7 @@ class EventDetailView(generics.RetrieveAPIView):
     serializer_class = EventDetailsSerializer
     permission_classes = [permissions.AllowAny]
     lookup_field = "id"
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_queryset(self):
         # Only allow active events
@@ -346,6 +353,7 @@ class EventDetailView(generics.RetrieveAPIView):
 class FollowHostCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = FollowActionSerializer
+    authentication_classes = [OptionalJWTAuthentication]
 
     def create(self, request, host_id=None, *args, **kwargs):
         attendee = request.user
@@ -376,6 +384,7 @@ class FollowHostCreateView(generics.CreateAPIView):
 class FollowHostDestroyView(generics.DestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = FollowActionSerializer
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_object(self):
         attendee = self.request.user
@@ -405,6 +414,7 @@ class HostPublicDetailView(generics.RetrieveAPIView):
     queryset = Host.objects.all()
     serializer_class = HostPublicDetailSerializer
     lookup_field = "id"
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_queryset(self):
         return Host.objects.annotate(
@@ -430,6 +440,7 @@ class HostPublicDetailView(generics.RetrieveAPIView):
 class MessageCreateView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = MessageSerializer
+    authentication_classes = [OptionalJWTAuthentication]
 
     def create(self, request, *args, **kwargs):
 
@@ -475,7 +486,7 @@ class CategoryListView(APIView):
     Returns all categories. No auth required — used for event creation forms,
     filters, and public listing pages.
     """
-
+    authentication_classes = [OptionalJWTAuthentication]
     def get(self, request):
         categories = Category.objects.all().order_by("name")
         return api_response(
@@ -491,6 +502,7 @@ class LocationPageView(generics.GenericAPIView):
     serializer_class   = LocationPageSerializer
     filter_backends    = [DjangoFilterBackend]
     filterset_class    = EventFilter
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_queryset(self):
         return Event.objects.filter(status="active").select_related(
@@ -531,6 +543,7 @@ class LocationPageView(generics.GenericAPIView):
 class SubscribeLocationView(generics.GenericAPIView):
     serializer_class = LocationSubscriptionSerializer
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [OptionalJWTAuthentication]
 
     def post(self, request, *args, **kwargs):
         city  = request.data.get("city")
@@ -558,6 +571,7 @@ class SubscribeLocationView(generics.GenericAPIView):
 class SubscribeCategoryView(generics.GenericAPIView):
     serializer_class = CategorySubscriptionSerializer
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [OptionalJWTAuthentication]
 
     def post(self, request):
         category_id = request.data.get("category")
@@ -593,6 +607,7 @@ class CategoryPageView(generics.GenericAPIView):
     serializer_class   = CategoryPageSerializer
     filter_backends    = [DjangoFilterBackend]
     filterset_class    = EventFilter
+    authentication_classes = [OptionalJWTAuthentication]
 
     def get_queryset(self):
         return Event.objects.filter(status="active").select_related(
@@ -635,6 +650,7 @@ class CategoryPageView(generics.GenericAPIView):
 class SearchEventsView(generics.ListAPIView):
     serializer_class = EventListSerializer
     permission_classes = [permissions.AllowAny]
+    authentication_classes = [OptionalJWTAuthentication]
 
     filter_backends = [
         DjangoFilterBackend,
@@ -736,7 +752,7 @@ class ValidatePromoCodeView(APIView):
     Useful for real-time promo validation on the frontend (checkout page).
     """
     permission_classes = [permissions.AllowAny]
-
+    authentication_classes = [OptionalJWTAuthentication]
     @extend_schema(
         summary="Validate Promo Code",
         description="Checks if a promo code is valid for the selected tickets and returns discount info.",
